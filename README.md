@@ -63,7 +63,6 @@ that replace the app bundle:
 **Try it without building an installer:**
 
 ```
-npx electron-builder install-app-deps   # rebuilds better-sqlite3 for Electron's Node version
 npm run electron
 ```
 
@@ -76,16 +75,14 @@ npm run dist:win
 npm run dist:linux
 ```
 
-Output lands in `dist/`. `npm run dist` rebuilds native dependencies automatically as part of
-packaging, so you don't need `install-app-deps` before it — that command is only for running
-`npm run electron` directly during development.
+Output lands in `dist/`.
 
-**One gotcha:** `better-sqlite3` is a native module, compiled separately for plain Node.js vs.
-Electron's bundled Node. `install-app-deps` (or `npm run dist`) rebuilds it for Electron, which
-means a plain `npm start` will then fail to load it. If you need to go back to running the
-server directly with `npm start`/`npm run dev`, run `npm rebuild better-sqlite3` first to
-rebuild it back for plain Node. (Keeping separate clones for web-mode dev and desktop-mode dev
-avoids the back-and-forth entirely.)
+`better-sqlite3` is pinned to v13+, which ships prebuilt N-API binaries for every platform
+bundled directly in the npm package — no compiler, no Visual Studio/Xcode command line tools,
+no separate rebuild step for Electron vs. plain Node, and no network access needed beyond the
+initial `npm install`. (It does require Node.js ≥ 22, which is why Electron is pinned to a
+version recent enough to bundle Node ≥ 22 internally — an older Electron with an older bundled
+Node will crash on startup when it tries to load the database.)
 
 No app icon is set up yet — unbuilt installers use Electron's default icon. Add
 `build/icon.png` (Linux), `build/icon.icns` (macOS) and `build/icon.ico` (Windows) and
