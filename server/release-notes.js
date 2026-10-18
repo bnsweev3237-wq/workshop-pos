@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.4.0',
+    date: '2026-10-18',
+    notes: [
+      'Added a sign-out button to the header.',
+      'Added an optional "sold by" record on each sale, shown on receipts and in a new Reports breakdown by user — toggle it on or off in Settings.',
+    ],
+  },
+  {
     version: '0.3.0',
     date: '2026-10-18',
     notes: [

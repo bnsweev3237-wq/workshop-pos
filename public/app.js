@@ -50,8 +50,10 @@ function updateAuthUI() {
   $('authStatus').textContent = me ? `Signed in as ${me.name}${me.role === 'cashier' ? ' · Cashier' : ''}` : '';
   $('exportBtn').hidden = !isAdmin;
   $('importBtn').hidden = !isAdmin;
+  $('signOutBtn').hidden = !me;
   document.querySelectorAll('#tabs button[data-admin-only]').forEach(b => { b.hidden = !isAdmin; });
 }
+$('signOutBtn').onclick = () => logout();
 
 function openLogin(forTab) {
   pendingTab = forTab || null;
@@ -133,7 +135,7 @@ function showTab(t) {
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
   if (t === 'reports') renderReports();
-  if (t === 'settings') loadUsers();
+  if (t === 'settings') { loadUsers(); loadSettings(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -632,7 +634,7 @@ function buildSaleReceipt(sale) {
   const itemCount = sale.lines.reduce((n, l) => n + num(l.qty), 0);
   const head = document.createElement('button'); head.type = 'button'; head.className = 'receipt-head';
   head.innerHTML = `<span class="rh-time"></span><span class="rh-total"></span>`;
-  head.querySelector('.rh-time').textContent = `${sale.createdAt ? new Date(sale.createdAt).toLocaleString() : ''} · ${itemCount} item${itemCount === 1 ? '' : 's'}${sale.test ? ' · test' : ''}`;
+  head.querySelector('.rh-time').textContent = `${sale.createdAt ? new Date(sale.createdAt).toLocaleString() : ''} · ${itemCount} item${itemCount === 1 ? '' : 's'}${sale.test ? ' · test' : ''}${sale.soldBy ? ' · ' + sale.soldBy : ''}`;
   head.querySelector('.rh-total').textContent = money(sale.total);
   const body = document.createElement('div'); body.className = 'receipt-body'; body.hidden = true;
   const included = !!sale.taxIncluded;
@@ -792,7 +794,7 @@ function rptWindow(key) {
   return { start: dayStart(earliest), end: now };
 }
 async function renderReports() {
-  [fullSales, items] = await Promise.all([api('GET', '/api/sales/full'), api('GET', '/api/items/full')]);
+  [fullSales, items, appSettings] = await Promise.all([api('GET', '/api/sales/full'), api('GET', '/api/items/full'), api('GET', '/api/settings')]);
   const { start, end } = rptWindow(rptRange);
   const inRange = fullSales.filter(s => !s.test && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
   const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -813,6 +815,31 @@ async function renderReports() {
   renderRptTender(inRange, revenue);
   renderRptCost(inRange);
   renderRptEvents();
+  renderRptByUser(inRange);
+}
+function renderRptByUser(inRange) {
+  const box = $('rptByUserList'), empty = $('rptByUserEmpty');
+  if (!appSettings.trackSaleAttribution) {
+    box.innerHTML = ''; box.hidden = true;
+    empty.hidden = false; empty.textContent = 'Off — turn on "Record which user rang up each sale" in Settings to see this.';
+    return;
+  }
+  const map = new Map();
+  for (const s of inRange) {
+    const key = s.soldBy || 'Unknown';
+    const entry = map.get(key) || { name: key, qty: 0, revenue: 0 };
+    entry.qty += 1;
+    entry.revenue += num(s.total);
+    map.set(key, entry);
+  }
+  const rows = [...map.values()].sort((a, b) => b.revenue - a.revenue);
+  empty.hidden = rows.length > 0;
+  empty.textContent = 'No sales in this range yet.';
+  box.hidden = rows.length === 0;
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const max = Math.max(1, ...rows.map(r => r.revenue));
+  box.innerHTML = rows.map(r => `<div class="rpt-top-row"><span class="rpt-top-name"></span><div class="rpt-top-track"><div class="rpt-top-fill" style="width:${r.revenue / max * 100}%"></div></div><span class="rpt-top-num">${money(r.revenue)} <small style="color:var(--muted)">· ${r.qty} sale${r.qty === 1 ? '' : 's'}</small></span></div>`).join('');
+  box.querySelectorAll('.rpt-top-name').forEach((el, i) => { el.textContent = rows[i].name; });
 }
 
 // Aggregates a list of (full, profit-bearing) sales by item, for the cost-breakdown and
@@ -981,6 +1008,18 @@ function renderRptTender(inRange, revenue) {
   box.innerHTML = [['Cash', money(cash), pct(cash)], ['Card / Other', money(other), pct(other)]].map(([lbl, val, sub]) => `<div class="stat-tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub} of revenue</div></div>`).join('');
 }
 document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => { rptRange = b.dataset.range; document.querySelectorAll('#rptRangeSeg button').forEach(x => x.classList.toggle('on', x === b)); renderReports(); });
+
+// ---------- Settings: sales tracking ----------
+let appSettings = { trackSaleAttribution: true };
+async function loadSettings() {
+  appSettings = await api('GET', '/api/settings');
+  $('trackAttributionChk').checked = appSettings.trackSaleAttribution;
+}
+$('trackAttributionChk').onchange = async () => {
+  const checked = $('trackAttributionChk').checked;
+  try { appSettings = await api('POST', '/api/settings', { trackSaleAttribution: checked }); toast(checked ? 'Now recording who rings up each sale' : 'No longer recording who rings up sales'); }
+  catch (e) { $('trackAttributionChk').checked = !checked; toast(e.message || 'Could not update setting'); }
+};
 
 // ---------- Settings: users (admins + cashiers) ----------
 async function loadUsers() { admins = await api('GET', '/api/auth/users'); renderUsers(); }

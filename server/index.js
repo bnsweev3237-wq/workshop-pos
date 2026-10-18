@@ -23,6 +23,7 @@ function createApp() {
 
   app.use('/api/meta', require('./routes/meta'));
   app.use('/api/auth', require('./routes/auth'));
+  app.use('/api/settings', require('./routes/settings'));
   app.use('/api/materials', require('./routes/materials'));
   app.use('/api/items', require('./routes/items'));
   app.use('/api/events', require('./routes/events'));

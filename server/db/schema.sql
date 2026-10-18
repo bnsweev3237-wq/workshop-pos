@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS events (
 );
 
 -- `lines_json` holds each sale's line items exactly as the receipt/reports code expects.
+-- `user_name` is a snapshot of who rang it up at the time, kept even if that account is
+-- later renamed or removed — `user_id` alone would go stale. Both are only ever written
+-- when the "track who makes each sale" setting is on (see the `settings` table below); a
+-- shop that doesn't want this recorded at all just leaves it off and both stay null.
 CREATE TABLE IF NOT EXISTS sales (
   id TEXT PRIMARY KEY,
   event_id TEXT REFERENCES events(id),
@@ -78,8 +82,16 @@ CREATE TABLE IF NOT EXISTS sales (
   received REAL NOT NULL DEFAULT 0,
   change REAL NOT NULL DEFAULT 0,
   profit REAL NOT NULL DEFAULT 0,
+  user_id TEXT REFERENCES users(id),
+  user_name TEXT,
   created_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
+
+-- Small key/value store for app-wide preferences that don't warrant their own table.
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);

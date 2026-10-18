@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
 const { requireAdmin, requireLogin } = require('../middleware/auth');
+const { getBool } = require('../lib/settings');
 
 const router = express.Router();
 
@@ -18,11 +19,13 @@ function lineTaxSplit(l, included) {
   return { amt, sub: amt, tax: amt * rate };
 }
 
-// Public shape: everything a receipt needs, nothing about profit margins.
+// Public shape: everything a receipt needs, nothing about profit margins. `soldBy` is
+// whatever was recorded at the time — if attribution was off then, it's null; turning the
+// setting on later doesn't retroactively invent it for old sales.
 const toPublicSale = (r) => ({
   id: r.id, eventId: r.event_id, test: !!r.test, taxIncluded: !!r.tax_included,
   lines: JSON.parse(r.lines_json), subtotal: r.subtotal, tax: r.tax, total: r.total,
-  tender: r.tender, received: r.received, change: r.change, createdAt: r.created_at,
+  tender: r.tender, received: r.received, change: r.change, soldBy: r.user_name || null, createdAt: r.created_at,
 });
 const toFullSale = (r) => ({ ...toPublicSale(r), profit: r.profit });
 
@@ -66,16 +69,19 @@ router.post('/', requireLogin, (req, res) => {
   const received = b.tender === 'cash' ? (Number(b.received) || 0) : total;
   const change = b.tender === 'cash' ? Math.max(0, received - total) : 0;
 
+  const trackAttribution = getBool('trackSaleAttribution', true);
   const row = {
     id: uid(), event_id: b.eventId || null, test: test ? 1 : 0, tax_included: included ? 1 : 0,
     lines_json: JSON.stringify(lines.map(l => ({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0 }))),
-    subtotal, tax, total, tender: b.tender || 'cash', received, change, profit, created_at: Date.now(),
+    subtotal, tax, total, tender: b.tender || 'cash', received, change, profit,
+    user_id: trackAttribution ? req.user.id : null, user_name: trackAttribution ? req.user.name : null,
+    created_at: Date.now(),
   };
 
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, created_at)
-      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @created_at)
+      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, user_id, user_name, created_at)
+      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @user_id, @user_name, @created_at)
     `).run(row);
     for (const c of stockChanges) {
       db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);

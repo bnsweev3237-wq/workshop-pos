@@ -24,6 +24,10 @@ Working end to end, tested:
   splitting proceeds among partners), and PDF export via the browser's native print-to-PDF
   (no bundled PDF library, so it keeps working with no internet connection)
 - A version number and "What's new" release notes viewer in the footer
+- Optional per-sale attribution ("who rang this up") — a Settings toggle, on by default,
+  shown on receipts and in a Reports breakdown by user; off means nothing new gets recorded,
+  not just hidden
+- A sign-out button in the header
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
 window with its own per-install database in the OS's standard app-data folder — and a GitHub

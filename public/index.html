@@ -23,6 +23,7 @@
         <button class="btn sm" id="exportBtn" hidden title="Download all items and materials as a backup file">⤓ Export backup</button>
         <button class="btn sm" id="importBtn" hidden title="Load items and materials from a backup file">⤒ Import backup</button>
         <input type="file" id="importFile" accept=".json,application/json" hidden>
+        <button class="btn sm" id="signOutBtn" hidden>Sign out</button>
       </div>
     </div>
   </header>
@@ -331,10 +332,22 @@
       <div id="rptEventsList"></div>
       <div class="empty" id="rptEventsEmpty" hidden>No events yet.</div>
     </div>
+    <div class="card">
+      <h2>Sales by user</h2>
+      <div id="rptByUserList"></div>
+      <div class="empty" id="rptByUserEmpty" hidden></div>
+    </div>
   </section>
 
   <!-- ===== Settings ===== -->
   <section id="tab-settings" hidden>
+    <div class="card">
+      <h2>Sales tracking</h2>
+      <label class="chk-field" style="margin-top:0">
+        <input type="checkbox" id="trackAttributionChk">
+        <span>Record which user rang up each sale<br><small style="color:var(--muted);font-weight:400">Shown in Reports and on receipts as "Sold by…". On by default. Turn it off if you'd rather not track this — new sales stop recording it immediately, though sales already recorded keep showing who rang them up.</small></span>
+      </label>
+    </div>
     <div class="card">
       <h2>Users</h2>
       <div class="help">
