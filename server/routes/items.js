@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, requireLogin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -17,8 +17,9 @@ const toFullItem = (r) => ({
   stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at,
 });
 
-// Public: the Sell page's item grid. No cost, no materials, no pricing formula.
-router.get('/', (req, res) => {
+// Any logged-in user (admin or cashier): the Sell page's item grid. No cost, no materials,
+// no pricing formula — that split is enforced here regardless of who's asking.
+router.get('/', requireLogin, (req, res) => {
   const rows = db.prepare('SELECT * FROM items ORDER BY saved_at DESC').all();
   res.json(rows.map(toPublicItem));
 });

@@ -1,10 +1,12 @@
 const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
+const { requireLogin } = require('../middleware/auth');
 
 const router = express.Router();
-// Public: event setup (booth cost, tax rates) lives on the Sell page itself, so it stays
-// reachable without login — same scoping as the rest of that page.
+// Event setup (booth cost, tax rates) lives on the Sell page itself, so any logged-in user —
+// admin or cashier — can manage it, same as the rest of that page.
+router.use(requireLogin);
 
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,

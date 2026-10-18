@@ -1,0 +1,34 @@
+// Hand-maintained changelog shown in the app's "What's new" viewer. Add a new entry at the
+// top each time package.json's version is bumped — keep it short, user-facing language,
+// what changed and why it matters to someone running the shop, not commit-message detail.
+module.exports = [
+  {
+    version: '0.3.0',
+    date: '2026-10-18',
+    notes: [
+      'Added cashier accounts — a lower-privilege login limited to the Sell page, separate from admin accounts.',
+      'The Sell page now requires signing in (as an admin or cashier) instead of being open to anyone.',
+      'Added a version number and this release notes viewer to the app.',
+    ],
+  },
+  {
+    version: '0.2.0',
+    date: '2026-10-18',
+    notes: [
+      'Reports: added a cost/profit breakdown by item, with a tap-to-expand materials drill-down.',
+      'Reports: added an events ledger showing "true profit" after deducting each event’s booth/space cost.',
+      'Reports: added PDF export, using the browser’s own print-to-PDF so it keeps working offline.',
+      'Added a desktop app for Windows, Mac, and Linux, built with Electron.',
+      'Set up automatic builds so installers are produced for all three platforms on every release.',
+    ],
+  },
+  {
+    version: '0.1.0',
+    date: '2026-10-18',
+    notes: [
+      'First standalone release: a real backend (Express + SQLite) replacing the earlier Claude.ai artifact prototype.',
+      'Admin accounts with login; the Sell page stayed open with no login required.',
+      'Core pricing calculator, material library, saved items, point of sale, and sales reports.',
+    ],
+  },
+];

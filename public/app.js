@@ -21,13 +21,20 @@ async function api(method, path, body) {
 }
 
 // ---------- Auth state ----------
+// Every page requires a login now — there's no anonymous Sell-page access anymore. Role is
+// the only thing that changes what's reachable: cashiers get the Sell page only, admins get
+// everything. The server enforces this independently (see server/middleware/auth.js); this
+// is just the UI following suit so cashiers aren't shown buttons that would 403.
 let me = null;
 let needsSetup = false;
 let pendingTab = null;
+let currentTab = 'pos';
+const ADMIN_TABS = ['calc', 'lib', 'items', 'reports', 'settings'];
 
 function onUnauthorized() {
   me = null;
   updateAuthUI();
+  openLogin(currentTab);
 }
 
 async function refreshAuthStatus() {
@@ -39,10 +46,11 @@ async function refreshAuthStatus() {
 }
 
 function updateAuthUI() {
-  $('authStatus').textContent = me ? `Signed in as ${me.name}` : '';
-  $('exportBtn').hidden = !me;
-  $('importBtn').hidden = !me;
-  document.querySelectorAll('#tabs button[data-gated]').forEach(b => b.classList.toggle('locked', !me));
+  const isAdmin = !!me && me.role === 'admin';
+  $('authStatus').textContent = me ? `Signed in as ${me.name}${me.role === 'cashier' ? ' · Cashier' : ''}` : '';
+  $('exportBtn').hidden = !isAdmin;
+  $('importBtn').hidden = !isAdmin;
+  document.querySelectorAll('#tabs button[data-admin-only]').forEach(b => { b.hidden = !isAdmin; });
 }
 
 function openLogin(forTab) {
@@ -51,13 +59,13 @@ function openLogin(forTab) {
   $('forgotPanel').hidden = true;
   if (needsSetup) {
     $('loginTitle').textContent = 'Set up the first admin';
-    $('loginSub').textContent = 'No admin account exists yet — create one to manage pricing, materials and settings.';
+    $('loginSub').textContent = 'No account exists yet — create the first admin to manage pricing, materials, and other accounts.';
     $('loginFields').hidden = true;
     $('setupFields').hidden = false;
     $('forgotLink').hidden = true;
   } else {
     $('loginTitle').textContent = 'Sign in';
-    $('loginSub').textContent = "Admin sign-in — cashiers don't need this to use the Sell page.";
+    $('loginSub').textContent = 'Sign in as an admin or cashier to use Workshop POS.';
     $('loginFields').hidden = false;
     $('setupFields').hidden = true;
     $('forgotLink').hidden = false;
@@ -67,7 +75,6 @@ function openLogin(forTab) {
 }
 function closeLogin() { $('loginScreen').hidden = true; pendingTab = null; }
 
-$('loginCancel').onclick = () => { closeLogin(); showTab('pos'); };
 $('forgotLink').onclick = () => { $('forgotPanel').hidden = !$('forgotPanel').hidden; };
 
 $('loginSubmit').onclick = async () => {
@@ -84,8 +91,9 @@ $('loginSubmit').onclick = async () => {
       me = r.me;
     }
     updateAuthUI();
-    const dest = pendingTab || 'calc';
+    const dest = (pendingTab && (me.role === 'admin' || !ADMIN_TABS.includes(pendingTab))) ? pendingTab : 'pos';
     closeLogin();
+    await afterLogin();
     showTab(dest);
     toast(`Welcome, ${me.name}`);
   } catch (e) {
@@ -99,21 +107,33 @@ async function logout() {
   await api('POST', '/api/auth/logout');
   me = null;
   updateAuthUI();
-  showTab('pos');
+  openLogin('pos');
   toast('Signed out');
 }
 
+// Loads the data the Sell page needs and starts light polling so a second cashier's
+// sales/stock changes show up without a manual refresh — deferred until after login since
+// every one of these endpoints now requires being signed in.
+let pollTimer = null;
+async function afterLogin() {
+  await Promise.all([loadPosItems(), loadSales(), loadEvents()]);
+  if (!pollTimer) {
+    pollTimer = setInterval(() => { if (!document.hidden && me) Promise.all([loadPosItems(), loadSales(), loadEvents()]).catch(() => {}); }, 20000);
+  }
+}
+
 // ---------- Tabs ----------
-const GATED = ['calc', 'lib', 'items', 'reports', 'settings'];
 function showTab(t) {
-  if (GATED.includes(t) && !me) { openLogin(t); return; }
+  if (!me) { openLogin(t); return; }
+  if (ADMIN_TABS.includes(t) && me.role !== 'admin') t = 'pos';
+  currentTab = t;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   ['calc', 'lib', 'items', 'pos', 'reports', 'settings'].forEach(x => $('tab-' + x).hidden = x !== t);
   if (t === 'calc') calc();
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
   if (t === 'reports') renderReports();
-  if (t === 'settings') loadAdmins();
+  if (t === 'settings') loadUsers();
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -962,25 +982,38 @@ function renderRptTender(inRange, revenue) {
 }
 document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => { rptRange = b.dataset.range; document.querySelectorAll('#rptRangeSeg button').forEach(x => x.classList.toggle('on', x === b)); renderReports(); });
 
-// ---------- Settings: admins ----------
-async function loadAdmins() { admins = await api('GET', '/api/auth/admins'); renderAdmins(); }
-function renderAdmins() {
+// ---------- Settings: users (admins + cashiers) ----------
+async function loadUsers() { admins = await api('GET', '/api/auth/users'); renderUsers(); }
+function renderUsers() {
   $('curAdminLine').textContent = `Signed in as ${me.name} (${me.username})`;
   const tb = $('adminRows'); tb.innerHTML = '';
+  const adminCount = admins.filter(a => a.role === 'admin').length;
   for (const a of admins) {
+    const isLastAdmin = a.role === 'admin' && adminCount <= 1;
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${esc(a.name)}${a.id === me.id ? ' <small style="color:var(--muted)">(you)</small>' : ''}</td><td>${esc(a.username)}</td><td>${new Date(a.createdAt).toLocaleDateString()}</td>
-      <td class="acts"><button class="btn sm resetPw">Reset password</button> <button class="icon-btn del" title="Remove admin">×</button></td>`;
+    tr.innerHTML = `<td>${esc(a.name)}${a.id === me.id ? ' <small style="color:var(--muted)">(you)</small>' : ''}</td><td>${esc(a.username)}</td>
+      <td><span class="role-badge ${a.role}">${a.role === 'admin' ? 'Admin' : 'Cashier'}</span></td>
+      <td>${new Date(a.createdAt).toLocaleDateString()}</td>
+      <td class="acts">
+        <button class="btn sm toggleRole"${isLastAdmin ? ' disabled title="Can’t demote the last admin"' : ''}>${a.role === 'admin' ? 'Make cashier' : 'Make admin'}</button>
+        <button class="btn sm resetPw">Reset password</button>
+        <button class="icon-btn del" title="Remove account"${isLastAdmin ? ' disabled title="Can’t remove the last admin"' : ''}>×</button>
+      </td>`;
+    tr.querySelector('.toggleRole').onclick = async () => {
+      const newRole = a.role === 'admin' ? 'cashier' : 'admin';
+      try { await api('POST', `/api/auth/users/${a.id}/role`, { role: newRole }); toast(`${a.name} is now ${newRole === 'admin' ? 'an admin' : 'a cashier'}`); await loadUsers(); }
+      catch (e) { toast(e.message || 'Could not change role'); }
+    };
     tr.querySelector('.resetPw').onclick = async () => {
       const pw = prompt(`New password for ${a.name} (min 8 characters):`);
       if (!pw) return;
-      try { await api('POST', `/api/auth/admins/${a.id}/password`, { password: pw }); toast('Password updated'); }
+      try { await api('POST', `/api/auth/users/${a.id}/password`, { password: pw }); toast('Password updated'); }
       catch (e) { toast(e.message || 'Could not update password'); }
     };
     tr.querySelector('.del').onclick = async () => {
-      if (!await askConfirm(`Remove admin “${a.name}”?`, 'Remove admin')) return;
-      try { await api('DELETE', '/api/auth/admins/' + a.id); toast('Admin removed'); if (a.id === me.id) { me = null; updateAuthUI(); showTab('pos'); return; } await loadAdmins(); }
-      catch (e) { toast(e.message || 'Could not remove admin'); }
+      if (!await askConfirm(`Remove ${a.role} account “${a.name}”?`, 'Remove account')) return;
+      try { await api('DELETE', '/api/auth/users/' + a.id); toast('Account removed'); if (a.id === me.id) { me = null; updateAuthUI(); openLogin('pos'); return; } await loadUsers(); }
+      catch (e) { toast(e.message || 'Could not remove account'); }
     };
     tb.appendChild(tr);
   }
@@ -989,13 +1022,14 @@ $('addAdminBtn').onclick = () => { $('addAdminForm').hidden = false; $('newAdmin
 $('newAdminCancel').onclick = () => { $('addAdminForm').hidden = true; };
 $('newAdminSave').onclick = async () => {
   const name = $('newAdminName').value.trim(), username = $('newAdminUsername').value.trim(), password = $('newAdminPassword').value;
+  const role = document.querySelector('input[name="newUserRole"]:checked')?.value || 'cashier';
   if (!name || !username || password.length < 8) { toast('Name, username, and an 8+ character password are required'); return; }
   try {
-    await api('POST', '/api/auth/admins', { name, username, password });
+    await api('POST', '/api/auth/users', { name, username, password, role });
     $('newAdminName').value = ''; $('newAdminUsername').value = ''; $('newAdminPassword').value = ''; $('addAdminForm').hidden = true;
-    toast(`Added admin “${name}”`);
-    await loadAdmins();
-  } catch (e) { toast(e.code === 'username_taken' ? 'That username is already taken' : (e.message || 'Could not add admin')); }
+    toast(`Added ${role} “${name}”`);
+    await loadUsers();
+  } catch (e) { toast(e.code === 'username_taken' ? 'That username is already taken' : (e.message || 'Could not add account')); }
 };
 
 // ---------- Backup ----------
@@ -1037,18 +1071,36 @@ function askConfirm(text, okLabel) {
 let toastTimer;
 function toast(msg) { $('toast').textContent = msg; $('toast').classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').classList.remove('show'), 2400); }
 
+// ---------- Version / release notes ----------
+let releaseNotes = [];
+async function loadVersionInfo() {
+  const { version, releaseNotes: notes } = await api('GET', '/api/meta/version');
+  releaseNotes = notes;
+  $('appVersion').textContent = `v${version}`;
+}
+function renderReleaseNotes() {
+  $('releaseNotesList').innerHTML = releaseNotes.map(r => `
+    <div class="rn-entry">
+      <div class="rn-head"><b>v${esc(r.version)}</b><span>${esc(r.date)}</span></div>
+      <ul>${r.notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul>
+    </div>`).join('');
+}
+$('whatsNewLink').onclick = () => { renderReleaseNotes(); $('releaseNotesModal').hidden = false; };
+$('releaseNotesClose').onclick = () => { $('releaseNotesModal').hidden = true; };
+$('releaseNotesModal').addEventListener('click', e => { if (e.target === $('releaseNotesModal')) $('releaseNotesModal').hidden = true; });
+
 // ---------- Boot ----------
 (async function boot() {
   addMaterial(); setMode('markup'); setTender('cash'); setTestMode(testMode);
   $('footYear').textContent = new Date().getFullYear();
+  loadVersionInfo().catch(() => {});
   try {
     const s = await refreshAuthStatus();
     $('app').hidden = false;
-    if (s.needsSetup) openLogin('pos'); else closeLogin();
-    await Promise.all([loadPosItems(), loadSales(), loadEvents()]);
+    if (s.needsSetup || !s.me) { openLogin('pos'); return; }
+    closeLogin();
+    await afterLogin();
     showTab('pos');
-    // Light polling so a second cashier's sales/stock changes show up without a manual refresh.
-    setInterval(() => { if (!document.hidden) Promise.all([loadPosItems(), loadSales(), loadEvents()]).catch(() => {}); }, 20000);
   } catch (e) {
     $('app').hidden = false;
     toast('Could not reach the server. Check that it’s running.');

@@ -29,11 +29,11 @@
 
   <nav class="tabs" id="tabs">
     <button data-tab="pos" class="on">Sell</button>
-    <button data-tab="calc" data-gated>Calculator</button>
-    <button data-tab="lib" data-gated>Materials <span class="count" id="libCount"></span></button>
-    <button data-tab="items" data-gated>Saved items <span class="count" id="itemCount"></span></button>
-    <button data-tab="reports" data-gated>Reports</button>
-    <button data-tab="settings" data-gated>Settings</button>
+    <button data-tab="calc" data-admin-only>Calculator</button>
+    <button data-tab="lib" data-admin-only>Materials <span class="count" id="libCount"></span></button>
+    <button data-tab="items" data-admin-only>Saved items <span class="count" id="itemCount"></span></button>
+    <button data-tab="reports" data-admin-only>Reports</button>
+    <button data-tab="settings" data-admin-only>Settings</button>
   </nav>
 
   <!-- ===== Calculator ===== -->
@@ -336,28 +336,49 @@
   <!-- ===== Settings ===== -->
   <section id="tab-settings" hidden>
     <div class="card">
-      <h2>Admins</h2>
+      <h2>Users</h2>
+      <div class="help">
+        <b>Admins</b> can reach every page. <b>Cashiers</b> can only use the Sell page — ring up
+        sales, void, and manage events — nothing about pricing, materials, or other accounts.
+      </div>
       <div class="hint" id="curAdminLine"></div>
       <table class="items-table">
-        <thead><tr><th>Name</th><th>Username</th><th>Added</th><th></th></tr></thead>
+        <thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Added</th><th></th></tr></thead>
         <tbody id="adminRows"></tbody>
       </table>
-      <div class="btn-row"><button class="btn" id="addAdminBtn">+ Add admin</button></div>
+      <div class="btn-row"><button class="btn" id="addAdminBtn">+ Add user</button></div>
       <div class="card" id="addAdminForm" hidden style="margin-top:16px;background:var(--bg)">
         <div class="row r3">
           <div><label for="newAdminName">Name</label><input id="newAdminName"></div>
           <div><label for="newAdminUsername">Username</label><input id="newAdminUsername"></div>
           <div><label for="newAdminPassword">Password</label><input id="newAdminPassword" type="password" placeholder="min 8 characters"></div>
         </div>
+        <div class="row r2" style="margin-top:12px">
+          <label class="role-pick"><input type="radio" name="newUserRole" value="cashier" checked><span><b>Cashier</b><small>Sell page only</small></span></label>
+          <label class="role-pick"><input type="radio" name="newUserRole" value="admin"><span><b>Admin</b><small>Full access</small></span></label>
+        </div>
         <div class="btn-row">
-          <button class="btn primary sm" id="newAdminSave">Add admin</button>
+          <button class="btn primary sm" id="newAdminSave">Add user</button>
           <button class="btn sm" id="newAdminCancel">Cancel</button>
         </div>
       </div>
     </div>
   </section>
 
-  <footer class="app-footer">© <span id="footYear"></span> Workshop POS · standalone edition</footer>
+  <footer class="app-footer">
+    © <span id="footYear"></span> Workshop POS · standalone edition
+    · <span id="appVersion"></span> · <button class="link" id="whatsNewLink">What's new</button>
+  </footer>
+
+  <div class="modal" id="releaseNotesModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" style="max-width:520px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h2 style="margin:0">What's new</h2>
+        <button class="icon-btn" id="releaseNotesClose" title="Close">×</button>
+      </div>
+      <div id="releaseNotesList" style="max-height:60vh;overflow-y:auto"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ===== Login / first-run setup ===== -->
@@ -377,11 +398,10 @@
     </div>
     <div class="btn-row">
       <button class="btn primary" id="loginSubmit">Sign in</button>
-      <button class="btn" id="loginCancel">Cancel</button>
     </div>
     <button class="link" id="forgotLink" style="margin-top:14px">Forgot your password?</button>
     <div class="hint" id="forgotPanel" hidden style="margin-top:8px">
-      Ask another admin to sign in and reset it for you from Settings → Admins. If you're the only admin and you're locked out, you'll need direct access to the server to reset it manually.
+      Ask an admin to sign in and reset it for you from Settings → Users. If you're the only admin and you're locked out, you'll need direct access to the server to reset it manually.
     </div>
   </div>
 </div>

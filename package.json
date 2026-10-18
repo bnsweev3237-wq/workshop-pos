@@ -1,6 +1,6 @@
 {
   "name": "workshop-pos",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Workshop pricing calculator & point of sale — standalone edition",
   "author": "Workshop POS",
   "main": "electron/main.js",

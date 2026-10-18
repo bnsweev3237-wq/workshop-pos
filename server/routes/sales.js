@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, requireLogin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -26,8 +26,8 @@ const toPublicSale = (r) => ({
 });
 const toFullSale = (r) => ({ ...toPublicSale(r), profit: r.profit });
 
-// Public: the Sell page's recent-sales list and receipts, and Reports' non-profit figures.
-router.get('/', (req, res) => {
+// Any logged-in user: the Sell page's recent-sales list and receipts, and Reports' non-profit figures.
+router.get('/', requireLogin, (req, res) => {
   const rows = db.prepare('SELECT * FROM sales ORDER BY created_at DESC').all();
   res.json(rows.map(toPublicSale));
 });
@@ -38,11 +38,11 @@ router.get('/full', requireAdmin, (req, res) => {
   res.json(rows.map(toFullSale));
 });
 
-// Public: checkout. Computes totals and profit server-side from the ticket lines (never
-// trusts client-sent totals), and atomically decrements stock for every real (non-test,
-// non-custom) line in the same transaction as recording the sale — a real transaction, so
-// two cashiers checking out the same item at once settle correctly with no special handling.
-router.post('/', (req, res) => {
+// Checkout. Computes totals and profit server-side from the ticket lines (never trusts
+// client-sent totals), and atomically decrements stock for every real (non-test, non-custom)
+// line in the same transaction as recording the sale — a real transaction, so two cashiers
+// checking out the same item at once settle correctly with no special handling.
+router.post('/', requireLogin, (req, res) => {
   const b = req.body || {};
   const lines = Array.isArray(b.lines) ? b.lines : [];
   if (!lines.length) return res.status(400).json({ error: 'empty_ticket' });
@@ -86,8 +86,8 @@ router.post('/', (req, res) => {
   res.json(toPublicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(row.id)));
 });
 
-// Public: void a sale (Sell page), restoring stock atomically.
-router.delete('/:id', (req, res) => {
+// Void a sale (Sell page), restoring stock atomically.
+router.delete('/:id', requireLogin, (req, res) => {
   const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(req.params.id);
   if (!sale) return res.status(404).json({ error: 'not_found' });
   const lines = JSON.parse(sale.lines_json);

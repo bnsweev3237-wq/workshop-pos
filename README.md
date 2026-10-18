@@ -14,19 +14,22 @@ Working end to end, tested:
 - Calculator (materials, labor, overhead, markup/margin/multiplier pricing)
 - Material library
 - Saved items (make/sell stock tracking)
-- Sell / point of sale — **does not require login**, by design, so cashiers can use it freely
-- Admin accounts — add/remove, reset passwords, all other pages gated behind login
+- Sell / point of sale — requires signing in as an admin **or cashier**; both can ring up
+  sales, void, and manage events, but only admins can see or change anything else
+- Admin and cashier accounts — add/remove, reset passwords, change role; everything outside
+  the Sell page is admin-only
 - Reports — core stats, revenue-by-day chart, top items, payment-type breakdown, a
   collapsible cost/profit-by-item breakdown (tap an item to see its materials drill-down),
   an events ledger with "true profit" (event sales profit minus booth/space cost, for
   splitting proceeds among partners), and PDF export via the browser's native print-to-PDF
   (no bundled PDF library, so it keeps working with no internet connection)
+- A version number and "What's new" release notes viewer in the footer
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
-window with its own per-install database in the OS's standard app-data folder.
+window with its own per-install database in the OS's standard app-data folder — and a GitHub
+Actions workflow that builds Windows/Mac/Linux installers automatically.
 
-Not yet ported from the artifact version (will follow in a later pass):
-- Release notes / changelog viewer
+Not yet built:
 - Docker packaging, licensing/update-subscription system
 
 ## Why SQLite, not Postgres
@@ -95,17 +98,21 @@ curious user," not "can't be reverse engineered by someone determined to."
 
 ## Security model
 
-- **Sell page**: fully public (no login) — ticket, checkout, event setup, void sale, test mode.
-- **Everything else** (Calculator, Materials, Saved Items, Settings): requires an admin login.
-- **Reports**: gated in the UI; the server additionally never sends per-sale profit data to an
-  unauthenticated request (a dedicated `/api/sales/full` endpoint, admin-only, is the only
-  place profit figures are served from).
-- **Item cost/materials**: the public item list (used by the Sell page) never includes cost or
-  materials data — only name, price, stock, and item number. Full item data requires login.
+- Every page requires a login — there's no anonymous access anymore. The only unauthenticated
+  route is `/api/meta/version` (just a version number and changelog).
+- **Sell page**: reachable by **admin or cashier** accounts — ticket, checkout, event setup,
+  void sale, test mode.
+- **Everything else** (Calculator, Materials, Saved Items, Settings, full Reports): **admin
+  only**. A cashier's server session is rejected with 403 on these routes even if they guess
+  the URL — this isn't just hidden in the UI.
+- **Reports**: the server never sends per-sale profit data to a non-admin request (a dedicated
+  `/api/sales/full` endpoint, admin-only, is the only place profit figures are served from).
+- **Item cost/materials**: the item list used by the Sell page never includes cost or materials
+  data — only name, price, stock, and item number. Full item data requires an admin login.
 - Passwords are bcrypt-hashed; sessions are server-side, cookie-based, httpOnly.
-- "Forgot password" recovery: any other logged-in admin can reset a colleague's password from
-  Settings. There's no outbound email in this version, so if you're the *only* admin and get
-  locked out, recovery requires direct access to the server (see below).
+- "Forgot password" recovery: any admin can reset anyone's password from Settings. There's no
+  outbound email in this version, so if you're the *only* admin and get locked out, recovery
+  requires direct access to the server (see below).
 
 ### Manually resetting a password (last-admin lockout)
 
@@ -113,7 +120,7 @@ curious user," not "can't be reverse engineered by someone determined to."
 node -e "
 const bcrypt = require('bcryptjs');
 const db = require('./server/db');
-db.prepare('UPDATE admins SET password_hash = ? WHERE username = ?')
+db.prepare('UPDATE users SET password_hash = ? WHERE username = ?')
   .run(bcrypt.hashSync('newpassword', 12), 'theusername');
 console.log('done');
 "
