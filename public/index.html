@@ -32,11 +32,11 @@
 
   <nav class="tabs" id="tabs">
     <button data-tab="pos" class="on">Sell</button>
-    <button data-tab="calc" data-admin-only>Calculator</button>
-    <button data-tab="lib" data-admin-only>Materials <span class="count" id="libCount"></span></button>
-    <button data-tab="items" data-admin-only>Saved items <span class="count" id="itemCount"></span></button>
-    <button data-tab="reports" data-admin-only>Reports</button>
-    <button data-tab="settings" data-admin-only>Settings</button>
+    <button data-tab="calc">Calculator</button>
+    <button data-tab="lib">Materials <span class="count" id="libCount"></span></button>
+    <button data-tab="items">Saved items <span class="count" id="itemCount"></span></button>
+    <button data-tab="reports">Reports</button>
+    <button data-tab="settings">Settings</button>
   </nav>
 
   <!-- ===== Calculator ===== -->
@@ -353,8 +353,10 @@
     <div class="card">
       <h2>Users</h2>
       <div class="help">
-        <b>Admins</b> can reach every page. <b>Cashiers</b> can only use the Sell page — ring up
-        sales, void, and manage events — nothing about pricing, materials, or other accounts.
+        <b>Admin</b> reaches every page. <b>Manager</b> reaches everything except Settings.
+        <b>Lead</b> gets Sell and Reports. <b>Cashier</b> gets Sell only — and a restricted
+        Sell at that: no custom items, no editing or ending an event, no changing a ticket
+        line's tax rate.
       </div>
       <div class="hint" id="curAdminLine"></div>
       <table class="items-table">
@@ -368,8 +370,10 @@
           <div><label for="newAdminUsername">Username</label><input id="newAdminUsername"></div>
           <div><label for="newAdminPassword">Password</label><input id="newAdminPassword" type="password" placeholder="min 8 characters"></div>
         </div>
-        <div class="row r2" style="margin-top:12px">
-          <label class="role-pick"><input type="radio" name="newUserRole" value="cashier" checked><span><b>Cashier</b><small>Sell page only</small></span></label>
+        <div class="row r4" style="margin-top:12px">
+          <label class="role-pick"><input type="radio" name="newUserRole" value="cashier" checked><span><b>Cashier</b><small>Sell only, restricted</small></span></label>
+          <label class="role-pick"><input type="radio" name="newUserRole" value="lead"><span><b>Lead</b><small>Sell + Reports</small></span></label>
+          <label class="role-pick"><input type="radio" name="newUserRole" value="manager"><span><b>Manager</b><small>Everything but Settings</small></span></label>
           <label class="role-pick"><input type="radio" name="newUserRole" value="admin"><span><b>Admin</b><small>Full access</small></span></label>
         </div>
         <div class="btn-row">

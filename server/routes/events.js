@@ -1,12 +1,9 @@
 const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireLogin } = require('../middleware/auth');
+const { requireLogin, requireEventManage } = require('../middleware/auth');
 
 const router = express.Router();
-// Event setup (booth cost, tax rates) lives on the Sell page itself, so any logged-in user —
-// admin or cashier — can manage it, same as the rest of that page.
-router.use(requireLogin);
 
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,
@@ -15,12 +12,14 @@ const toPublic = (r) => ({
   test: !!r.test, createdAt: r.created_at, endedAt: r.ended_at,
 });
 
-router.get('/', (req, res) => {
+// Viewing events (the break-even bar, past-event history) is fine for anyone logged in,
+// cashiers included — they just can't create, edit, or end one (see requireEventManage below).
+router.get('/', requireLogin, (req, res) => {
   const rows = db.prepare('SELECT * FROM events ORDER BY created_at DESC').all();
   res.json(rows.map(toPublic));
 });
 
-router.post('/', (req, res) => {
+router.post('/', requireEventManage, (req, res) => {
   const b = req.body || {};
   const row = {
     id: b.id || uid(),
@@ -47,7 +46,7 @@ router.post('/', (req, res) => {
   res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(row.id)));
 });
 
-router.delete('/:id', (req, res) => {
+router.delete('/:id', requireEventManage, (req, res) => {
   db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });

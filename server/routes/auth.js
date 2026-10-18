@@ -2,7 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, ROLES } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -64,8 +64,8 @@ router.post('/users', requireAdmin, (req, res) => {
   if (!name || !username || !password || password.length < 8) {
     return res.status(400).json({ error: 'invalid_input', message: 'Name, username, and an 8+ character password are required.' });
   }
-  if (role !== 'admin' && role !== 'cashier') {
-    return res.status(400).json({ error: 'invalid_input', message: 'Role must be admin or cashier.' });
+  if (!ROLES.includes(role)) {
+    return res.status(400).json({ error: 'invalid_input', message: `Role must be one of: ${ROLES.join(', ')}.` });
   }
   const existing = db.prepare('SELECT 1 FROM users WHERE username = ?').get(username.trim());
   if (existing) return res.status(409).json({ error: 'username_taken' });
@@ -89,10 +89,10 @@ router.post('/users/:id/password', requireAdmin, (req, res) => {
 // that would leave nobody able to reach Settings at all.
 router.post('/users/:id/role', requireAdmin, (req, res) => {
   const { role } = req.body || {};
-  if (role !== 'admin' && role !== 'cashier') return res.status(400).json({ error: 'invalid_input' });
+  if (!ROLES.includes(role)) return res.status(400).json({ error: 'invalid_input' });
   const target = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!target) return res.status(404).json({ error: 'not_found' });
-  if (target.role === 'admin' && role === 'cashier') {
+  if (target.role === 'admin' && role !== 'admin') {
     const adminCount = db.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin'").get().n;
     if (adminCount <= 1) return res.status(409).json({ error: 'last_admin', message: 'Can’t demote the last admin account.' });
   }

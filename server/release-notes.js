@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.6.0',
+    date: '2026-10-18',
+    notes: [
+      'Added two new account roles: Manager (everything but Settings) and Lead (Sell + Reports).',
+      'Cashier accounts are now more restricted on the Sell page: no custom items, no editing or ending an open event, and no overriding a ticket line’s tax rate.',
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-10-18',
     notes: [

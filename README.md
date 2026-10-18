@@ -14,10 +14,10 @@ Working end to end, tested:
 - Calculator (materials, labor, overhead, markup/margin/multiplier pricing)
 - Material library
 - Saved items (make/sell stock tracking)
-- Sell / point of sale — requires signing in as an admin **or cashier**; both can ring up
-  sales, void, and manage events, but only admins can see or change anything else
-- Admin and cashier accounts — add/remove, reset passwords, change role; everything outside
-  the Sell page is admin-only
+- Sell / point of sale — requires signing in; every role can reach it, but the base cashier
+  role is restricted there (see roles below)
+- Four account roles — add/remove, reset passwords, change role, all from Settings
+  (admin-only). See "Roles" below for exactly what each one can do.
 - Reports — core stats, revenue-by-day chart, top items, payment-type breakdown, a
   collapsible cost/profit-by-item breakdown (tap an item to see its materials drill-down),
   an events ledger with "true profit" (event sales profit minus booth/space cost, for
@@ -108,19 +108,43 @@ packaging is on by default, which deters casual browsing of the source but is no
 That's planned as a later phase; for now, treat this build as "not trivially editable by a
 curious user," not "can't be reverse engineered by someone determined to."
 
+## Roles
+
+Four account roles, each strictly a subset of the one above it, except that only admins and
+managers can edit pricing/materials:
+
+| | Sell | Reports | Calculator / Materials / Saved Items | Settings |
+|---|---|---|---|---|
+| **Admin** | ✓ full | ✓ | ✓ | ✓ |
+| **Manager** | ✓ full | ✓ | ✓ | — |
+| **Lead** | ✓ full | ✓ | — | — |
+| **Cashier** | restricted | — | — | — |
+
+A **cashier**'s Sell access is deliberately narrower than every other role's: no custom
+(off-catalog) ticket items, no creating/editing/ending an event, and no overriding a ticket
+line's tax rate — it always uses whatever the open event actually specifies. All three are
+enforced server-side (see `server/routes/sales.js` and `server/routes/events.js`), not just
+hidden in the UI — a cashier's session gets a 403 (or has the submitted value silently
+corrected) even on a direct API request, not just a missing button.
+
 ## Security model
 
 - Every page requires a login — there's no anonymous access anymore. The only unauthenticated
   route is `/api/meta/version` (just a version number and changelog).
-- **Sell page**: reachable by **admin or cashier** accounts — ticket, checkout, event setup,
-  void sale, test mode.
-- **Everything else** (Calculator, Materials, Saved Items, Settings, full Reports): **admin
-  only**. A cashier's server session is rejected with 403 on these routes even if they guess
-  the URL — this isn't just hidden in the UI.
-- **Reports**: the server never sends per-sale profit data to a non-admin request (a dedicated
-  `/api/sales/full` endpoint, admin-only, is the only place profit figures are served from).
+- **Sell page**: reachable by any role — ticket, checkout, event setup, void sale, test mode —
+  except that cashiers get the restricted version described above.
+- **Calculator / Materials / Saved Items**: admin and manager only.
+- **Reports**: admin, manager, and lead. The server never sends per-sale profit data to a role
+  below that (a dedicated `/api/sales/full` endpoint is the only place profit figures are
+  served from).
+- **Settings**: admin only, full stop — adding/removing accounts, changing roles, resetting
+  passwords, the sales-attribution toggle.
 - **Item cost/materials**: the item list used by the Sell page never includes cost or materials
-  data — only name, price, stock, and item number. Full item data requires an admin login.
+  data — only name, price, stock, and item number. Full item data requires Reports-level
+  access or higher.
+- Every one of the above is checked server-side on every request, independent of the UI — a
+  role's server session is rejected with 403 on a route it can't use even if it guesses the
+  URL or calls the API directly.
 - Passwords are bcrypt-hashed; sessions are server-side, cookie-based, httpOnly.
 - "Forgot password" recovery: any admin can reset anyone's password from Settings. There's no
   outbound email in this version, so if you're the *only* admin and get locked out, recovery

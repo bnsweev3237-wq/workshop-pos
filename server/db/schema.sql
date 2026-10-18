@@ -3,15 +3,18 @@
 -- scoping anywhere here. If this ever grows into multi-tenant SaaS, that column
 -- gets added to every table below at that point — not before.
 
--- Holds both admin and cashier accounts. Role is the only thing that distinguishes them:
--- admins can reach every page, cashiers only the Sell page (enforced server-side in
--- middleware/auth.js, not just hidden in the UI).
+-- Role is the only thing that distinguishes accounts — admin (everything), manager
+-- (everything but Settings), lead (Sell + Reports), cashier (Sell only, and a restricted
+-- Sell at that — see server/routes/sales.js and server/middleware/auth.js). Enforced
+-- server-side, not just hidden in the UI. Valid roles are validated in application code
+-- (server/routes/auth.js), not with a CHECK constraint here, so adding a role later never
+-- requires a schema migration on existing installs.
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   username TEXT NOT NULL UNIQUE COLLATE NOCASE,
   password_hash TEXT NOT NULL,
-  role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'cashier')),
+  role TEXT NOT NULL DEFAULT 'admin',
   created_at INTEGER NOT NULL
 );
 

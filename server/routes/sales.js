@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireAdmin, requireLogin } = require('../middleware/auth');
+const { requireReports, requireLogin } = require('../middleware/auth');
 const { getBool } = require('../lib/settings');
 
 const router = express.Router();
@@ -17,6 +17,14 @@ function lineTaxSplit(l, included) {
     return { amt, sub, tax: amt - sub };
   }
   return { amt, sub: amt, tax: amt * rate };
+}
+
+// Mirrors the client's defaultLineTaxRate() — used to force a cashier's line tax rate back
+// to what the event actually specifies, ignoring whatever the client sent for that line.
+function defaultLineTaxRate(event, tender) {
+  if (!event) return 0;
+  if (tender === 'cash' && event.cash_tax_rate != null) return Number(event.cash_tax_rate) || 0;
+  return Number(event.tax_rate) || 0;
 }
 
 // Public shape: everything a receipt needs, nothing about profit margins. `soldBy` is
@@ -35,8 +43,8 @@ router.get('/', requireLogin, (req, res) => {
   res.json(rows.map(toPublicSale));
 });
 
-// Admin: Reports needs profit per sale to compute cost breakdowns and "true profit."
-router.get('/full', requireAdmin, (req, res) => {
+// Reports (admin/manager/lead) needs profit per sale to compute cost breakdowns and "true profit."
+router.get('/full', requireReports, (req, res) => {
   const rows = db.prepare('SELECT * FROM sales ORDER BY created_at DESC').all();
   res.json(rows.map(toFullSale));
 });
@@ -47,10 +55,23 @@ router.get('/full', requireAdmin, (req, res) => {
 // checking out the same item at once settle correctly with no special handling.
 router.post('/', requireLogin, (req, res) => {
   const b = req.body || {};
-  const lines = Array.isArray(b.lines) ? b.lines : [];
-  if (!lines.length) return res.status(400).json({ error: 'empty_ticket' });
+  const rawLines = Array.isArray(b.lines) ? b.lines : [];
+  if (!rawLines.length) return res.status(400).json({ error: 'empty_ticket' });
   const included = !!b.taxIncluded;
   const test = !!b.test;
+
+  // Cashier restrictions, enforced here rather than trusted from the UI: no custom (non-
+  // catalog) items, and no per-line tax-rate override — their ticket always uses the event's
+  // actual configured rate, regardless of what the client submits.
+  let lines = rawLines;
+  if (req.user.role === 'cashier') {
+    if (rawLines.some((l) => !l.itemId)) {
+      return res.status(403).json({ error: 'custom_items_not_allowed', message: 'Custom items aren’t available on this account.' });
+    }
+    const event = b.eventId ? db.prepare('SELECT * FROM events WHERE id = ?').get(b.eventId) : null;
+    const forcedRate = defaultLineTaxRate(event, b.tender || 'cash');
+    lines = rawLines.map((l) => ({ ...l, taxRate: forcedRate }));
+  }
 
   let subtotal = 0, tax = 0, profit = 0;
   const stockChanges = [];

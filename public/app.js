@@ -22,14 +22,29 @@ async function api(method, path, body) {
 
 // ---------- Auth state ----------
 // Every page requires a login now — there's no anonymous Sell-page access anymore. Role is
-// the only thing that changes what's reachable: cashiers get the Sell page only, admins get
-// everything. The server enforces this independently (see server/middleware/auth.js); this
-// is just the UI following suit so cashiers aren't shown buttons that would 403.
+// the only thing that changes what's reachable. The server enforces this independently (see
+// server/middleware/auth.js); this is just the UI following suit so an account isn't shown
+// buttons that would 403. Keep in sync with the role groups there:
+//   admin:   everything
+//   manager: everything but Settings
+//   lead:    Sell + Reports
+//   cashier: Sell only (and a restricted Sell — see the POS section below)
+const ROLE_TABS = {
+  admin: ['pos', 'calc', 'lib', 'items', 'reports', 'settings'],
+  manager: ['pos', 'calc', 'lib', 'items', 'reports'],
+  lead: ['pos', 'reports'],
+  cashier: ['pos'],
+};
+const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', lead: 'Lead', cashier: 'Cashier' };
+// The base cashier role gets a restricted Sell page on top of being Sell-only: no custom
+// items, no editing/ending an event, no overriding a ticket line's tax rate. Enforced
+// server-side too (see server/routes/sales.js, events.js) — this just keeps the UI from
+// showing controls that would 403 anyway.
+const isRestrictedCashier = () => !!me && me.role === 'cashier';
 let me = null;
 let needsSetup = false;
 let pendingTab = null;
 let currentTab = 'pos';
-const ADMIN_TABS = ['calc', 'lib', 'items', 'reports', 'settings'];
 
 function onUnauthorized() {
   me = null;
@@ -47,11 +62,18 @@ async function refreshAuthStatus() {
 
 function updateAuthUI() {
   const isAdmin = !!me && me.role === 'admin';
-  $('authStatus').textContent = me ? `Signed in as ${me.name}${me.role === 'cashier' ? ' · Cashier' : ''}` : '';
-  $('exportBtn').hidden = !isAdmin;
-  $('importBtn').hidden = !isAdmin;
+  const canManageItems = !!me && (me.role === 'admin' || me.role === 'manager');
+  const myTabs = me ? ROLE_TABS[me.role] || ['pos'] : [];
+  $('authStatus').textContent = me ? `Signed in as ${me.name}${me.role !== 'admin' ? ' · ' + ROLE_LABEL[me.role] : ''}` : '';
+  $('exportBtn').hidden = !canManageItems;
+  $('importBtn').hidden = !canManageItems;
   $('signOutBtn').hidden = !me;
-  document.querySelectorAll('#tabs button[data-admin-only]').forEach(b => { b.hidden = !isAdmin; });
+  document.querySelectorAll('#tabs button[data-tab]').forEach(b => {
+    if (b.dataset.tab === 'pos') return;
+    b.hidden = !myTabs.includes(b.dataset.tab);
+  });
+  $('posCustomToggle').hidden = isRestrictedCashier();
+  if (isRestrictedCashier()) { $('posCustomRow').hidden = true; $('posCustomAddRow').hidden = true; }
 }
 $('signOutBtn').onclick = () => logout();
 
@@ -67,7 +89,7 @@ function openLogin(forTab) {
     $('forgotLink').hidden = true;
   } else {
     $('loginTitle').textContent = 'Sign in';
-    $('loginSub').textContent = 'Sign in as an admin or cashier to use Craftium.';
+    $('loginSub').textContent = 'Sign in to use Craftium.';
     $('loginFields').hidden = false;
     $('setupFields').hidden = true;
     $('forgotLink').hidden = false;
@@ -93,7 +115,7 @@ $('loginSubmit').onclick = async () => {
       me = r.me;
     }
     updateAuthUI();
-    const dest = (pendingTab && (me.role === 'admin' || !ADMIN_TABS.includes(pendingTab))) ? pendingTab : 'pos';
+    const dest = (pendingTab && (ROLE_TABS[me.role] || ['pos']).includes(pendingTab)) ? pendingTab : 'pos';
     closeLogin();
     await afterLogin();
     showTab(dest);
@@ -127,7 +149,7 @@ async function afterLogin() {
 // ---------- Tabs ----------
 function showTab(t) {
   if (!me) { openLogin(t); return; }
-  if (ADMIN_TABS.includes(t) && me.role !== 'admin') t = 'pos';
+  if (!(ROLE_TABS[me.role] || ['pos']).includes(t)) t = 'pos';
   currentTab = t;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   ['calc', 'lib', 'items', 'pos', 'reports', 'settings'].forEach(x => $('tab-' + x).hidden = x !== t);
@@ -579,7 +601,8 @@ function renderTicket() {
     row.querySelector('.amt').textContent = money(l.price * l.qty);
     const taxInput = row.querySelector('.lineTax');
     taxInput.value = l.taxRate; taxInput.classList.toggle('overridden', !!l.taxOverridden);
-    taxInput.addEventListener('input', () => { l.taxRate = taxInput.value; l.taxOverridden = true; taxInput.classList.add('overridden'); recalcTicketTotals(); });
+    if (isRestrictedCashier()) { taxInput.disabled = true; taxInput.title = 'Tax rate (set by the event)'; }
+    else taxInput.addEventListener('input', () => { l.taxRate = taxInput.value; l.taxOverridden = true; taxInput.classList.add('overridden'); recalcTicketTotals(); });
     row.querySelector('.minus').onclick = () => { l.qty--; if (l.qty <= 0) ticket = ticket.filter(x => x !== l); renderTicket(); };
     row.querySelector('.plus').onclick = () => { l.qty++; renderTicket(); };
     row.querySelector('.del').onclick = () => { ticket = ticket.filter(x => x !== l); renderTicket(); };
@@ -687,10 +710,12 @@ const eventSales = ev => sales.filter(s => s.eventId === ev.id);
 const eventProfit = ev => eventSales(ev).reduce((sum, s) => sum + num(s.profit || 0), 0); // public sales have no profit; see Reports for real totals
 async function loadEvents() { events = await api('GET', '/api/events'); renderEventWidget(); renderEventHistory(); }
 function renderEventWidget() {
-  const bar = $('eventBar'), link = $('eventSetupLink');
+  const bar = $('eventBar'), link = $('eventSetupLink'), gear = $('eventGear');
   const ev = openEvent();
-  if (!ev) { bar.hidden = true; link.hidden = false; return; }
+  const restricted = isRestrictedCashier();
+  if (!ev) { bar.hidden = true; link.hidden = restricted; return; }
   link.hidden = true; bar.hidden = false;
+  gear.hidden = restricted;
   const { startMs, days } = eventWindow(ev);
   const cost = num(ev.cost);
   const evSalesList = eventSales(ev);
@@ -1027,21 +1052,25 @@ function renderUsers() {
   $('curAdminLine').textContent = `Signed in as ${me.name} (${me.username})`;
   const tb = $('adminRows'); tb.innerHTML = '';
   const adminCount = admins.filter(a => a.role === 'admin').length;
+  const ROLE_ORDER = ['admin', 'manager', 'lead', 'cashier'];
   for (const a of admins) {
     const isLastAdmin = a.role === 'admin' && adminCount <= 1;
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${esc(a.name)}${a.id === me.id ? ' <small style="color:var(--muted)">(you)</small>' : ''}</td><td>${esc(a.username)}</td>
-      <td><span class="role-badge ${a.role}">${a.role === 'admin' ? 'Admin' : 'Cashier'}</span></td>
+      <td><span class="role-badge ${a.role}"></span></td>
       <td>${new Date(a.createdAt).toLocaleDateString()}</td>
       <td class="acts">
-        <button class="btn sm toggleRole"${isLastAdmin ? ' disabled title="Can’t demote the last admin"' : ''}>${a.role === 'admin' ? 'Make cashier' : 'Make admin'}</button>
+        <select class="roleSelect"${isLastAdmin ? ' disabled title="Can’t change the last admin’s role"' : ''}>
+          ${ROLE_ORDER.map(r => `<option value="${r}"${r === a.role ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
+        </select>
         <button class="btn sm resetPw">Reset password</button>
         <button class="icon-btn del" title="Remove account"${isLastAdmin ? ' disabled title="Can’t remove the last admin"' : ''}>×</button>
       </td>`;
-    tr.querySelector('.toggleRole').onclick = async () => {
-      const newRole = a.role === 'admin' ? 'cashier' : 'admin';
-      try { await api('POST', `/api/auth/users/${a.id}/role`, { role: newRole }); toast(`${a.name} is now ${newRole === 'admin' ? 'an admin' : 'a cashier'}`); await loadUsers(); }
-      catch (e) { toast(e.message || 'Could not change role'); }
+    tr.querySelector('.role-badge').textContent = ROLE_LABEL[a.role] || a.role;
+    tr.querySelector('.roleSelect').onchange = async (e) => {
+      const newRole = e.target.value;
+      try { await api('POST', `/api/auth/users/${a.id}/role`, { role: newRole }); toast(`${a.name} is now ${ROLE_LABEL[newRole]}`); await loadUsers(); }
+      catch (err) { e.target.value = a.role; toast(err.message || 'Could not change role'); }
     };
     tr.querySelector('.resetPw').onclick = async () => {
       const pw = prompt(`New password for ${a.name} (min 8 characters):`);
@@ -1050,7 +1079,7 @@ function renderUsers() {
       catch (e) { toast(e.message || 'Could not update password'); }
     };
     tr.querySelector('.del').onclick = async () => {
-      if (!await askConfirm(`Remove ${a.role} account “${a.name}”?`, 'Remove account')) return;
+      if (!await askConfirm(`Remove ${ROLE_LABEL[a.role]} account “${a.name}”?`, 'Remove account')) return;
       try { await api('DELETE', '/api/auth/users/' + a.id); toast('Account removed'); if (a.id === me.id) { me = null; updateAuthUI(); openLogin('pos'); return; } await loadUsers(); }
       catch (e) { toast(e.message || 'Could not remove account'); }
     };

@@ -1,10 +1,10 @@
 const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireAdmin } = require('../middleware/auth');
+const { requireManageItems } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(requireAdmin); // Materials tab is admin-only, full stop — no Sell-page use case touches it.
+router.use(requireManageItems); // Materials tab: admin and manager only.
 
 const toPublic = (r) => ({ id: r.id, name: r.name, price: r.price, yield: r.yield, stock: r.stock, low: r.low, created: r.created_at });
 

@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
-const { requireAdmin, requireLogin } = require('../middleware/auth');
+const { requireManageItems, requireReports, requireLogin } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -24,13 +24,14 @@ router.get('/', requireLogin, (req, res) => {
   res.json(rows.map(toPublicItem));
 });
 
-// Admin: Calculator / Saved Items / Reports need the full picture.
-router.get('/full', requireAdmin, (req, res) => {
+// Calculator / Saved Items (admin + manager, who can edit) and Reports (+ lead, read-only
+// there) all need the full picture — cost, materials, the pricing formula.
+router.get('/full', requireReports, (req, res) => {
   const rows = db.prepare('SELECT * FROM items ORDER BY saved_at DESC').all();
   res.json(rows.map(toFullItem));
 });
 
-router.post('/', requireAdmin, (req, res) => {
+router.post('/', requireManageItems, (req, res) => {
   const b = req.body || {};
   const isUpdate = !!b.id;
   const itemNo = isUpdate
@@ -65,7 +66,7 @@ router.post('/', requireAdmin, (req, res) => {
   res.json(toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(row.id)));
 });
 
-router.delete('/:id', requireAdmin, (req, res) => {
+router.delete('/:id', requireManageItems, (req, res) => {
   db.prepare('DELETE FROM items WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
@@ -73,7 +74,7 @@ router.delete('/:id', requireAdmin, (req, res) => {
 // Make a batch: atomically adds to this item's stock and deducts the materials it used.
 // A real SQL transaction — the lease/retry dance the artifact needed (no transactions
 // available there) isn't needed at all against a real database.
-router.post('/:id/make', requireAdmin, (req, res) => {
+router.post('/:id/make', requireManageItems, (req, res) => {
   const qty = Math.max(1, Math.round(Number(req.body?.qty)) || 1);
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
@@ -94,7 +95,7 @@ router.post('/:id/make', requireAdmin, (req, res) => {
   res.json({ ok: true, short, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id)) });
 });
 
-router.post('/:id/sell', requireAdmin, (req, res) => {
+router.post('/:id/sell', requireManageItems, (req, res) => {
   const qty = Math.max(1, Math.round(Number(req.body?.qty)) || 1);
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });

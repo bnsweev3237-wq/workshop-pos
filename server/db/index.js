@@ -15,4 +15,38 @@ db.pragma('foreign_keys = ON');
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
 db.exec(schema);
 
+// `CREATE TABLE IF NOT EXISTS` is a no-op on an install that already has a `users` table —
+// so an older install's table still carries the CHECK constraint that used to limit role to
+// 'admin'/'cashier', even after upgrading to code that knows about 'manager'/'lead'. SQLite
+// can't ALTER a CHECK constraint away directly; this is the standard rebuild-and-copy
+// workaround, done once, automatically, the first time the new code runs against old data.
+const usersTable = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+if (usersTable && /CHECK/i.test(usersTable.sql)) {
+  // Two pragmas have to be set outside the transaction (SQLite ignores changes to either made
+  // inside a BEGIN): legacy_alter_table=ON stops the rename below from rewriting sales.user_id
+  // to follow it (it should keep saying "REFERENCES users(id)" untouched, which then correctly
+  // resolves once `users` exists again under that name), and foreign_keys=OFF avoids a
+  // constraint error from the moment in between where `users` briefly doesn't exist at all.
+  // Both are restored to their normal values once the rebuild-and-copy is done.
+  db.pragma('foreign_keys = OFF');
+  db.exec('PRAGMA legacy_alter_table = ON;');
+  db.exec('BEGIN;');
+  db.exec(`
+    ALTER TABLE users RENAME TO users_old_checked;
+    CREATE TABLE users (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      password_hash TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'admin',
+      created_at INTEGER NOT NULL
+    );
+    INSERT INTO users SELECT * FROM users_old_checked;
+    DROP TABLE users_old_checked;
+  `);
+  db.exec('COMMIT;');
+  db.exec('PRAGMA legacy_alter_table = OFF;');
+  db.pragma('foreign_keys = ON');
+}
+
 module.exports = db;
