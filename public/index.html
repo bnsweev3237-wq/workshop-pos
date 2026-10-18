@@ -1,0 +1,381 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Workshop POS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<div class="wrap" id="app" hidden>
+  <header>
+    <div>
+      <h1>Workshop POS</h1>
+      <p>Work out what each item costs you and what to sell it for.</p>
+    </div>
+    <div class="head-side">
+      <span class="test-badge" id="testModeBadge" hidden title="Sales and events you create now are practice-only">🧪 Test mode</span>
+      <span class="status" id="authStatus"></span>
+      <div class="btn-row" style="margin:0">
+        <button class="btn sm" id="exportBtn" hidden title="Download all items and materials as a backup file">⤓ Export backup</button>
+        <button class="btn sm" id="importBtn" hidden title="Load items and materials from a backup file">⤒ Import backup</button>
+        <input type="file" id="importFile" accept=".json,application/json" hidden>
+      </div>
+    </div>
+  </header>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="pos" class="on">Sell</button>
+    <button data-tab="calc" data-gated>Calculator</button>
+    <button data-tab="lib" data-gated>Materials <span class="count" id="libCount"></span></button>
+    <button data-tab="items" data-gated>Saved items <span class="count" id="itemCount"></span></button>
+    <button data-tab="reports" data-gated>Reports</button>
+    <button data-tab="settings" data-gated>Settings</button>
+  </nav>
+
+  <!-- ===== Calculator ===== -->
+  <section id="tab-calc" hidden>
+    <div class="grid">
+      <main>
+        <div class="card">
+          <h2>Item</h2>
+          <label for="itemName">Item name</label><input id="itemName" placeholder="e.g. Wooden keychain">
+          <div class="hint" id="itemNoHint" hidden></div>
+          <div class="row r2" style="margin-top:12px">
+            <div><label for="stock">Current stock (finished items on hand)</label><input id="stock" type="number" min="0" step="1" value="0"></div>
+            <div><label for="itemLow">Low stock alert at</label><input id="itemLow" type="number" min="0" step="1" placeholder="optional"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Materials</h2>
+          <div class="help">
+            Pick a material from your <b>library</b> (start typing its name) or enter a one-off.
+            For each, enter <b>what you paid</b>, <b>how many pieces you get out of it</b>, and <b>how many one item uses</b>.
+            New materials are added to your library when you save the item — untick <b>Library</b> on a row to keep it a one-off instead.
+          </div>
+          <table class="erow-table">
+            <thead><tr><th>Material</th><th>Price paid</th><th>Makes / pack of</th><th>Used per item</th><th class="r">Per item</th><th></th></tr></thead>
+            <tbody id="mats"></tbody>
+          </table>
+          <datalist id="libList"></datalist>
+          <div class="btn-row"><button class="btn" id="addMat">+ Add material</button></div>
+        </div>
+
+        <div class="card">
+          <h2>Labor &amp; Overhead</h2>
+          <div class="seg" id="costSeg">
+            <button data-mode="none" class="on">None</button>
+            <button data-mode="overhead">Overhead only</button>
+            <button data-mode="labor">Labor only</button>
+            <button data-mode="both">Both</button>
+          </div>
+          <div class="row r3" id="laborRow">
+            <div class="labor-field"><label for="minutes">Labor minutes per item</label><input id="minutes" type="number" min="0" step="1" value="0"></div>
+            <div class="labor-field"><label for="rate">Hourly rate ($)</label><input id="rate" type="number" min="0" step="0.5" value="20"></div>
+            <div class="ovh-field"><label for="overhead">Overhead (%)</label><input id="overhead" type="number" min="0" step="1" value="10"></div>
+          </div>
+          <div class="hint">Overhead covers tools, utilities, packaging, fees, etc. When included, it's applied to whichever of materials + labor are included.</div>
+        </div>
+
+        <div class="card">
+          <h2>Pricing</h2>
+          <div class="seg" id="mode">
+            <button data-mode="markup" class="on">Markup %</button>
+            <button data-mode="margin">Profit margin %</button>
+            <button data-mode="multiplier">Multiplier</button>
+          </div>
+          <div class="row r2">
+            <div><label for="pct" id="pctLabel">Markup (%)</label><input id="pct" type="number" min="0" step="1" value="50"></div>
+            <div><label for="round">Round price</label>
+              <select id="round">
+                <option value="none">Exact</option>
+                <option value="cent99">Ends in .99</option>
+                <option value="whole" selected>Whole dollar</option>
+                <option value="five">Nearest $5</option>
+              </select>
+            </div>
+          </div>
+          <div class="hint" id="modeHint"></div>
+          <div class="override-row">
+            <label for="override">Your price (optional override)</label>
+            <input id="override" type="number" min="0" step="0.01">
+            <div class="hint">Set your own sales price, e.g. to match the market or a price you've already advertised. Leave blank to use the suggested price.</div>
+          </div>
+        </div>
+      </main>
+
+      <aside class="summary">
+        <div class="card">
+          <div class="price-box" id="priceBox">
+            <div class="lbl" id="priceLbl">Suggested price</div>
+            <div class="big" id="price">$0.00</div>
+            <div class="sub" id="priceSub">per finished item</div>
+          </div>
+          <div class="line"><span>Materials</span><span id="sMat">$0.00</span></div>
+          <div class="line"><span>Labor</span><span id="sLab">$0.00</span></div>
+          <div class="line"><span>Overhead</span><span id="sOh">$0.00</span></div>
+          <div class="line total"><span>Cost per item</span><span id="sCost">$0.00</span></div>
+          <div class="line profit"><span>Profit per item</span><span id="sProfit">$0.00</span></div>
+          <div class="line" style="border:none"><span>Actual margin</span><span id="sMargin">0%</span></div>
+          <div class="bar" id="bar"></div>
+          <div class="legend">
+            <span><i style="background:#c99a5b"></i>Materials</span>
+            <span><i style="background:#5b8ac9"></i>Labor</span>
+            <span><i style="background:#9a7bc0"></i>Overhead</span>
+            <span><i style="background:var(--accent)"></i>Profit</span>
+          </div>
+          <div class="btn-row">
+            <button class="btn primary" id="save">Save item</button>
+            <button class="btn" id="reset">New item</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===== Material library ===== -->
+  <section id="tab-lib" hidden>
+    <div class="card">
+      <h2>Material library</h2>
+      <div class="help">
+        Enter each material you buy <b>once</b>. Items that use it stay linked, so when a supplier's price changes,
+        update it here and every item recalculates. Keep <b>In stock</b> up to date to get low-stock warnings.
+      </div>
+      <div class="banner" id="lowMatBanner" hidden><span id="lowMatText"></span></div>
+      <table class="erow-table" id="libTable">
+        <thead><tr><th>Material</th><th>Price paid</th><th>Makes / pack of</th><th class="r">Per piece</th><th class="r">In stock</th><th class="r">Low at</th><th class="r">Used in</th><th></th></tr></thead>
+        <tbody id="libRows"></tbody>
+      </table>
+      <div class="empty" id="libEmpty">No materials yet.</div>
+      <div class="btn-row"><button class="btn" id="addLib">+ Add material</button></div>
+    </div>
+  </section>
+
+  <!-- ===== Saved items ===== -->
+  <section id="tab-items" hidden>
+    <div class="card">
+      <h2>Saved items</h2>
+      <div class="banner" id="changedBanner" hidden>
+        <span id="changedText"></span>
+        <button class="btn sm" id="acceptAll">Accept all new prices</button>
+      </div>
+      <div class="banner" id="lowItemBanner" hidden><span id="lowItemText"></span></div>
+      <div class="scroll">
+        <table class="items-table">
+          <thead><tr><th>Item</th><th class="r">Cost now</th><th class="r">Sales price</th><th class="r">Stock</th><th></th></tr></thead>
+          <tbody id="itemRows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="itemsEmpty">Nothing saved yet.</div>
+    </div>
+  </section>
+
+  <!-- ===== Point of sale (public — no login required) ===== -->
+  <section id="tab-pos">
+    <div class="test-row" id="testOffRow">
+      <button class="event-link" id="testModeOnLink" style="margin-bottom:16px">🧪 Enter test / training mode</button>
+      <button class="event-link" id="purgeTestOffLink" hidden style="margin-bottom:16px">Purge leftover test data</button>
+    </div>
+    <div class="banner" id="testBanner" hidden>
+      <span>🧪 <b>Test mode is on.</b> Events and sales you create now are practice-only.</span>
+      <div class="btn-row" style="margin:0">
+        <button class="btn sm" id="purgeTestLink">Clear test data now</button>
+        <button class="btn sm" id="testModeOffLink">Exit &amp; purge test data</button>
+      </div>
+    </div>
+    <button class="event-link" id="eventSetupLink" hidden>+ Set up an event (break-even tracker)</button>
+    <div class="event-bar-wrap" id="eventBar" hidden>
+      <div class="event-top">
+        <div>
+          <div class="event-title" id="eventTitle"></div>
+          <div class="event-sub" id="eventSub"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span class="event-pct" id="eventPct"></span>
+          <button class="icon-btn gear" id="eventGear" title="Edit event">⚙</button>
+        </div>
+      </div>
+      <div class="event-bar"><div class="event-bar-fill" id="eventFill"></div></div>
+    </div>
+    <div class="card" id="eventForm" hidden>
+      <h2>Event</h2>
+      <div class="row r2">
+        <div><label for="evName">Event name</label><input id="evName" placeholder="optional, e.g. Spring Craft Fair"></div>
+        <div><label for="evCost">Space / booth cost ($)</label><input id="evCost" type="number" min="0" step="0.01"></div>
+      </div>
+      <div class="row r2" style="margin-top:12px">
+        <div><label for="evStart">Start date</label><input id="evStart" type="date"></div>
+        <div><label for="evDays">Number of days</label><input id="evDays" type="number" min="1" step="1" value="1"></div>
+      </div>
+      <div class="row r2" style="margin-top:12px">
+        <div><label for="evTax">Sales tax rate (%)</label><input id="evTax" type="number" min="0" step="0.1" placeholder="0"></div>
+        <div><label for="evCashTax">Cash tax rate (%)</label><input id="evCashTax" type="number" min="0" step="0.1" placeholder="same as sales rate"></div>
+      </div>
+      <div class="row r2" style="margin-top:12px">
+        <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedOther"><span>Card / Other: tax included in price</span></label>
+        <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedCash"><span>Cash: tax included in price</span></label>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary sm" id="evSave">Save</button>
+        <button class="btn sm" id="evEnd">End event</button>
+        <button class="btn sm" id="evClose">Close</button>
+      </div>
+    </div>
+    <div class="grid">
+      <main>
+        <div class="card">
+          <h2>Add to ticket</h2>
+          <input id="posSearch" placeholder="Search your saved items…" style="margin-bottom:12px">
+          <div class="pos-grid" id="posItems"></div>
+          <div class="empty" id="posItemsEmpty" hidden>No saved items yet.</div>
+          <div class="btn-row"><button class="btn" id="posCustomToggle">+ Custom item</button></div>
+          <div class="row r3" id="posCustomRow" hidden style="margin-top:12px">
+            <div><label for="posCustomName">Name</label><input id="posCustomName" placeholder="e.g. Custom order"></div>
+            <div><label for="posCustomPrice">Price ($)</label><input id="posCustomPrice" type="number" min="0" step="0.01"></div>
+            <div><label for="posCustomQty">Qty</label><input id="posCustomQty" type="number" min="1" step="1" value="1"></div>
+          </div>
+          <div class="btn-row" id="posCustomAddRow" hidden><button class="btn primary sm" id="posCustomAdd">Add to ticket</button></div>
+        </div>
+
+        <div class="card">
+          <h2 id="salesHeading">Recent sales</h2>
+          <div id="salesList"></div>
+          <div class="empty" id="salesEmpty">No sales yet.</div>
+        </div>
+
+        <div class="card" id="eventHistoryCard" hidden>
+          <h2>Past events</h2>
+          <div id="eventHistoryList"></div>
+        </div>
+      </main>
+
+      <aside class="summary">
+        <div class="card">
+          <h2>Ticket</h2>
+          <div id="ticketLines"></div>
+          <div class="empty" id="ticketEmpty">Tap an item to add it to the ticket.</div>
+          <div class="line"><span>Subtotal</span><span id="tSub">$0.00</span></div>
+          <div class="line"><span id="tTaxLabel">Tax</span><span id="tTax">$0.00</span></div>
+          <div class="line total"><span>Total due</span><span id="tTotal">$0.00</span></div>
+
+          <div class="seg" id="tenderSeg" style="margin-top:16px">
+            <button data-tender="cash" class="on">Cash</button>
+            <button data-tender="other">Card / Other</button>
+          </div>
+          <div class="row r2" id="cashRow">
+            <div><label for="received">Received ($)</label><input id="received" type="number" min="0" step="0.01"></div>
+            <div><label for="changeDue">Change due</label><input id="changeDue" readonly></div>
+          </div>
+
+          <div class="btn-row">
+            <button class="btn primary" id="checkout">Complete sale</button>
+            <button class="btn" id="clearTicket">Clear ticket</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===== Reports ===== -->
+  <section id="tab-reports" hidden>
+    <div class="card">
+      <h2>Sales reports</h2>
+      <div class="seg" id="rptRangeSeg">
+        <button data-range="today">Today</button>
+        <button data-range="7" class="on">Last 7 days</button>
+        <button data-range="30">Last 30 days</button>
+        <button data-range="all">All time</button>
+      </div>
+      <div class="hint" id="rptRangeHint"></div>
+      <div class="stat-grid" id="rptStats" style="margin-top:16px"></div>
+    </div>
+    <div class="card">
+      <h2>Revenue by day</h2>
+      <div class="rpt-chart" id="rptChart"></div>
+      <div class="empty" id="rptChartEmpty" hidden>No sales in this range yet.</div>
+    </div>
+    <div class="grid">
+      <main>
+        <div class="card">
+          <h2>Top items</h2>
+          <div id="rptTopList"></div>
+          <div class="empty" id="rptTopEmpty" hidden>No sales in this range yet.</div>
+        </div>
+      </main>
+      <aside class="summary">
+        <div class="card">
+          <h2>Payment type</h2>
+          <div class="stat-grid" id="rptTender"></div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ===== Settings ===== -->
+  <section id="tab-settings" hidden>
+    <div class="card">
+      <h2>Admins</h2>
+      <div class="hint" id="curAdminLine"></div>
+      <table class="items-table">
+        <thead><tr><th>Name</th><th>Username</th><th>Added</th><th></th></tr></thead>
+        <tbody id="adminRows"></tbody>
+      </table>
+      <div class="btn-row"><button class="btn" id="addAdminBtn">+ Add admin</button></div>
+      <div class="card" id="addAdminForm" hidden style="margin-top:16px;background:var(--bg)">
+        <div class="row r3">
+          <div><label for="newAdminName">Name</label><input id="newAdminName"></div>
+          <div><label for="newAdminUsername">Username</label><input id="newAdminUsername"></div>
+          <div><label for="newAdminPassword">Password</label><input id="newAdminPassword" type="password" placeholder="min 8 characters"></div>
+        </div>
+        <div class="btn-row">
+          <button class="btn primary sm" id="newAdminSave">Add admin</button>
+          <button class="btn sm" id="newAdminCancel">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="app-footer">© <span id="footYear"></span> Workshop POS · standalone edition</footer>
+</div>
+
+<!-- ===== Login / first-run setup ===== -->
+<div class="login-screen" id="loginScreen" hidden>
+  <div class="login-card">
+    <h1 id="loginTitle">Sign in</h1>
+    <p class="hint" id="loginSub">Admin sign-in — cashiers don't need this to use the Sell page.</p>
+    <div id="loginError" class="login-error" hidden></div>
+    <div id="loginFields">
+      <label for="loginUsername">Username</label><input id="loginUsername" autocomplete="username">
+      <label for="loginPassword" style="margin-top:10px">Password</label><input id="loginPassword" type="password" autocomplete="current-password">
+    </div>
+    <div id="setupFields" hidden>
+      <label for="setupName">Your name</label><input id="setupName">
+      <label for="setupUsername" style="margin-top:10px">Choose a username</label><input id="setupUsername">
+      <label for="setupPassword" style="margin-top:10px">Choose a password</label><input id="setupPassword" type="password" placeholder="min 8 characters">
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" id="loginSubmit">Sign in</button>
+      <button class="btn" id="loginCancel">Cancel</button>
+    </div>
+    <button class="link" id="forgotLink" style="margin-top:14px">Forgot your password?</button>
+    <div class="hint" id="forgotPanel" hidden style="margin-top:8px">
+      Ask another admin to sign in and reset it for you from Settings → Admins. If you're the only admin and you're locked out, you'll need direct access to the server to reset it manually.
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="modal" id="modal" hidden>
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <p id="modalText"></p>
+    <div class="btn-row"><button class="btn danger" id="modalOk">Delete</button><button class="btn" id="modalCancel">Cancel</button></div>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>
