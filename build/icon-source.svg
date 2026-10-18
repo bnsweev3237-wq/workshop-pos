@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3a9470"/>
+      <stop offset="1" stop-color="#1d4f38"/>
+    </linearGradient>
+    <linearGradient id="gem" x1="644" y1="442" x2="756" y2="582" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#e8a23c"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="226" fill="url(#bg)"/>
+  <path d="M 734.94 712.74 A 300 300 0 1 1 734.94 311.26 L 636.85 399.59 A 168 168 0 1 0 636.85 624.41 Z" fill="#f7f4ec"/>
+  <polygon points="644,498 700,442 756,498 700,582" fill="url(#gem)" stroke="#1d4f38" stroke-width="6" stroke-linejoin="round"/>
+  <polyline points="644,498 670,498 700,442" fill="none" stroke="#1d4f38" stroke-width="5" stroke-linejoin="round" opacity="0.55"/>
+  <polyline points="756,498 730,498 700,442" fill="none" stroke="#1d4f38" stroke-width="5" stroke-linejoin="round" opacity="0.55"/>
+  <polyline points="670,498 730,498" fill="none" stroke="#1d4f38" stroke-width="5" opacity="0.4"/>
+</svg>

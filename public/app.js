@@ -67,7 +67,7 @@ function openLogin(forTab) {
     $('forgotLink').hidden = true;
   } else {
     $('loginTitle').textContent = 'Sign in';
-    $('loginSub').textContent = 'Sign in as an admin or cashier to use Workshop POS.';
+    $('loginSub').textContent = 'Sign in as an admin or cashier to use Craftium.';
     $('loginFields').hidden = false;
     $('setupFields').hidden = true;
     $('forgotLink').hidden = false;
@@ -1074,9 +1074,9 @@ $('newAdminSave').onclick = async () => {
 // ---------- Backup ----------
 $('exportBtn').onclick = async () => {
   const [allItems, allMats, allSales, allEvents] = await Promise.all([api('GET', '/api/items/full'), api('GET', '/api/materials'), api('GET', '/api/sales/full'), api('GET', '/api/events')]);
-  const data = { app: 'workshop-pos', version: 1, exportedAt: new Date().toISOString(), materials: allMats, items: allItems, sales: allSales, events: allEvents };
+  const data = { app: 'craftium', version: 1, exportedAt: new Date().toISOString(), materials: allMats, items: allItems, sales: allSales, events: allEvents };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `workshop-pos-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `craftium-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   toast(`Exported ${allItems.length} items and ${allMats.length} materials`);
 };
@@ -1085,7 +1085,7 @@ $('importFile').onchange = async e => {
   const f = e.target.files[0]; e.target.value = ''; if (!f) return;
   let d;
   try { d = JSON.parse(await f.text()); if (!Array.isArray(d.items) || !Array.isArray(d.materials)) throw new Error(); }
-  catch { toast('That file isn’t a Workshop POS backup'); return; }
+  catch { toast('That file isn’t a Craftium backup'); return; }
   if (!await askConfirm(`Import ${d.items.length} items and ${d.materials.length} materials? Existing items/materials with matching ids will be overwritten.`, 'Import backup')) return;
   for (const m of d.materials) await api('POST', '/api/materials', m);
   for (const it of d.items) await api('POST', '/api/items', it);

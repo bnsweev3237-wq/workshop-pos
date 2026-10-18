@@ -18,15 +18,15 @@ jobs:
         include:
           - os: macos-latest
             script: dist:mac
-            artifact: workshop-pos-mac
+            artifact: craftium-mac
             glob: dist/*.dmg
           - os: windows-latest
             script: dist:win
-            artifact: workshop-pos-windows
+            artifact: craftium-windows
             glob: dist/*.exe
           - os: ubuntu-latest
             script: dist:linux
-            artifact: workshop-pos-linux
+            artifact: craftium-linux
             glob: dist/*.AppImage
     runs-on: ${{ matrix.os }}
     steps:

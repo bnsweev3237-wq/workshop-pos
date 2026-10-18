@@ -1,4 +1,4 @@
-# Workshop POS — standalone edition
+# Craftium — standalone edition
 
 A pricing calculator + point-of-sale app for a small workshop/craft business, built to be
 installed standalone (desktop or a customer's own web host) rather than run as a hosted
@@ -63,9 +63,15 @@ automatically if 4100 is taken) and stores its database in the OS's standard per
 app-data folder instead of a `data/` folder next to the code, so it survives reinstalls/updates
 that replace the app bundle:
 
-- macOS: `~/Library/Application Support/Workshop POS/data/`
-- Windows: `%APPDATA%\Workshop POS\data\`
-- Linux: `~/.config/Workshop POS/data/`
+- macOS: `~/Library/Application Support/Craftium/data/`
+- Windows: `%APPDATA%\Craftium\data\`
+- Linux: `~/.config/Craftium/data/`
+
+**Renamed from "Workshop POS":** the app-data folder name comes from the product name, so an
+install made before the rename stored its database under a `Workshop POS` folder instead of
+`Craftium`. A fresh install of the renamed build won't see that old data automatically — copy
+`Workshop POS/data/workshop.db` into the new `Craftium/data/` folder (same filename) to carry
+an existing database forward, or just start fresh if there's nothing worth keeping yet.
 
 **Try it without building an installer:**
 
@@ -91,9 +97,11 @@ initial `npm install`. (It does require Node.js ≥ 22, which is why Electron is
 version recent enough to bundle Node ≥ 22 internally — an older Electron with an older bundled
 Node will crash on startup when it tries to load the database.)
 
-No app icon is set up yet — unbuilt installers use Electron's default icon. Add
-`build/icon.png` (Linux), `build/icon.icns` (macOS) and `build/icon.ico` (Windows) and
-electron-builder will pick them up automatically.
+App icon: `build/icon.png` (Linux), `build/icon.icns` (macOS), `build/icon.ico` (Windows) —
+electron-builder picks these up automatically by convention, no config needed. The web app's
+favicon/touch icon live in `public/favicon.png` and `public/icons/icon-192.png`. All of them
+are generated from one master design — see `build/icon-source.svg` for the vector original if
+it ever needs to be regenerated at a different size or color.
 
 Code protection (obfuscation, license keys, machine-locking) hasn't been added yet — `asar`
 packaging is on by default, which deters casual browsing of the source but is not real DRM.

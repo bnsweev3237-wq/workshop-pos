@@ -52,7 +52,7 @@ function startServer(port) {
 
 if (require.main === module) {
   startServer(process.env.PORT || 4100)
-    .then(({ port }) => console.log(`Workshop POS listening on http://localhost:${port}`))
+    .then(({ port }) => console.log(`Craftium listening on http://localhost:${port}`))
     .catch((err) => { console.error('Failed to start server:', err); process.exit(1); });
 }
 

@@ -1,4 +1,4 @@
--- Workshop POS — standalone edition schema.
+-- Craftium — standalone edition schema.
 -- Single-tenant by design: one business per installed instance, so no business_id
 -- scoping anywhere here. If this ever grows into multi-tenant SaaS, that column
 -- gets added to every table below at that point — not before.

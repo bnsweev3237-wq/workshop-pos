@@ -1,8 +1,8 @@
 {
-  "name": "workshop-pos",
+  "name": "craftium",
   "version": "0.4.0",
-  "description": "Workshop pricing calculator & point of sale — standalone edition",
-  "author": "Workshop POS",
+  "description": "Craftium — pricing calculator & point of sale for workshop/craft businesses, standalone edition",
+  "author": "Craftium",
   "main": "electron/main.js",
   "scripts": {
     "start": "node server/index.js",
@@ -25,8 +25,8 @@
     "electron-builder": "^26.15.3"
   },
   "build": {
-    "appId": "com.workshoppos.app",
-    "productName": "Workshop POS",
+    "appId": "com.craftium.app",
+    "productName": "Craftium",
     "directories": {
       "output": "dist"
     },
