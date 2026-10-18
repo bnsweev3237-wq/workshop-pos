@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.5.0',
+    date: '2026-10-18',
+    notes: [
+      'Renamed from Workshop POS to Craftium.',
+      'Added a custom app icon.',
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-10-18',
     notes: [
