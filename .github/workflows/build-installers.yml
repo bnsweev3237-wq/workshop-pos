@@ -1,0 +1,47 @@
+name: Build desktop installers
+
+# Builds the Windows, macOS, and Linux desktop installers natively on each OS's own GitHub-hosted
+# runner — the real fix for cross-building a Windows .exe or Mac .dmg from a Linux machine, which
+# needs Wine/hdiutil workarounds at best and is blocked entirely in some sandboxed environments.
+# Each platform just builds itself, the way electron-builder expects to be used.
+
+on:
+  push:
+    branches: [master, main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            script: dist:mac
+            artifact: workshop-pos-mac
+            glob: dist/*.dmg
+          - os: windows-latest
+            script: dist:win
+            artifact: workshop-pos-windows
+            glob: dist/*.exe
+          - os: ubuntu-latest
+            script: dist:linux
+            artifact: workshop-pos-linux
+            glob: dist/*.AppImage
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - run: npm run ${{ matrix.script }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.glob }}
+          if-no-files-found: error
