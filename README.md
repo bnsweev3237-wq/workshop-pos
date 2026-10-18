@@ -22,9 +22,12 @@ Working end to end, tested:
   splitting proceeds among partners), and PDF export via the browser's native print-to-PDF
   (no bundled PDF library, so it keeps working with no internet connection)
 
+Also working: an Electron desktop package — the same server and UI, running inside a native
+window with its own per-install database in the OS's standard app-data folder.
+
 Not yet ported from the artifact version (will follow in a later pass):
 - Release notes / changelog viewer
-- Electron desktop packaging, Docker packaging, licensing/update-subscription system
+- Docker packaging, licensing/update-subscription system
 
 ## Why SQLite, not Postgres
 
@@ -44,6 +47,54 @@ npm start
 Visit http://localhost:4100. First visit prompts you to create the first admin account
 (no login required to reach the Sell page itself). The SQLite database lives in `data/workshop.db`,
 created automatically on first run — back it up by copying that file.
+
+## Desktop app (Electron)
+
+The same app, packaged as a native desktop window instead of something you open in a browser.
+It runs the identical Express server internally (on `localhost`, picking a free port
+automatically if 4100 is taken) and stores its database in the OS's standard per-user
+app-data folder instead of a `data/` folder next to the code, so it survives reinstalls/updates
+that replace the app bundle:
+
+- macOS: `~/Library/Application Support/Workshop POS/data/`
+- Windows: `%APPDATA%\Workshop POS\data\`
+- Linux: `~/.config/Workshop POS/data/`
+
+**Try it without building an installer:**
+
+```
+npx electron-builder install-app-deps   # rebuilds better-sqlite3 for Electron's Node version
+npm run electron
+```
+
+**Build installers** (`.dmg` / `.exe` / `.AppImage`) with `electron-builder`:
+
+```
+npm run dist         # current platform
+npm run dist:mac
+npm run dist:win
+npm run dist:linux
+```
+
+Output lands in `dist/`. `npm run dist` rebuilds native dependencies automatically as part of
+packaging, so you don't need `install-app-deps` before it — that command is only for running
+`npm run electron` directly during development.
+
+**One gotcha:** `better-sqlite3` is a native module, compiled separately for plain Node.js vs.
+Electron's bundled Node. `install-app-deps` (or `npm run dist`) rebuilds it for Electron, which
+means a plain `npm start` will then fail to load it. If you need to go back to running the
+server directly with `npm start`/`npm run dev`, run `npm rebuild better-sqlite3` first to
+rebuild it back for plain Node. (Keeping separate clones for web-mode dev and desktop-mode dev
+avoids the back-and-forth entirely.)
+
+No app icon is set up yet — unbuilt installers use Electron's default icon. Add
+`build/icon.png` (Linux), `build/icon.icns` (macOS) and `build/icon.ico` (Windows) and
+electron-builder will pick them up automatically.
+
+Code protection (obfuscation, license keys, machine-locking) hasn't been added yet — `asar`
+packaging is on by default, which deters casual browsing of the source but is not real DRM.
+That's planned as a later phase; for now, treat this build as "not trivially editable by a
+curious user," not "can't be reverse engineered by someone determined to."
 
 ## Security model
 
