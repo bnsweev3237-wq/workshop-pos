@@ -16,11 +16,13 @@ Working end to end, tested:
 - Saved items (make/sell stock tracking)
 - Sell / point of sale — **does not require login**, by design, so cashiers can use it freely
 - Admin accounts — add/remove, reset passwords, all other pages gated behind login
-- Reports — core stats, revenue-by-day chart, top items, payment-type breakdown
+- Reports — core stats, revenue-by-day chart, top items, payment-type breakdown, a
+  collapsible cost/profit-by-item breakdown (tap an item to see its materials drill-down),
+  an events ledger with "true profit" (event sales profit minus booth/space cost, for
+  splitting proceeds among partners), and PDF export via the browser's native print-to-PDF
+  (no bundled PDF library, so it keeps working with no internet connection)
 
 Not yet ported from the artifact version (will follow in a later pass):
-- Reports: cost breakdown drill-down, materials-by-item, events drill-down, "true profit"
-  (event cost deducted from profit), PDF export
 - Release notes / changelog viewer
 - Electron desktop packaging, Docker packaging, licensing/update-subscription system
 

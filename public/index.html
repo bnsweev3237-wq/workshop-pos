@@ -283,8 +283,11 @@
   <!-- ===== Reports ===== -->
   <section id="tab-reports" hidden>
     <div class="card">
-      <h2>Sales reports</h2>
-      <div class="seg" id="rptRangeSeg">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+        <h2 style="margin:0">Sales reports</h2>
+        <button class="btn sm" id="rptExportPdf">⤓ Export PDF</button>
+      </div>
+      <div class="seg" id="rptRangeSeg" style="margin-top:14px">
         <button data-range="today">Today</button>
         <button data-range="7" class="on">Last 7 days</button>
         <button data-range="30">Last 30 days</button>
@@ -312,6 +315,21 @@
           <div class="stat-grid" id="rptTender"></div>
         </div>
       </aside>
+    </div>
+    <div class="card">
+      <h2>Cost &amp; profit by item</h2>
+      <div class="hint" style="margin-top:-8px;margin-bottom:10px">Tap an item to see the materials that make up its cost.</div>
+      <div class="rpt-cost-headerrow" id="rptCostHeader" hidden>
+        <span>Item</span><span>Qty</span><span>Revenue</span><span>Cost</span><span>Profit</span>
+      </div>
+      <div id="rptCostList"></div>
+      <div class="empty" id="rptCostEmpty" hidden>No sales in this range yet.</div>
+    </div>
+    <div class="card">
+      <h2>Events</h2>
+      <div class="hint" style="margin-top:-8px;margin-bottom:4px">Every event you've run, with "true profit" after deducting booth/space cost — useful when splitting proceeds among partners. Not limited by the date range above.</div>
+      <div id="rptEventsList"></div>
+      <div class="empty" id="rptEventsEmpty" hidden>No events yet.</div>
     </div>
   </section>
 

@@ -772,7 +772,7 @@ function rptWindow(key) {
   return { start: dayStart(earliest), end: now };
 }
 async function renderReports() {
-  fullSales = await api('GET', '/api/sales/full');
+  [fullSales, items] = await Promise.all([api('GET', '/api/sales/full'), api('GET', '/api/items/full')]);
   const { start, end } = rptWindow(rptRange);
   const inRange = fullSales.filter(s => !s.test && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
   const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -791,7 +791,144 @@ async function renderReports() {
   renderRptChart(inRange, start, end);
   renderRptTop(inRange);
   renderRptTender(inRange, revenue);
+  renderRptCost(inRange);
+  renderRptEvents();
 }
+
+// Aggregates a list of (full, profit-bearing) sales by item, for the cost-breakdown and
+// per-event drill-downs. Uses each item's CURRENT cost/recipe — fine for recent sales, but
+// note the figure can drift from a sale's own recorded profit if the recipe changed since.
+function buildItemBreakdown(salesList) {
+  const map = new Map();
+  for (const s of salesList) {
+    const included = !!s.taxIncluded;
+    for (const l of s.lines) {
+      const { sub } = lineTaxSplit(l, included);
+      const key = l.itemId || ('custom:' + l.name);
+      let entry = map.get(key);
+      if (!entry) entry = { itemId: l.itemId || null, name: l.name, qty: 0, revenue: 0, cost: 0, hasCost: !!l.itemId };
+      entry.qty += num(l.qty);
+      entry.revenue += sub;
+      if (l.itemId) {
+        const it = itemById(l.itemId);
+        entry.cost += (it ? num(it.cost) : 0) * num(l.qty);
+      }
+      map.set(key, entry);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.revenue - a.revenue);
+}
+function materialBreakdownRows(entry) {
+  if (!entry.itemId) return null;
+  const it = itemById(entry.itemId);
+  if (!it || !it.materials || !it.materials.length) return [];
+  return it.materials.map(r => {
+    const src = matSource(r);
+    const unit = unitCost(src);
+    const usedPerItem = num(r.per);
+    const totalUsed = usedPerItem * entry.qty;
+    return { name: (src && src.name) || r.name || 'Material', usedPerItem, totalUsed, unitCost: unit, totalCost: unit * totalUsed };
+  });
+}
+function buildCostRow(entry) {
+  const row = document.createElement('div'); row.className = 'rpt-cost-row';
+  const profit = entry.revenue - entry.cost;
+  const margin = entry.hasCost && entry.revenue > 0 ? (profit / entry.revenue * 100).toFixed(0) + '%' : '';
+  row.innerHTML = `
+    <button class="rpt-cost-head" type="button">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-qty"></span>
+      <span class="rpt-cost-rev"></span>
+      <span class="rpt-cost-cost"></span>
+      <span class="rpt-cost-profit"></span>
+    </button>
+    <div class="rpt-cost-body" hidden></div>`;
+  row.querySelector('.rpt-cost-name').textContent = entry.name;
+  row.querySelector('.rpt-cost-qty').textContent = entry.qty + '×';
+  row.querySelector('.rpt-cost-rev').textContent = money(entry.revenue);
+  row.querySelector('.rpt-cost-cost').textContent = entry.hasCost ? money(entry.cost) : '—';
+  const profEl = row.querySelector('.rpt-cost-profit');
+  profEl.textContent = entry.hasCost ? `${money(profit)}${margin ? ` (${margin})` : ''}` : 'no cost data';
+  profEl.classList.toggle('neg', entry.hasCost && profit < 0);
+  const body = row.querySelector('.rpt-cost-body');
+  const mats = materialBreakdownRows(entry);
+  if (mats === null) {
+    body.innerHTML = `<div class="hint">Custom item — no recipe or cost on file.</div>`;
+  } else if (!mats.length) {
+    body.innerHTML = `<div class="hint">This item has no materials recorded.</div>`;
+  } else {
+    body.innerHTML = `<table class="rpt-mat-table"><thead><tr><th>Material</th><th class="r">Used per item</th><th class="r">Total used</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead><tbody>${
+      mats.map(m => `<tr><td>${esc(m.name)}</td><td class="r">${m.usedPerItem.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${m.totalUsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${money4(m.unitCost)}</td><td class="r">${money(m.totalCost)}</td></tr>`).join('')
+    }</tbody></table>`;
+  }
+  row.querySelector('.rpt-cost-head').onclick = () => { body.hidden = !body.hidden; };
+  return row;
+}
+function renderRptCost(inRange) {
+  const box = $('rptCostList');
+  const rows = buildItemBreakdown(inRange);
+  $('rptCostHeader').hidden = rows.length === 0;
+  $('rptCostEmpty').hidden = rows.length > 0;
+  box.innerHTML = '';
+  rows.forEach(r => box.appendChild(buildCostRow(r)));
+}
+function renderRptEvents() {
+  const box = $('rptEventsList');
+  const evs = events.filter(e => !e.test).slice().sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+  $('rptEventsEmpty').hidden = evs.length > 0;
+  box.innerHTML = '';
+  for (const ev of evs) {
+    const evSalesList = fullSales.filter(s => s.eventId === ev.id && !s.test);
+    const revenue = evSalesList.reduce((n, s) => n + num(s.total), 0);
+    const grossProfit = evSalesList.reduce((n, s) => n + num(s.profit), 0);
+    const cost = num(ev.cost);
+    const net = grossProfit - cost;
+    const row = document.createElement('div'); row.className = 'rpt-ev-row';
+    row.innerHTML = `
+      <button class="rpt-ev-head" type="button">
+        <span class="rpt-ev-name"></span>
+        <span class="rpt-ev-meta"></span>
+        <span class="rpt-ev-net"></span>
+      </button>
+      <div class="rpt-ev-body" hidden></div>`;
+    row.querySelector('.rpt-ev-name').textContent = (ev.name || 'Event') + (ev.status === 'open' ? ' · open' : '');
+    row.querySelector('.rpt-ev-meta').textContent = `${ev.start ? new Date(ev.start + 'T00:00:00').toLocaleDateString() : ''} · ${evSalesList.length} sale${evSalesList.length === 1 ? '' : 's'} · ${money(revenue)} revenue`;
+    const netEl = row.querySelector('.rpt-ev-net');
+    netEl.textContent = `True profit ${net >= 0 ? '+' : '−'}${money(Math.abs(net))}`;
+    netEl.classList.add(net >= 0 ? 'pos' : 'neg');
+    const body = row.querySelector('.rpt-ev-body');
+    body.innerHTML = `
+      <div class="rpt-ev-stats">
+        <div><span>Revenue</span><b>${money(revenue)}</b></div>
+        <div><span>Gross profit</span><b>${money(grossProfit)}</b></div>
+        <div><span>Booth / event cost</span><b>−${money(cost)}</b></div>
+        <div><span>True profit</span><b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>
+      </div>
+      <div class="hint">True profit is this event's sales profit minus its booth/space cost — use it when splitting proceeds among partners.</div>`;
+    const itemRows = buildItemBreakdown(evSalesList);
+    if (itemRows.length) {
+      const list = document.createElement('div'); list.className = 'rpt-ev-items';
+      itemRows.forEach(r => list.appendChild(buildCostRow(r)));
+      body.appendChild(list);
+    }
+    row.querySelector('.rpt-ev-head').onclick = () => { body.hidden = !body.hidden; };
+    box.appendChild(row);
+  }
+}
+
+// PDF export: the browser's own print-to-PDF, not a bundled PDF library — this app needs to
+// keep working fully offline on a standalone install, so it can't depend on a CDN script.
+$('rptExportPdf').onclick = () => {
+  const bodies = [...document.querySelectorAll('#tab-reports .rpt-cost-body, #tab-reports .rpt-ev-body')];
+  const prevHidden = bodies.map(el => el.hidden);
+  bodies.forEach(el => { el.hidden = false; });
+  const restore = () => {
+    bodies.forEach((el, i) => { el.hidden = prevHidden[i]; });
+    window.removeEventListener('afterprint', restore);
+  };
+  window.addEventListener('afterprint', restore);
+  window.print();
+};
 function renderRptChart(inRange, start, end) {
   const box = $('rptChart');
   $('rptChartEmpty').hidden = inRange.length > 0; box.hidden = inRange.length === 0;
