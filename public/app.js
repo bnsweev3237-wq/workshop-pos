@@ -880,8 +880,10 @@ async function purgeTestData(askFirst) {
   if (!testEvents.length && !testSales.length) return 'empty';
   if (askFirst && !await askConfirm(`Permanently delete ${testSales.length} test sale${testSales.length === 1 ? '' : 's'} and ${testEvents.length} test event${testEvents.length === 1 ? '' : 's'}?`, 'Clear test data')) return 'cancelled';
   try {
-    for (const e of testEvents) await api('DELETE', '/api/events/' + e.id);
+    // Sales first — sales.event_id references events(id), so deleting the event while a
+    // sale still points at it would fail the same way charity rules did (see events.js).
     for (const s of testSales) await api('DELETE', '/api/sales/' + s.id);
+    for (const e of testEvents) await api('DELETE', '/api/events/' + e.id);
   } catch (e) {
     await Promise.all([loadEvents(), loadSales()]);
     return 'failed';
