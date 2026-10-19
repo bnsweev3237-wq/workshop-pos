@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS users (
 -- touch test = 1 rows, so practicing (including stock changes) never affects the real
 -- business data in test = 0 rows. See server/routes/maintenance.js for how the test side
 -- gets populated (a copy of the main side) or wiped.
+-- `source` tags which vendor a material was bought from (temu/amazon/homedepot/other, or
+-- blank for untagged). `product_url` is the saved link to that listing — the "Check price"
+-- button in the Materials tab fetches it and tries to read off a current price for the admin
+-- to review (see server/routes/materials.js and server/lib/priceFetch.js). Neither field, nor
+-- that button, ever changes `price` on its own; it's always a manual accept.
 CREATE TABLE IF NOT EXISTS materials (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
@@ -30,6 +35,8 @@ CREATE TABLE IF NOT EXISTS materials (
   yield REAL NOT NULL DEFAULT 1,
   stock REAL NOT NULL DEFAULT 0,
   low REAL,
+  source TEXT,
+  product_url TEXT,
   test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );

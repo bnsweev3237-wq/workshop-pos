@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.10.0',
+    date: '2026-10-20',
+    notes: [
+      'Materials can now be tagged with where they\'re bought (Temu, Amazon, Home Depot, Other) and a saved product link.',
+      'Added a "Check price" button per material that tries to fetch the current price from its saved link for you to review and accept — it never changes a price on its own, and it won\'t work on every site (none of the three offer a price API for this, so it\'s best-effort).',
+    ],
+  },
+  {
     version: '0.9.1',
     date: '2026-10-19',
     notes: [

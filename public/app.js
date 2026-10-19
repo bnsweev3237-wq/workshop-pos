@@ -402,6 +402,16 @@ $('save').onclick = async () => {
 
 // ---------- Material library ----------
 async function loadMaterials() { lib = await api('GET', `/api/materials?test=${testMode ? 1 : 0}`); renderLib(); }
+function priceCheckErrorMessage(code) {
+  switch (code) {
+    case 'no_product_url': return 'Add a product link first.';
+    case 'invalid_url': return 'That link doesn’t look valid.';
+    case 'timed_out': return 'The page took too long to respond — try again.';
+    case 'price_not_found': return 'Couldn’t find a price on that page — the site may block automated checks, or render its price with JavaScript instead of including it in the page itself.';
+    case 'fetch_failed': return 'Could not load that page.';
+    default: return 'Could not check the price — try again later.';
+  }
+}
 function renderLib() {
   $('libList').innerHTML = lib.map(m => `<option value="${esc(m.name)}">`).join('');
   $('libCount').textContent = lib.length || '';
@@ -418,24 +428,85 @@ function renderLib() {
       <td class="num" data-l="Per piece"></td>
       <td data-l="In stock"><input class="in-tiny stockIn" type="number" min="0" step="any"></td>
       <td data-l="Low at"><input class="in-tiny lowIn" type="number" min="0" step="any" placeholder="off"></td>
+      <td data-l="Source"><select class="in-small sourceSelect">
+        <option value="">—</option>
+        <option value="temu">Temu</option>
+        <option value="amazon">Amazon</option>
+        <option value="homedepot">Home Depot</option>
+        <option value="other">Other</option>
+      </select></td>
       <td class="num used" data-l="Used in"></td>
-      <td class="acts"><button class="icon-btn del" title="Delete material">×</button></td>`;
+      <td class="acts">
+        <button class="icon-btn link" title="Product link &amp; price check">🔗</button>
+        <button class="icon-btn del" title="Delete material">×</button>
+      </td>`;
     const [n, p, y, stockIn, lowIn] = tr.querySelectorAll('input');
+    const sourceSelect = tr.querySelector('.sourceSelect');
     n.value = m.name; p.value = m.price; y.value = m.yield; stockIn.value = m.stock ?? 0; lowIn.value = m.low ?? '';
+    sourceSelect.value = m.source || '';
     const refresh = () => { tr.querySelector('.num').textContent = money4(unitCost(m)); const u = usedIn(m.id); tr.querySelector('.used').textContent = u ? `${u} item${u > 1 ? 's' : ''}` : '—'; };
     refresh();
     stockIn.classList.toggle('low-input', low);
     let saveTimer;
-    tr.addEventListener('input', () => {
-      m.name = n.value; m.price = p.value; m.yield = y.value; m.stock = stockIn.value; m.low = lowIn.value;
+    const onRowChange = () => {
+      m.name = n.value; m.price = p.value; m.yield = y.value; m.stock = stockIn.value; m.low = lowIn.value; m.source = sourceSelect.value;
       refresh(); stockIn.classList.toggle('low-input', isLow(m.stock, m.low)); refreshLowMatBanner();
       $('libList').innerHTML = lib.map(x => `<option value="${esc(x.name)}">`).join('');
       syncLinkedRows(); calc();
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => api('POST', '/api/materials', m), 500);
-    });
+    };
+    tr.addEventListener('input', onRowChange);
+    sourceSelect.addEventListener('change', onRowChange); // belt-and-suspenders for <select>'s historically inconsistent 'input' event support
     tr.querySelector('.del').onclick = () => deleteLib(m);
+
+    // Detail row: product link + "Check price" — kept collapsed by default since a long URL
+    // doesn't fit well as a permanent table column.
+    const detailTr = document.createElement('tr'); detailTr.className = 'lib-detail'; detailTr.hidden = true;
+    detailTr.innerHTML = `
+      <td colspan="9">
+        <div class="lib-detail-inner">
+          <label>Product link <small style="color:var(--muted);font-weight:400">(for "Check price" below — never changes the price on its own)</small></label>
+          <input class="productUrlIn" type="url" placeholder="https://www.amazon.com/...">
+          <div class="btn-row"><button class="btn sm checkPriceBtn">Check price</button></div>
+          <div class="checkPriceResult hint"></div>
+        </div>
+      </td>`;
+    const urlIn = detailTr.querySelector('.productUrlIn');
+    urlIn.value = m.productUrl || '';
+    let urlSaveTimer;
+    urlIn.addEventListener('input', () => {
+      m.productUrl = urlIn.value;
+      clearTimeout(urlSaveTimer);
+      urlSaveTimer = setTimeout(() => api('POST', '/api/materials', m), 500);
+    });
+    const resultBox = detailTr.querySelector('.checkPriceResult');
+    const checkBtn = detailTr.querySelector('.checkPriceBtn');
+    checkBtn.onclick = async () => {
+      if (!urlIn.value.trim()) { toast('Add a product link first'); urlIn.focus(); return; }
+      checkBtn.disabled = true; checkBtn.textContent = 'Checking…';
+      resultBox.innerHTML = '';
+      try {
+        const r = await api('POST', `/api/materials/${m.id}/check-price`);
+        resultBox.innerHTML = `Found <b>${money(r.price)}</b> (currently ${money(num(m.price))}) <button class="btn sm acceptPriceBtn">Use this price</button>`;
+        resultBox.querySelector('.acceptPriceBtn').onclick = async () => {
+          m.price = r.price;
+          p.value = r.price;
+          await api('POST', '/api/materials', m);
+          refresh(); syncLinkedRows(); calc(); refreshLowMatBanner();
+          resultBox.textContent = `Price updated to ${money(r.price)}.`;
+          toast(`${m.name || 'Material'} price updated to ${money(r.price)}`);
+        };
+      } catch (e) {
+        resultBox.textContent = priceCheckErrorMessage(e.code);
+      } finally {
+        checkBtn.disabled = false; checkBtn.textContent = 'Check price';
+      }
+    };
+    tr.querySelector('.link').onclick = () => { detailTr.hidden = !detailTr.hidden; };
+
     tb.appendChild(tr);
+    tb.appendChild(detailTr);
   }
   refreshLowMatBanner();
 }

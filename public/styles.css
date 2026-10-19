@@ -64,6 +64,11 @@ tr.linked .lib-chk-wrap { display: none; }
 .icon-btn.del:hover { color: var(--danger); }
 .help { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--muted); margin-bottom: 14px; }
 .help b { color: var(--ink); font-weight: 600; }
+tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
+.lib-detail-inner { background: var(--bg); border-radius: 10px; padding: 12px 14px; }
+.lib-detail-inner label { margin-bottom: 6px; }
+.lib-detail-inner input { max-width: 480px; }
+.checkPriceResult:not(:empty) { margin-top: 10px; }
 @media (max-width: 700px) {
   .erow-table thead { display: none; }
   tr.erow { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--line); }

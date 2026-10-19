@@ -12,7 +12,9 @@ real backend and a real database instead of relying on a third-party platform's 
 
 Working end to end, tested:
 - Calculator (materials, labor, overhead, markup/margin/multiplier pricing)
-- Material library
+- Material library — each material can be tagged with where it's bought (Temu, Amazon, Home
+  Depot, Other) and a saved product link, with a "Check price" button that tries to fetch
+  the current price from that link for you to review (see "Checking prices" below)
 - Items (make/sell stock tracking) — either priced from materials/labor/overhead ("made"),
   or entered directly as a cost and sale price ("resale", for things bought ready-made and
   resold as-is). Items can be tagged with a category, used to target charity rules (below).
@@ -194,6 +196,22 @@ Settings → Database maintenance (admin only):
   the real and test sides. Accounts, roles, and settings are kept. The admin has to type
   `DELETE` to enable the button, and the server checks that confirmation again independently
   rather than trusting the client. This can't be undone.
+
+## Checking material prices
+
+A material in the library can be tagged with where it's bought from (Temu, Amazon, Home
+Depot, or Other) and a saved link to that exact product listing. Click the 🔗 button on a
+material's row to open that link field and a **Check price** button.
+
+"Check price" fetches that page and tries to read off a current price, then shows it next
+to the material's existing price for you to accept or ignore — it never updates the price on
+its own. None of Temu, Amazon, or Home Depot offer a price-lookup API for this kind of
+personal/small-business use, so this works by reading whatever structured price data a page
+happens to include for search engines (the same kind of data behind rich search results) —
+which means it can fail outright: the site may block the request, or may only render its
+price with JavaScript that a plain page fetch never runs. A failed check always says so
+rather than guessing, and a successful one is always one click away from being applied, never
+automatic.
 
 ## Security model
 

@@ -63,6 +63,8 @@ ensureColumn('items', 'item_type', "TEXT NOT NULL DEFAULT 'made'");
 ensureColumn('items', 'category', 'TEXT');
 ensureColumn('items', 'test', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('materials', 'test', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('materials', 'source', 'TEXT');
+ensureColumn('materials', 'product_url', 'TEXT');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
 
 module.exports = db;
