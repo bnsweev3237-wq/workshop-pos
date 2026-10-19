@@ -28,6 +28,10 @@ Working end to end, tested:
   shown on receipts and in a Reports breakdown by user; off means nothing new gets recorded,
   not just hidden
 - A sign-out button in the header
+- Charity giving — mark an item with a default % of its profit to donate (set in the
+  Calculator), optionally overridden per event (including giving a normally-non-charity item
+  a percentage just for one event, or vice versa). Reports calculates and shows what's owed,
+  overall and broken down by event and by item.
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
 window with its own per-install database in the OS's standard app-data folder — and a GitHub
@@ -126,6 +130,27 @@ line's tax rate — it always uses whatever the open event actually specifies. A
 enforced server-side (see `server/routes/sales.js` and `server/routes/events.js`), not just
 hidden in the UI — a cashier's session gets a 403 (or has the submitted value silently
 corrected) even on a direct API request, not just a missing button.
+
+## Charity giving
+
+An item can have a default "% of profit to donate" (Calculator → Charity). It applies
+automatically every time that item sells, at any event. An event can override that
+percentage for just that event — from the event's own setup form on the Sell page — including
+giving a normally-non-charity item a percentage it wouldn't otherwise have, or changing an
+existing one. No override on a given event means "use the item's own default."
+
+Each sale snapshots the percentage and dollar amount that applied *at the time*, per line, so
+a later change to an item's default or an event's override never rewrites history. Reports
+shows the total owed for the selected date range, a per-event figure (in the Events ledger,
+alongside true profit), and a per-item breakdown (in Cost & profit by item) — everywhere a
+dollar figure is shown, it's what should actually be set aside to donate, not merely what
+percentage applies. This is informational reporting only — there's no "mark as donated"
+ledger/payment-tracking workflow (yet).
+
+The charity percentage itself is visible on the Sell page (including to cashiers, as a small
+badge) since it's not cost or profit data — but the dollar amounts it produces are: both the
+per-sale and per-line charity figures are stripped from every public (cashier-visible)
+response, the same way profit is, and only appear in the admin/manager/lead Reports endpoints.
 
 ## Security model
 

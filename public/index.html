@@ -109,6 +109,13 @@
             <div class="hint">Set your own sales price, e.g. to match the market or a price you've already advertised. Leave blank to use the suggested price.</div>
           </div>
         </div>
+
+        <div class="card">
+          <h2>Charity</h2>
+          <label for="charityPct">% of profit to donate (optional)</label>
+          <input id="charityPct" type="number" min="0" max="100" step="1" placeholder="not a charity item">
+          <div class="hint">Applies automatically every time this item sells. An event can override this percentage — including giving a non-charity item one — just for that event, from the event's setup form on the Sell page.</div>
+        </div>
       </main>
 
       <aside class="summary">
@@ -221,6 +228,16 @@
       <div class="row r2" style="margin-top:12px">
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedOther"><span>Card / Other: tax included in price</span></label>
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedCash"><span>Cash: tax included in price</span></label>
+      </div>
+      <div id="evCharitySection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+        <label style="margin-bottom:6px">Charity overrides for this event</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Give an item a different share of its profit to donate — or a first one — just for this event. Items without an override here keep their own default (set in the Calculator).</div>
+        <div id="evCharityList"></div>
+        <div class="row r3" style="margin-top:8px">
+          <div><label for="evCharityItemPick">Item</label><select id="evCharityItemPick"></select></div>
+          <div><label for="evCharityPct">% to charity</label><input id="evCharityPct" type="number" min="0" max="100" step="1"></div>
+          <div style="display:flex;align-items:flex-end"><button class="btn sm" id="evCharityAdd" style="width:100%">+ Add override</button></div>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn primary sm" id="evSave">Save</button>

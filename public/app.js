@@ -279,6 +279,7 @@ function readForm() {
     }),
     costMode, minutes: $('minutes').value, rate: $('rate').value, overhead: $('overhead').value,
     mode, pct: $('pct').value, round: $('round').value, override: $('override').value,
+    charityPct: $('charityPct').value,
   };
 }
 
@@ -336,6 +337,7 @@ function restore(s) {
   $('minutes').value = s.minutes; $('rate').value = s.rate; $('overhead').value = s.overhead;
   setCostMode(s.costMode || 'none');
   $('pct').value = s.pct; $('round').value = s.round; $('override').value = s.override ?? '';
+  $('charityPct').value = s.charityPct ?? '';
   setMode(s.mode, true);
   currentEditId = s.id || null;
 }
@@ -374,7 +376,10 @@ $('save').onclick = async () => {
   $('itemNoHint').hidden = false;
   $('itemNoHint').textContent = `Item #${saved.itemNo}`;
   toast((existing ? `Updated “${s.name}”` : `Saved “${s.name}”`) + (added.length ? ` · added ${added.join(', ')} to library` : ''));
-  await loadItems(); if (added.length) renderLib();
+  // Also refresh the public Sell-page list — otherwise a newly saved (or price/stock-edited)
+  // item wouldn't show up there until the next 20s poll tick.
+  await Promise.all([loadItems(), loadPosItems()]);
+  if (added.length) renderLib();
 };
 
 // ---------- Material library ----------
@@ -455,7 +460,7 @@ async function makeBatch(it, qty) {
     const r = await api('POST', `/api/items/${it.id}/make`, { qty });
     toast(r.short.length ? `Made ${qty} more “${it.name}” — ran low on ${r.short.join(', ')}` : `Made ${qty} more “${it.name}”`);
   } catch (e) { toast('Could not update stock — try again.'); }
-  await loadItems(); await loadMaterials();
+  await Promise.all([loadItems(), loadMaterials(), loadPosItems()]);
 }
 async function sellItem(it, qty) {
   qty = Math.max(1, Math.round(num(qty)) || 1);
@@ -463,7 +468,7 @@ async function sellItem(it, qty) {
     const r = await api('POST', `/api/items/${it.id}/sell`, { qty });
     toast(qty > r.had ? `Sold ${r.had} “${it.name}” (only had ${r.had} in stock)` : `Sold ${qty} “${it.name}”`);
   } catch (e) { toast('Could not update stock — try again.'); }
-  await loadItems();
+  await Promise.all([loadItems(), loadPosItems()]);
 }
 function renderItems() {
   const tb = $('itemRows'); tb.innerHTML = ''; let changed = 0;
@@ -473,7 +478,7 @@ function renderItems() {
     const low = isLow(it.stock, it.low);
     const tr = document.createElement('tr'); tr.dataset.id = it.id;
     tr.innerHTML = `
-      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${it.materials.length} material${it.materials.length === 1 ? '' : 's'} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}</div></td>
+      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${it.materials.length} material${it.materials.length === 1 ? '' : 's'} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${it.charityPct ? ` · <span class="charity-badge" title="${it.charityPct}% of profit donated">🎗 ${it.charityPct}%</span>` : ''}</div></td>
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
@@ -499,17 +504,17 @@ function renderItems() {
       stockIn.classList.toggle('low-input', lowNow);
       tr.querySelector('.stock-badge').hidden = !lowNow;
       clearTimeout(stockTimer);
-      stockTimer = setTimeout(() => api('POST', '/api/items', it), 500);
+      stockTimer = setTimeout(() => api('POST', '/api/items', it).then(loadPosItems), 500);
     });
     const qtyInput = tr.querySelector('.qty');
     tr.querySelector('.make').onclick = () => makeBatch(it, qtyInput.value);
     tr.querySelector('.sell').onclick = () => sellItem(it, qtyInput.value);
     const acc = tr.querySelector('.accept');
-    if (acc) acc.onclick = async () => { freshCopy(it); await api('POST', '/api/items', it); toast(`${it.name} is now ${money(it.price)}`); loadItems(); };
+    if (acc) acc.onclick = async () => { freshCopy(it); await api('POST', '/api/items', it); toast(`${it.name} is now ${money(it.price)}`); await Promise.all([loadItems(), loadPosItems()]); };
     tr.querySelector('.del').onclick = async () => {
       if (!await askConfirm(`Delete “${it.name}”? This can’t be undone.`, 'Delete item')) return;
       await api('DELETE', '/api/items/' + it.id);
-      await loadItems();
+      await Promise.all([loadItems(), loadPosItems()]);
     };
     tb.appendChild(tr);
   }
@@ -530,7 +535,7 @@ $('acceptAll').onclick = async () => {
   const moved = items.filter(it => itemStatus(it).moved);
   for (const it of moved) { freshCopy(it); await api('POST', '/api/items', it); }
   toast('All items updated to current costs');
-  await loadItems();
+  await Promise.all([loadItems(), loadPosItems()]);
 };
 
 // ---------- Point of sale ----------
@@ -547,7 +552,7 @@ function renderPosItems() {
   for (const it of list) {
     const low = isLow(it.stock, it.low);
     const btn = document.createElement('button'); btn.className = 'pos-item';
-    btn.innerHTML = `<span class="nm"></span><span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${num(it.stock)} in stock</span>`;
+    btn.innerHTML = `<span class="nm"></span>${it.charityPct ? `<span class="charity-badge" title="${it.charityPct}% of profit donated">🎗 ${it.charityPct}%</span>` : ''}<span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${num(it.stock)} in stock</span>`;
     btn.querySelector('.nm').textContent = it.name;
     btn.onclick = () => addToTicket(it);
     grid.appendChild(btn);
@@ -758,7 +763,57 @@ function fillEventForm(ev) {
   $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
   $('evEnd').hidden = !ev;
+  loadEventCharitySection(ev).catch(() => {});
 }
+
+// ---------- Event charity overrides (admin/manager/lead only — same as event management) ----------
+let evCharityOverrides = [];
+let evCharityItems = [];
+async function loadEventCharitySection(ev) {
+  $('evCharitySection').hidden = !ev;
+  if (!ev) { evCharityOverrides = []; evCharityItems = []; $('evCharityList').innerHTML = ''; return; }
+  [evCharityOverrides, evCharityItems] = await Promise.all([
+    api('GET', `/api/charity-overrides?eventId=${encodeURIComponent(ev.id)}`),
+    api('GET', '/api/items/full'),
+  ]);
+  renderEvCharityPicker();
+  renderEvCharityList();
+}
+function renderEvCharityPicker() {
+  $('evCharityItemPick').innerHTML = evCharityItems.map(it => `<option value="${it.id}"></option>`).join('');
+  [...$('evCharityItemPick').options].forEach((opt, i) => { opt.textContent = evCharityItems[i].name || 'Unnamed item'; });
+}
+function renderEvCharityList() {
+  const box = $('evCharityList');
+  if (!evCharityOverrides.length) { box.innerHTML = '<div class="hint">No overrides yet for this event.</div>'; return; }
+  box.innerHTML = '';
+  for (const o of evCharityOverrides) {
+    const item = evCharityItems.find(i => i.id === o.itemId);
+    const row = document.createElement('div'); row.className = 'ev-charity-row';
+    row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="icon-btn del" title="Remove override">×</button>`;
+    row.querySelector('.ev-charity-name').textContent = item ? item.name : '(deleted item)';
+    row.querySelector('.ev-charity-pct').textContent = `${o.charityPct}%`;
+    row.querySelector('.del').onclick = async () => {
+      try { await api('DELETE', `/api/charity-overrides/${o.eventId}/${o.itemId}`); evCharityOverrides = evCharityOverrides.filter(x => x !== o); renderEvCharityList(); toast('Override removed'); }
+      catch (e) { toast(e.message || 'Could not remove override'); }
+    };
+    box.appendChild(row);
+  }
+}
+$('evCharityAdd').onclick = async () => {
+  const ev = openEvent(); if (!ev) return;
+  const itemId = $('evCharityItemPick').value;
+  const pct = $('evCharityPct').value;
+  if (!itemId || pct === '' || num(pct) < 0 || num(pct) > 100) { toast('Pick an item and a % from 0–100'); return; }
+  try {
+    const saved = await api('POST', '/api/charity-overrides', { eventId: ev.id, itemId, charityPct: num(pct) });
+    evCharityOverrides = evCharityOverrides.filter(o => o.itemId !== itemId);
+    evCharityOverrides.push(saved);
+    $('evCharityPct').value = '';
+    renderEvCharityList();
+    toast('Override added');
+  } catch (e) { toast(e.message || 'Could not add override'); }
+};
 $('eventSetupLink').onclick = () => { fillEventForm(null); $('eventForm').hidden = false; $('evStart').focus(); };
 $('eventGear').onclick = () => { fillEventForm(openEvent()); $('eventForm').hidden = !$('eventForm').hidden; };
 $('evClose').onclick = () => { $('eventForm').hidden = true; };
@@ -827,6 +882,7 @@ async function renderReports() {
   const revenue = inRange.reduce((n, s) => n + num(s.total), 0);
   const profit = inRange.reduce((n, s) => n + num(s.profit), 0);
   const tax = inRange.reduce((n, s) => n + num(s.tax), 0);
+  const charityDue = inRange.reduce((n, s) => n + num(s.charityDue), 0);
   const itemsSold = inRange.reduce((n, s) => n + s.lines.reduce((m, l) => m + num(l.qty), 0), 0);
   const avg = inRange.length ? revenue / inRange.length : 0;
   const tiles = [
@@ -834,6 +890,7 @@ async function renderReports() {
     { lbl: 'Tax collected', val: money(tax) }, { lbl: 'Sales', val: inRange.length },
     { lbl: 'Items sold', val: itemsSold }, { lbl: 'Avg sale', val: money(avg) },
   ];
+  if (charityDue > 0) tiles.push({ lbl: 'Owed to charity', val: money(charityDue) });
   $('rptStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}"><div class="lbl">${t.lbl}</div><div class="val${t.neg ? ' neg' : ''}">${t.val}</div></div>`).join('');
   renderRptChart(inRange, start, end);
   renderRptTop(inRange);
@@ -878,9 +935,10 @@ function buildItemBreakdown(salesList) {
       const { sub } = lineTaxSplit(l, included);
       const key = l.itemId || ('custom:' + l.name);
       let entry = map.get(key);
-      if (!entry) entry = { itemId: l.itemId || null, name: l.name, qty: 0, revenue: 0, cost: 0, hasCost: !!l.itemId };
+      if (!entry) entry = { itemId: l.itemId || null, name: l.name, qty: 0, revenue: 0, cost: 0, hasCost: !!l.itemId, charity: 0 };
       entry.qty += num(l.qty);
       entry.revenue += sub;
+      entry.charity += num(l.charityAmt);
       if (l.itemId) {
         const it = itemById(l.itemId);
         entry.cost += (it ? num(it.cost) : 0) * num(l.qty);
@@ -916,6 +974,12 @@ function buildCostRow(entry) {
     </button>
     <div class="rpt-cost-body" hidden></div>`;
   row.querySelector('.rpt-cost-name').textContent = entry.name;
+  if (entry.charity > 0) {
+    const badge = document.createElement('span'); badge.className = 'charity-badge'; badge.style.marginLeft = '8px';
+    badge.title = `${money(entry.charity)} of this item's profit owed to charity`;
+    badge.textContent = `🎗 ${money(entry.charity)}`;
+    row.querySelector('.rpt-cost-name').appendChild(badge);
+  }
   row.querySelector('.rpt-cost-qty').textContent = entry.qty + '×';
   row.querySelector('.rpt-cost-rev').textContent = money(entry.revenue);
   row.querySelector('.rpt-cost-cost').textContent = entry.hasCost ? money(entry.cost) : '—';
@@ -924,12 +988,13 @@ function buildCostRow(entry) {
   profEl.classList.toggle('neg', entry.hasCost && profit < 0);
   const body = row.querySelector('.rpt-cost-body');
   const mats = materialBreakdownRows(entry);
+  const charityHtml = entry.charity > 0 ? `<div class="hint" style="color:var(--warn);margin-bottom:8px">🎗 ${money(entry.charity)} of this item's profit is owed to charity over this range.</div>` : '';
   if (mats === null) {
-    body.innerHTML = `<div class="hint">Custom item — no recipe or cost on file.</div>`;
+    body.innerHTML = `${charityHtml}<div class="hint">Custom item — no recipe or cost on file.</div>`;
   } else if (!mats.length) {
-    body.innerHTML = `<div class="hint">This item has no materials recorded.</div>`;
+    body.innerHTML = `${charityHtml}<div class="hint">This item has no materials recorded.</div>`;
   } else {
-    body.innerHTML = `<table class="rpt-mat-table"><thead><tr><th>Material</th><th class="r">Used per item</th><th class="r">Total used</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead><tbody>${
+    body.innerHTML = `${charityHtml}<table class="rpt-mat-table"><thead><tr><th>Material</th><th class="r">Used per item</th><th class="r">Total used</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead><tbody>${
       mats.map(m => `<tr><td>${esc(m.name)}</td><td class="r">${m.usedPerItem.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${m.totalUsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${money4(m.unitCost)}</td><td class="r">${money(m.totalCost)}</td></tr>`).join('')
     }</tbody></table>`;
   }
@@ -953,6 +1018,7 @@ function renderRptEvents() {
     const evSalesList = fullSales.filter(s => s.eventId === ev.id && !s.test);
     const revenue = evSalesList.reduce((n, s) => n + num(s.total), 0);
     const grossProfit = evSalesList.reduce((n, s) => n + num(s.profit), 0);
+    const charityDue = evSalesList.reduce((n, s) => n + num(s.charityDue), 0);
     const cost = num(ev.cost);
     const net = grossProfit - cost;
     const row = document.createElement('div'); row.className = 'rpt-ev-row';
@@ -964,7 +1030,7 @@ function renderRptEvents() {
       </button>
       <div class="rpt-ev-body" hidden></div>`;
     row.querySelector('.rpt-ev-name').textContent = (ev.name || 'Event') + (ev.status === 'open' ? ' · open' : '');
-    row.querySelector('.rpt-ev-meta').textContent = `${ev.start ? new Date(ev.start + 'T00:00:00').toLocaleDateString() : ''} · ${evSalesList.length} sale${evSalesList.length === 1 ? '' : 's'} · ${money(revenue)} revenue`;
+    row.querySelector('.rpt-ev-meta').textContent = `${ev.start ? new Date(ev.start + 'T00:00:00').toLocaleDateString() : ''} · ${evSalesList.length} sale${evSalesList.length === 1 ? '' : 's'} · ${money(revenue)} revenue${charityDue > 0 ? ` · 🎗 ${money(charityDue)} owed` : ''}`;
     const netEl = row.querySelector('.rpt-ev-net');
     netEl.textContent = `True profit ${net >= 0 ? '+' : '−'}${money(Math.abs(net))}`;
     netEl.classList.add(net >= 0 ? 'pos' : 'neg');
@@ -975,8 +1041,9 @@ function renderRptEvents() {
         <div><span>Gross profit</span><b>${money(grossProfit)}</b></div>
         <div><span>Booth / event cost</span><b>−${money(cost)}</b></div>
         <div><span>True profit</span><b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>
+        ${charityDue > 0 ? `<div><span>Owed to charity</span><b style="color:var(--warn)">${money(charityDue)}</b></div>` : ''}
       </div>
-      <div class="hint">True profit is this event's sales profit minus its booth/space cost — use it when splitting proceeds among partners.</div>`;
+      <div class="hint">True profit is this event's sales profit minus its booth/space cost — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>`;
     const itemRows = buildItemBreakdown(evSalesList);
     if (itemRows.length) {
       const list = document.createElement('div'); list.className = 'rpt-ev-items';

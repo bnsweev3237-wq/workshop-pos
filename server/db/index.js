@@ -49,4 +49,16 @@ if (usersTable && /CHECK/i.test(usersTable.sql)) {
   db.pragma('foreign_keys = ON');
 }
 
+// Adds a column to an existing table if it's missing — for installs whose table predates a
+// later feature. `CREATE TABLE IF NOT EXISTS` only helps brand-new installs; this covers the
+// upgrade path for columns, the same way the block above covers it for the users.role CHECK.
+function ensureColumn(table, column, definition) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!cols.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+ensureColumn('items', 'charity_pct', 'REAL');
+ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
+
 module.exports = db;

@@ -28,6 +28,7 @@ function createApp() {
   app.use('/api/items', require('./routes/items'));
   app.use('/api/events', require('./routes/events'));
   app.use('/api/sales', require('./routes/sales'));
+  app.use('/api/charity-overrides', require('./routes/charityOverrides'));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
   app.get('*', (req, res) => {

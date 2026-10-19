@@ -8,13 +8,15 @@ const router = express.Router();
 // What a cashier on the Sell page is allowed to see: enough to ring something up, nothing
 // about what it costs to make or what it's priced to earn — that's the whole reason this
 // split exists now that there's a real server to enforce it (the artifact version couldn't).
-const toPublicItem = (r) => ({ id: r.id, name: r.name, itemNo: r.item_no, price: r.price, stock: r.stock, low: r.low });
+// charityPct is included here even though it's "extra" info — it's not cost/profit data, and
+// showing it lets a cashier see at a glance which items support a donation.
+const toPublicItem = (r) => ({ id: r.id, name: r.name, itemNo: r.item_no, price: r.price, stock: r.stock, low: r.low, charityPct: r.charity_pct });
 
 const toFullItem = (r) => ({
   id: r.id, name: r.name, itemNo: r.item_no, materials: JSON.parse(r.materials_json),
   costMode: r.cost_mode, minutes: r.minutes, rate: r.rate, overhead: r.overhead,
   mode: r.mode, pct: r.pct, round: r.round, override: r.override,
-  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at,
+  stock: r.stock, low: r.low, price: r.price, cost: r.cost, charityPct: r.charity_pct, savedAt: r.saved_at,
 });
 
 // Any logged-in user (admin or cashier): the Sell page's item grid. No cost, no materials,
@@ -54,14 +56,15 @@ router.post('/', requireManageItems, (req, res) => {
     low: b.low === '' || b.low == null ? null : Number(b.low),
     price: Number(b.price) || 0,
     cost: Number(b.cost) || 0,
+    charity_pct: b.charityPct === '' || b.charityPct == null ? null : Math.max(0, Math.min(100, Number(b.charityPct))),
     saved_at: Date.now(),
   };
   db.prepare(`
-    INSERT INTO items (id, name, item_no, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at)
-    VALUES (@id, @name, @item_no, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at)
+    INSERT INTO items (id, name, item_no, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, charity_pct, saved_at)
+    VALUES (@id, @name, @item_no, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @charity_pct, @saved_at)
     ON CONFLICT(id) DO UPDATE SET name=@name, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
       rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
-      price=@price, cost=@cost, saved_at=@saved_at
+      price=@price, cost=@cost, charity_pct=@charity_pct, saved_at=@saved_at
   `).run(row);
   res.json(toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(row.id)));
 });

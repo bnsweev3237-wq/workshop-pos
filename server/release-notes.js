@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.7.0',
+    date: '2026-10-19',
+    notes: [
+      'Added charity giving: mark an item with a default % of its profit to donate, optionally overridden per event from the event’s setup form.',
+      'Reports now shows the amount owed to charity — overall, per event, and per item.',
+      'Fixed a bug where saving, editing stock, or deleting an item in Calculator/Saved Items didn’t refresh the Sell page’s item list until the next periodic refresh.',
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-10-18',
     notes: [

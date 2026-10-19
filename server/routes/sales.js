@@ -27,15 +27,25 @@ function defaultLineTaxRate(event, tender) {
   return Number(event.tax_rate) || 0;
 }
 
+// Each stored line carries charityPct/charityAmt for Reports' per-item charity breakdown —
+// both are profit-derived (amt = profit × pct), so the public shape strips them per line the
+// same way the sale itself hides `profit`. Without this, a cashier could back-calculate a
+// line's exact profit from its charityAmt even though toPublicSale never lists it directly.
+const stripLineCharity = (l) => { const { charityPct, charityAmt, ...rest } = l; return rest; };
+
 // Public shape: everything a receipt needs, nothing about profit margins. `soldBy` is
 // whatever was recorded at the time — if attribution was off then, it's null; turning the
 // setting on later doesn't retroactively invent it for old sales.
 const toPublicSale = (r) => ({
   id: r.id, eventId: r.event_id, test: !!r.test, taxIncluded: !!r.tax_included,
-  lines: JSON.parse(r.lines_json), subtotal: r.subtotal, tax: r.tax, total: r.total,
+  lines: JSON.parse(r.lines_json).map(stripLineCharity), subtotal: r.subtotal, tax: r.tax, total: r.total,
   tender: r.tender, received: r.received, change: r.change, soldBy: r.user_name || null, createdAt: r.created_at,
 });
-const toFullSale = (r) => ({ ...toPublicSale(r), profit: r.profit });
+const toFullSale = (r) => ({
+  ...toPublicSale(r),
+  lines: JSON.parse(r.lines_json), // unstripped — Reports' per-item charity breakdown needs these
+  profit: r.profit, charityDue: r.charity_due,
+});
 
 // Any logged-in user: the Sell page's recent-sales list and receipts, and Reports' non-profit figures.
 router.get('/', requireLogin, (req, res) => {
@@ -73,18 +83,35 @@ router.post('/', requireLogin, (req, res) => {
     lines = rawLines.map((l) => ({ ...l, taxRate: forcedRate }));
   }
 
-  let subtotal = 0, tax = 0, profit = 0;
+  // Per-event charity overrides, loaded once rather than per line — an event can give an
+  // item a different (or its first) charity percentage just for that event; absence of a
+  // row here means "use the item's own default."
+  const overrides = b.eventId
+    ? new Map(db.prepare('SELECT item_id, charity_pct FROM event_charity_overrides WHERE event_id = ?').all(b.eventId).map((r) => [r.item_id, r.charity_pct]))
+    : new Map();
+
+  let subtotal = 0, tax = 0, profit = 0, charityDue = 0;
   const stockChanges = [];
+  const finalLines = [];
   for (const l of lines) {
     const { sub, tax: lineTax } = lineTaxSplit(l, included);
     subtotal += sub; tax += lineTax;
+    let charityPct = null, charityAmt = 0;
     if (l.itemId) {
       const item = db.prepare('SELECT * FROM items WHERE id = ?').get(l.itemId);
       if (item) {
-        profit += sub - item.cost * (Number(l.qty) || 0);
+        const lineProfit = sub - item.cost * (Number(l.qty) || 0);
+        profit += lineProfit;
         if (!test) stockChanges.push({ id: l.itemId, qty: Number(l.qty) || 0 });
+        const effectivePct = overrides.has(l.itemId) ? overrides.get(l.itemId) : item.charity_pct;
+        if (effectivePct) {
+          charityPct = effectivePct;
+          charityAmt = Math.max(0, lineProfit) * effectivePct / 100;
+          charityDue += charityAmt;
+        }
       }
     }
+    finalLines.push({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0, charityPct, charityAmt });
   }
   const total = subtotal + tax;
   const received = b.tender === 'cash' ? (Number(b.received) || 0) : total;
@@ -93,16 +120,16 @@ router.post('/', requireLogin, (req, res) => {
   const trackAttribution = getBool('trackSaleAttribution', true);
   const row = {
     id: uid(), event_id: b.eventId || null, test: test ? 1 : 0, tax_included: included ? 1 : 0,
-    lines_json: JSON.stringify(lines.map(l => ({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0 }))),
-    subtotal, tax, total, tender: b.tender || 'cash', received, change, profit,
+    lines_json: JSON.stringify(finalLines),
+    subtotal, tax, total, tender: b.tender || 'cash', received, change, profit, charity_due: charityDue,
     user_id: trackAttribution ? req.user.id : null, user_name: trackAttribution ? req.user.name : null,
     created_at: Date.now(),
   };
 
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, user_id, user_name, created_at)
-      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @user_id, @user_name, @created_at)
+      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, user_id, user_name, created_at)
+      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @user_id, @user_name, @created_at)
     `).run(row);
     for (const c of stockChanges) {
       db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);

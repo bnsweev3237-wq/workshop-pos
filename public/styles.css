@@ -154,6 +154,8 @@ tr.linked .lib-chk-wrap { display: none; }
 .pos-item .pr { color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
 .pos-item .st { font-size: 11px; color: var(--muted); margin-top: 2px; }
 .pos-item .st.low { color: var(--danger); font-weight: 600; }
+.charity-badge { display: inline-block; font-size: 11px; font-weight: 600; color: var(--warn); }
+.pos-item .charity-badge { display: block; margin-bottom: 2px; }
 .tline { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px dashed var(--line); }
 .tline .nm { flex: 1; font-weight: 500; min-width: 0; overflow-wrap: break-word; }
 .tline .qstep { display: inline-flex; align-items: center; gap: 4px; }
@@ -207,6 +209,12 @@ tr.linked .lib-chk-wrap { display: none; }
 .ev-net.neg { color: var(--danger); }
 .ev-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .ev-del { font-size: 12px; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; padding: 0; margin-top: 4px; }
+
+.ev-charity-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 13px; }
+.ev-charity-row:last-child { border-bottom: none; }
+.ev-charity-row .ev-charity-name { font-weight: 500; }
+.ev-charity-row .ev-charity-pct { color: var(--warn); font-weight: 600; font-variant-numeric: tabular-nums; }
+.ev-charity-row .icon-btn { font-size: 15px; padding: 2px 6px; }
 
 .app-footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); }
 

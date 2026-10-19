@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS materials (
 -- `materials_json` holds each item's material rows (name/price/yield/per/libId) exactly
 -- as the pricing calculator already works with them — kept denormalized on purpose so
 -- the ported frontend's computeItem() logic needs no changes to read it.
+-- `charity_pct` is this item's default share of its own profit (0-100) earmarked for
+-- donation, applied automatically whenever it sells. Null/0 means not a charity item. An
+-- event can override this per item for just that event — see event_charity_overrides below.
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
@@ -48,6 +51,7 @@ CREATE TABLE IF NOT EXISTS items (
   low REAL,
   price REAL NOT NULL DEFAULT 0,
   cost REAL NOT NULL DEFAULT 0,
+  charity_pct REAL,
   saved_at INTEGER NOT NULL
 );
 
@@ -65,6 +69,17 @@ CREATE TABLE IF NOT EXISTS events (
   test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   ended_at INTEGER
+);
+
+-- Per-event charity-percentage overrides: lets one event donate a different share of an
+-- item's profit than that item's own default (including giving a normally-0% item a
+-- percentage just for this event, or vice versa). Absence of a row means "use the item's
+-- own charity_pct." Checkout (server/routes/sales.js) is the only place that reads this.
+CREATE TABLE IF NOT EXISTS event_charity_overrides (
+  event_id TEXT NOT NULL REFERENCES events(id),
+  item_id TEXT NOT NULL REFERENCES items(id),
+  charity_pct REAL NOT NULL,
+  PRIMARY KEY (event_id, item_id)
 );
 
 -- `lines_json` holds each sale's line items exactly as the receipt/reports code expects.
@@ -85,6 +100,7 @@ CREATE TABLE IF NOT EXISTS sales (
   received REAL NOT NULL DEFAULT 0,
   change REAL NOT NULL DEFAULT 0,
   profit REAL NOT NULL DEFAULT 0,
+  charity_due REAL NOT NULL DEFAULT 0,
   user_id TEXT REFERENCES users(id),
   user_name TEXT,
   created_at INTEGER NOT NULL
