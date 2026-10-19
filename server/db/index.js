@@ -61,6 +61,8 @@ function ensureColumn(table, column, definition) {
 ensureColumn('items', 'charity_pct', 'REAL');
 ensureColumn('items', 'item_type', "TEXT NOT NULL DEFAULT 'made'");
 ensureColumn('items', 'category', 'TEXT');
+ensureColumn('items', 'test', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('materials', 'test', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
 
 module.exports = db;

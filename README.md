@@ -34,6 +34,10 @@ Working end to end, tested:
   Sell page): a % of profit for a specific item category, and/or a checkbox to apply a % to
   every sale at the event. Reports calculates and shows what's owed, overall, per event, and
   broken out by category in each event's wrap-up.
+- Test mode — a full, independent sandbox (items, materials, events, and sales each have
+  their own test-side copy) for practicing or training without touching real data.
+- Database maintenance (Settings, admin-only) — copy real data into the test sandbox, or
+  purge everything.
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
 window with its own per-install database in the OS's standard app-data folder — and a GitHub
@@ -157,6 +161,33 @@ The dollar amounts a rule produces are profit-derived, so they're stripped from 
 (cashier-visible) response the same way profit is — both the per-sale total and the per-line
 figures only appear in the admin/manager/lead Reports endpoints.
 
+## Test mode
+
+Test mode (the Sell page → "Enter test / training mode") is a full, independent sandbox:
+items, materials, events, and sales each have their own separate test-side copy, alongside
+the real ones. Switching test mode on or off switches every tab — Calculator, Materials,
+Items, and Sell — over to that side, so practicing (including making items, adjusting stock,
+and running sales) never touches real data or real stock. Reports always reflects real data
+only, regardless of whether test mode happens to be on, since a real sale can only ever be
+rung up against a real item.
+
+"Clear test data" / "Exit & purge test data" deletes everything on the test side (items,
+materials, events, sales, and any charity rules on those test events) and leaves the real
+side untouched.
+
+## Database maintenance
+
+Settings → Database maintenance (admin only):
+- **Copy main → test** replaces whatever test data exists with a fresh, fully independent
+  copy of the real items, materials, events, and sales — new ids throughout, with every
+  cross-reference (an item's linked materials, a sale's event and line items) remapped to
+  the new test-side copies — so test mode has realistic data to try things on without any
+  risk of it ever touching the real catalog or figures.
+- **Purge everything** permanently deletes every item, material, sale, and event, on both
+  the real and test sides. Accounts, roles, and settings are kept. The admin has to type
+  `DELETE` to enable the button, and the server checks that confirmation again independently
+  rather than trusting the client. This can't be undone.
+
 ## Security model
 
 - Every page requires a login — there's no anonymous access anymore. The only unauthenticated
@@ -168,7 +199,7 @@ figures only appear in the admin/manager/lead Reports endpoints.
   below that (a dedicated `/api/sales/full` endpoint is the only place profit figures are
   served from).
 - **Settings**: admin only, full stop — adding/removing accounts, changing roles, resetting
-  passwords, the sales-attribution toggle.
+  passwords, the sales-attribution toggle, and database maintenance (copy-to-test, purge).
 - **Item cost/materials**: the item list used by the Sell page never includes cost or materials
   data — only name, price, stock, and item number. Full item data requires Reports-level
   access or higher.

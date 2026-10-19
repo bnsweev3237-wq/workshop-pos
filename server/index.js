@@ -29,6 +29,8 @@ function createApp() {
   app.use('/api/events', require('./routes/events'));
   app.use('/api/sales', require('./routes/sales'));
   app.use('/api/charity-rules', require('./routes/charityRules'));
+  app.use('/api/maintenance', require('./routes/maintenance'));
+  app.use('/api/test-data', require('./routes/testData'));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
   app.get('*', (req, res) => {

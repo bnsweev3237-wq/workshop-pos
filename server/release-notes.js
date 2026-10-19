@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.9.0',
+    date: '2026-10-19',
+    notes: [
+      'Test mode is now a full, separate sandbox: items and materials each have their own independent test-side copy with its own stock, alongside the real catalog (test sales and events already worked this way). Switching test mode on or off now switches Calculator, Materials, and Items over too, not just Sell.',
+      'Added a Database maintenance section to Settings (admin only): "Copy main → test" replaces whatever test data exists with a fresh copy of your real items, materials, events, and sales, so test mode has realistic data to try things on. "Purge everything" permanently deletes every item, material, sale, and event (real and test) — accounts and settings are kept — and requires typing DELETE to confirm.',
+    ],
+  },
+  {
     version: '0.8.0',
     date: '2026-10-19',
     notes: [

@@ -18,6 +18,11 @@ CREATE TABLE IF NOT EXISTS users (
   created_at INTEGER NOT NULL
 );
 
+-- `test` splits the catalog into two fully independent copies, the same way events/sales
+-- already split: test mode's Calculator/Materials/Items tabs and Sell page only ever see and
+-- touch test = 1 rows, so practicing (including stock changes) never affects the real
+-- business data in test = 0 rows. See server/routes/maintenance.js for how the test side
+-- gets populated (a copy of the main side) or wiped.
 CREATE TABLE IF NOT EXISTS materials (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
@@ -25,6 +30,7 @@ CREATE TABLE IF NOT EXISTS materials (
   yield REAL NOT NULL DEFAULT 1,
   stock REAL NOT NULL DEFAULT 0,
   low REAL,
+  test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
 
@@ -57,7 +63,8 @@ CREATE TABLE IF NOT EXISTS items (
   price REAL NOT NULL DEFAULT 0,
   cost REAL NOT NULL DEFAULT 0,
   charity_pct REAL,
-  saved_at INTEGER NOT NULL
+  saved_at INTEGER NOT NULL,
+  test INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS events (

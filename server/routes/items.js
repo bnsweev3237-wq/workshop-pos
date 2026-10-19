@@ -9,26 +9,33 @@ const router = express.Router();
 // about what it costs to make or what it's priced to earn — that's the whole reason this
 // split exists now that there's a real server to enforce it (the artifact version couldn't).
 // category is included even though it's "extra" — it's not cost/profit data.
-const toPublicItem = (r) => ({ id: r.id, name: r.name, itemNo: r.item_no, category: r.category || '', price: r.price, stock: r.stock, low: r.low });
+const toPublicItem = (r) => ({ id: r.id, name: r.name, itemNo: r.item_no, category: r.category || '', price: r.price, stock: r.stock, low: r.low, test: !!r.test });
 
 const toFullItem = (r) => ({
   id: r.id, name: r.name, itemNo: r.item_no, itemType: r.item_type, category: r.category || '', materials: JSON.parse(r.materials_json),
   costMode: r.cost_mode, minutes: r.minutes, rate: r.rate, overhead: r.overhead,
   mode: r.mode, pct: r.pct, round: r.round, override: r.override,
-  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at,
+  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, test: !!r.test,
 });
+
+// Items are split into two fully independent catalogs by `test` — see schema.sql. Every
+// list here is scoped to one side or the other (default: the real, non-test catalog) so
+// test mode never shows, and can never accidentally touch, real stock.
+const testFlag = (req) => (req.query.test === '1' ? 1 : 0);
 
 // Any logged-in user (admin or cashier): the Sell page's item grid. No cost, no materials,
 // no pricing formula — that split is enforced here regardless of who's asking.
 router.get('/', requireLogin, (req, res) => {
-  const rows = db.prepare('SELECT * FROM items ORDER BY saved_at DESC').all();
+  const rows = db.prepare('SELECT * FROM items WHERE test = ? ORDER BY saved_at DESC').all(testFlag(req));
   res.json(rows.map(toPublicItem));
 });
 
-// Calculator / Saved Items (admin + manager, who can edit) and Reports (+ lead, read-only
-// there) all need the full picture — cost, materials, the pricing formula.
+// Calculator / Items (admin + manager, who can edit) and Reports (+ lead, read-only there)
+// all need the full picture — cost, materials, the pricing formula. Reports always wants the
+// real catalog regardless of whether test mode happens to be on in the caller's UI, since a
+// real sale can only ever reference a real (non-test) item.
 router.get('/full', requireReports, (req, res) => {
-  const rows = db.prepare('SELECT * FROM items ORDER BY saved_at DESC').all();
+  const rows = db.prepare('SELECT * FROM items WHERE test = ? ORDER BY saved_at DESC').all(testFlag(req));
   res.json(rows.map(toFullItem));
 });
 
@@ -58,13 +65,14 @@ router.post('/', requireManageItems, (req, res) => {
     price: Number(b.price) || 0,
     cost: Number(b.cost) || 0,
     saved_at: Date.now(),
+    test: b.test ? 1 : 0,
   };
   db.prepare(`
-    INSERT INTO items (id, name, item_no, item_type, category, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at)
-    VALUES (@id, @name, @item_no, @item_type, @category, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at)
+    INSERT INTO items (id, name, item_no, item_type, category, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, test)
+    VALUES (@id, @name, @item_no, @item_type, @category, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @test)
     ON CONFLICT(id) DO UPDATE SET name=@name, item_type=@item_type, category=@category, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
       rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
-      price=@price, cost=@cost, saved_at=@saved_at
+      price=@price, cost=@cost, saved_at=@saved_at, test=@test
   `).run(row);
   res.json(toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(row.id)));
 });

@@ -113,7 +113,11 @@ router.post('/', requireLogin, (req, res) => {
       if (item) {
         const lineProfit = sub - item.cost * (Number(l.qty) || 0);
         profit += lineProfit;
-        if (!test) stockChanges.push({ id: l.itemId, qty: Number(l.qty) || 0 });
+        // Always decrement stock, test sale or not — items are split into independent real
+        // and test catalogs (see schema.sql), so this only ever touches whichever side the
+        // sold item itself belongs to. That's what lets a test sale actually exercise stock
+        // changes, the whole point of a test item having its own stock in the first place.
+        stockChanges.push({ id: l.itemId, qty: Number(l.qty) || 0 });
         const cat = (item.category || '').trim();
         let effectivePct = null;
         if (cat && categoryRuleMap.has(cat)) { effectivePct = categoryRuleMap.get(cat); charityRule = cat; }
@@ -160,11 +164,11 @@ router.delete('/:id', requireLogin, (req, res) => {
   if (!sale) return res.status(404).json({ error: 'not_found' });
   const lines = JSON.parse(sale.lines_json);
   const tx = db.transaction(() => {
-    if (!sale.test) {
-      for (const l of lines) {
-        if (!l.itemId) continue;
-        db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(Number(l.qty) || 0, l.itemId);
-      }
+    // Same reasoning as checkout: restoring stock is safe regardless of test or not, since
+    // each item only ever belongs to one side of the real/test split.
+    for (const l of lines) {
+      if (!l.itemId) continue;
+      db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(Number(l.qty) || 0, l.itemId);
     }
     db.prepare('DELETE FROM sales WHERE id = ?').run(sale.id);
   });

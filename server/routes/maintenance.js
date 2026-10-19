@@ -1,0 +1,108 @@
+const express = require('express');
+const db = require('../db');
+const { uid, genItemNo } = require('../lib/ids');
+const { requireAdmin } = require('../middleware/auth');
+
+const router = express.Router();
+router.use(requireAdmin);
+
+// Replaces whatever test data exists with a fresh, fully independent copy of the real
+// (non-test) materials, items, events, and sales. Every cross-reference — an item's linked
+// materials, an event's charity rules, a sale's event and line items — is remapped to point
+// at the new test-side rows, never the real ones, which is what lets test mode actually
+// exercise stock changes and everything else without ever touching real data.
+router.post('/copy-to-test', (req, res) => {
+  const tx = db.transaction(() => {
+    // Replace: clear whatever test data already exists first, so repeated use doesn't pile
+    // up duplicates. event_charity_rules has to go before events (it references events.id).
+    db.prepare('DELETE FROM event_charity_rules WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
+    db.prepare('DELETE FROM sales WHERE test = 1').run();
+    db.prepare('DELETE FROM events WHERE test = 1').run();
+    db.prepare('DELETE FROM items WHERE test = 1').run();
+    db.prepare('DELETE FROM materials WHERE test = 1').run();
+
+    const materialIdMap = new Map();
+    for (const m of db.prepare('SELECT * FROM materials WHERE test = 0').all()) {
+      const newId = uid();
+      materialIdMap.set(m.id, newId);
+      db.prepare(`
+        INSERT INTO materials (id, name, price, yield, stock, low, test, created_at)
+        VALUES (@id, @name, @price, @yield, @stock, @low, 1, @created_at)
+      `).run({ id: newId, name: m.name, price: m.price, yield: m.yield, stock: m.stock, low: m.low, created_at: m.created_at });
+    }
+
+    const itemIdMap = new Map();
+    for (const it of db.prepare('SELECT * FROM items WHERE test = 0').all()) {
+      const newId = uid();
+      itemIdMap.set(it.id, newId);
+      const materials = JSON.parse(it.materials_json).map((r) => (
+        r.libId && materialIdMap.has(r.libId) ? { ...r, libId: materialIdMap.get(r.libId) } : r
+      ));
+      db.prepare(`
+        INSERT INTO items (id, name, item_no, item_type, category, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, test)
+        VALUES (@id, @name, @item_no, @item_type, @category, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, 1)
+      `).run({
+        id: newId, name: it.name, item_no: genItemNo(db), item_type: it.item_type, category: it.category,
+        materials_json: JSON.stringify(materials), cost_mode: it.cost_mode, minutes: it.minutes, rate: it.rate,
+        overhead: it.overhead, mode: it.mode, pct: it.pct, round: it.round, override: it.override,
+        stock: it.stock, low: it.low, price: it.price, cost: it.cost, saved_at: Date.now(),
+      });
+    }
+
+    const eventIdMap = new Map();
+    for (const ev of db.prepare('SELECT * FROM events WHERE test = 0').all()) {
+      const newId = uid();
+      eventIdMap.set(ev.id, newId);
+      db.prepare(`
+        INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, tax_included_cash, tax_included_other, test, created_at, ended_at)
+        VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @tax_included_cash, @tax_included_other, 1, @created_at, @ended_at)
+      `).run({
+        id: newId, name: ev.name, start: ev.start, days: ev.days, cost: ev.cost, status: ev.status,
+        tax_rate: ev.tax_rate, cash_tax_rate: ev.cash_tax_rate, tax_included_cash: ev.tax_included_cash,
+        tax_included_other: ev.tax_included_other, created_at: ev.created_at, ended_at: ev.ended_at,
+      });
+      for (const rule of db.prepare('SELECT * FROM event_charity_rules WHERE event_id = ?').all(ev.id)) {
+        db.prepare(`
+          INSERT INTO event_charity_rules (id, event_id, category, charity_pct, created_at) VALUES (@id, @eventId, @category, @pct, @createdAt)
+        `).run({ id: uid(), eventId: newId, category: rule.category, pct: rule.charity_pct, createdAt: rule.created_at });
+      }
+    }
+
+    for (const s of db.prepare('SELECT * FROM sales WHERE test = 0').all()) {
+      const newId = uid();
+      const lines = JSON.parse(s.lines_json).map((l) => (
+        l.itemId && itemIdMap.has(l.itemId) ? { ...l, itemId: itemIdMap.get(l.itemId) } : l
+      ));
+      const newEventId = s.event_id && eventIdMap.has(s.event_id) ? eventIdMap.get(s.event_id) : null;
+      db.prepare(`
+        INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, user_id, user_name, created_at)
+        VALUES (@id, @eventId, 1, @taxIncluded, @linesJson, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charityDue, @userId, @userName, @createdAt)
+      `).run({
+        id: newId, eventId: newEventId, taxIncluded: s.tax_included, linesJson: JSON.stringify(lines),
+        subtotal: s.subtotal, tax: s.tax, total: s.total, tender: s.tender, received: s.received, change: s.change,
+        profit: s.profit, charityDue: s.charity_due, userId: s.user_id, userName: s.user_name, createdAt: s.created_at,
+      });
+    }
+  });
+  tx();
+  res.json({ ok: true });
+});
+
+// Wipes every item, material, sale, and event — both the real side and the test side.
+// Accounts, roles, and settings are untouched. The client already makes the admin type
+// DELETE to confirm; this checks it again server-side, since a destructive admin action
+// shouldn't rely on a client-only confirmation.
+router.post('/purge', (req, res) => {
+  if (req.body?.confirm !== 'DELETE') return res.status(400).json({ error: 'confirmation_required' });
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM event_charity_rules').run();
+    db.prepare('DELETE FROM sales').run();
+    db.prepare('DELETE FROM events').run();
+    db.prepare('DELETE FROM items').run();
+    db.prepare('DELETE FROM materials').run();
+  });
+  tx();
+  res.json({ ok: true });
+});
+
+module.exports = router;

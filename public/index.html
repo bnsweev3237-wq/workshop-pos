@@ -417,6 +417,23 @@
         </div>
       </div>
     </div>
+
+    <div class="card">
+      <h2>Database maintenance</h2>
+      <div class="help">These act on the whole database, not just one business's typical day-to-day use — handle with care.</div>
+      <label style="margin-bottom:4px">Copy main data to test</label>
+      <div class="hint" style="margin-top:-2px;margin-bottom:10px">Replaces whatever test data exists with a fresh, fully independent copy of your real items, materials, events, and sales — so test mode has realistic data to practice with (including stock changes), without ever touching the real thing.</div>
+      <div class="btn-row"><button class="btn sm" id="copyToTestBtn">Copy main → test</button></div>
+
+      <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+        <label style="margin-bottom:4px;color:var(--danger)">Purge all business data</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Permanently deletes every item, material, sale, and event — both the real side and the test side. Accounts, roles, and settings are kept. This can't be undone.</div>
+        <div class="row r2" style="align-items:flex-end;max-width:420px">
+          <div><label for="purgeConfirmInput">Type DELETE to confirm</label><input id="purgeConfirmInput" placeholder="DELETE"></div>
+          <div><button class="btn danger sm" id="purgeAllBtn" disabled>Purge everything</button></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <footer class="app-footer">

@@ -379,7 +379,7 @@ $('save').onclick = async () => {
     if (!name) continue;
     let entry = libByName(name);
     if (!entry) {
-      entry = await api('POST', '/api/materials', { name, price: row.price, yield: row.yield || 1, stock: 0 });
+      entry = await api('POST', '/api/materials', { name, price: row.price, yield: row.yield || 1, stock: 0, test: testMode });
       lib.push(entry);
       added.push(name);
     }
@@ -389,7 +389,7 @@ $('save').onclick = async () => {
   }
   const r = computeItem(s);
   const existing = currentEditId ? items.find(x => x.id === currentEditId) : items.find(x => x.name.toLowerCase() === s.name.toLowerCase());
-  const saved = await api('POST', '/api/items', { ...s, id: existing ? existing.id : undefined, price: r.price, cost: r.cost });
+  const saved = await api('POST', '/api/items', { ...s, id: existing ? existing.id : undefined, price: r.price, cost: r.cost, test: testMode });
   currentEditId = saved.id;
   $('itemNoHint').hidden = false;
   $('itemNoHint').textContent = `Item #${saved.itemNo}`;
@@ -401,7 +401,7 @@ $('save').onclick = async () => {
 };
 
 // ---------- Material library ----------
-async function loadMaterials() { lib = await api('GET', '/api/materials'); renderLib(); }
+async function loadMaterials() { lib = await api('GET', `/api/materials?test=${testMode ? 1 : 0}`); renderLib(); }
 function renderLib() {
   $('libList').innerHTML = lib.map(m => `<option value="${esc(m.name)}">`).join('');
   $('libCount').textContent = lib.length || '';
@@ -454,7 +454,7 @@ async function deleteLib(m) {
   renderLib(); if (touched.length) await loadItems();
 }
 $('addLib').onclick = async () => {
-  const m = await api('POST', '/api/materials', { name: '', price: '', yield: 1, stock: 0 });
+  const m = await api('POST', '/api/materials', { name: '', price: '', yield: 1, stock: 0, test: testMode });
   lib.push(m); renderLib();
   const names = $('libRows').querySelectorAll('.in-name'); names[names.length - 1].focus();
 };
@@ -471,7 +471,7 @@ function itemStatus(it) {
   const priceMoved = Math.abs(diff) >= 0.005;
   return { c, diff, costDiff, priceMoved, moved: priceMoved || Math.abs(costDiff) >= 0.005 };
 }
-async function loadItems() { items = await api('GET', '/api/items/full'); renderItems(); refreshCategoryList(); }
+async function loadItems() { items = await api('GET', `/api/items/full?test=${testMode ? 1 : 0}`); renderItems(); refreshCategoryList(); }
 function refreshCategoryList() {
   const cats = [...new Set(items.map(it => (it.category || '').trim()).filter(Boolean))].sort();
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
@@ -567,7 +567,7 @@ let ticket = [];
 let tender = 'cash';
 let posSearch = '';
 
-async function loadPosItems() { posItemsList = await api('GET', '/api/items'); renderPosItems(); }
+async function loadPosItems() { posItemsList = await api('GET', `/api/items?test=${testMode ? 1 : 0}`); renderPosItems(); }
 function renderPosItems() {
   const grid = $('posItems');
   const q = posSearch.trim().toLowerCase();
@@ -873,23 +873,27 @@ function setTestMode(on) {
   try { localStorage.setItem('workshopPos.testMode', on ? '1' : '0'); } catch {}
   $('testOffRow').hidden = on; $('testBanner').hidden = !on; $('testModeBadge').hidden = !on; $('eventForm').hidden = true;
   renderEventWidget(); renderEventHistory(); renderSales();
+  // Items and materials are split into real/test catalogs too — switch every tab over to
+  // whichever side matches now. Guarded by `me` since this also runs once at boot, before
+  // login, when these endpoints would just 401.
+  if (me) Promise.all([loadPosItems(), loadMaterials(), loadItems()]).catch(() => {});
 }
 $('testModeOnLink').onclick = () => { setTestMode(true); toast('Test mode on — practice away'); };
 async function purgeTestData(askFirst) {
-  const testEvents = events.filter(e => e.test), testSales = sales.filter(s => s.test);
-  if (!testEvents.length && !testSales.length) return 'empty';
-  if (askFirst && !await askConfirm(`Permanently delete ${testSales.length} test sale${testSales.length === 1 ? '' : 's'} and ${testEvents.length} test event${testEvents.length === 1 ? '' : 's'}?`, 'Clear test data')) return 'cancelled';
+  if (askFirst && !await askConfirm('Permanently delete all test items, materials, events, and sales?', 'Clear test data')) return 'cancelled';
+  let counts;
   try {
-    // Sales first — sales.event_id references events(id), so deleting the event while a
-    // sale still points at it would fail the same way charity rules did (see events.js).
-    for (const s of testSales) await api('DELETE', '/api/sales/' + s.id);
-    for (const e of testEvents) await api('DELETE', '/api/events/' + e.id);
+    counts = (await api('POST', '/api/test-data/purge')).counts;
   } catch (e) {
-    await Promise.all([loadEvents(), loadSales()]);
+    await Promise.all([loadEvents(), loadSales()]).catch(() => {});
     return 'failed';
   }
-  await Promise.all([loadEvents(), loadSales()]);
-  return 'purged';
+  // The purge itself already succeeded at this point — a refresh failing for a role that
+  // can't read materials/items full detail (e.g. a cashier) shouldn't turn a successful
+  // purge into a reported failure.
+  await Promise.all([loadEvents(), loadSales(), loadMaterials(), loadItems(), loadPosItems()]).catch(() => {});
+  const total = (counts.sales || 0) + (counts.events || 0) + (counts.items || 0) + (counts.materials || 0);
+  return total > 0 ? 'purged' : 'empty';
 }
 $('purgeTestLink').onclick = async () => {
   const r = await purgeTestData(true);
@@ -907,7 +911,7 @@ $('testModeOffLink').onclick = async () => {
   const r = await purgeTestData(false);
   if (r === 'failed') { toast('Could not purge test data — try again.'); return; }
   setTestMode(false);
-  toast('Exited test mode — test data purged');
+  toast(r === 'purged' ? 'Exited test mode — test data purged' : 'Exited test mode');
 };
 
 // ---------- Reports (core: stats, chart, top items, payment type) ----------
@@ -1224,6 +1228,29 @@ $('newAdminSave').onclick = async () => {
     toast(`Added ${role} “${name}”`);
     await loadUsers();
   } catch (e) { toast(e.code === 'username_taken' ? 'That username is already taken' : (e.message || 'Could not add account')); }
+};
+
+// ---------- Settings: database maintenance ----------
+$('purgeConfirmInput').addEventListener('input', () => {
+  $('purgeAllBtn').disabled = $('purgeConfirmInput').value !== 'DELETE';
+});
+$('copyToTestBtn').onclick = async () => {
+  if (!await askConfirm('Replace all test data with a fresh copy of your real items, materials, events, and sales?', 'Copy to test')) return;
+  try {
+    await api('POST', '/api/maintenance/copy-to-test');
+    toast('Test data replaced with a copy of your main data');
+    await Promise.all([loadMaterials(), loadItems(), loadEvents(), loadSales(), loadPosItems()]);
+  } catch (e) { toast(e.message || 'Could not copy to test'); }
+};
+$('purgeAllBtn').onclick = async () => {
+  if ($('purgeConfirmInput').value !== 'DELETE') return;
+  if (!await askConfirm('This permanently deletes every item, material, sale, and event — real and test. This can’t be undone. Continue?', 'Purge everything')) return;
+  try {
+    await api('POST', '/api/maintenance/purge', { confirm: 'DELETE' });
+    $('purgeConfirmInput').value = ''; $('purgeAllBtn').disabled = true;
+    toast('All business data purged');
+    await Promise.all([loadMaterials(), loadItems(), loadEvents(), loadSales(), loadPosItems()]);
+  } catch (e) { toast(e.message || 'Could not purge data'); }
 };
 
 // ---------- Backup ----------
