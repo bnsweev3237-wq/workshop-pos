@@ -46,8 +46,15 @@ router.post('/', requireEventManage, (req, res) => {
   res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(row.id)));
 });
 
+// Deletes any charity rules for this event first — event_charity_rules.event_id references
+// events(id) with foreign keys enforced, so deleting an event that still has rules attached
+// would otherwise fail outright (and silently, from the UI's point of view).
 router.delete('/:id', requireEventManage, (req, res) => {
-  db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM event_charity_rules WHERE event_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
+  });
+  tx();
   res.json({ ok: true });
 });
 

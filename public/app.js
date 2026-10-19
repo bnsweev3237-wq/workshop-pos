@@ -879,14 +879,34 @@ async function purgeTestData(askFirst) {
   const testEvents = events.filter(e => e.test), testSales = sales.filter(s => s.test);
   if (!testEvents.length && !testSales.length) return 'empty';
   if (askFirst && !await askConfirm(`Permanently delete ${testSales.length} test sale${testSales.length === 1 ? '' : 's'} and ${testEvents.length} test event${testEvents.length === 1 ? '' : 's'}?`, 'Clear test data')) return 'cancelled';
-  for (const e of testEvents) await api('DELETE', '/api/events/' + e.id);
-  for (const s of testSales) await api('DELETE', '/api/sales/' + s.id);
+  try {
+    for (const e of testEvents) await api('DELETE', '/api/events/' + e.id);
+    for (const s of testSales) await api('DELETE', '/api/sales/' + s.id);
+  } catch (e) {
+    await Promise.all([loadEvents(), loadSales()]);
+    return 'failed';
+  }
   await Promise.all([loadEvents(), loadSales()]);
   return 'purged';
 }
-$('purgeTestLink').onclick = async () => { const r = await purgeTestData(true); if (r === 'purged') toast('Test data cleared'); else if (r === 'empty') toast('No test data to clear'); };
-$('purgeTestOffLink').onclick = async () => { const r = await purgeTestData(true); if (r === 'purged') toast('Test data purged'); else if (r === 'empty') toast('No test data to purge'); };
-$('testModeOffLink').onclick = async () => { await purgeTestData(false); setTestMode(false); toast('Exited test mode — test data purged'); };
+$('purgeTestLink').onclick = async () => {
+  const r = await purgeTestData(true);
+  if (r === 'purged') toast('Test data cleared');
+  else if (r === 'empty') toast('No test data to clear');
+  else if (r === 'failed') toast('Could not clear test data — try again.');
+};
+$('purgeTestOffLink').onclick = async () => {
+  const r = await purgeTestData(true);
+  if (r === 'purged') toast('Test data purged');
+  else if (r === 'empty') toast('No test data to purge');
+  else if (r === 'failed') toast('Could not purge test data — try again.');
+};
+$('testModeOffLink').onclick = async () => {
+  const r = await purgeTestData(false);
+  if (r === 'failed') { toast('Could not purge test data — try again.'); return; }
+  setTestMode(false);
+  toast('Exited test mode — test data purged');
+};
 
 // ---------- Reports (core: stats, chart, top items, payment type) ----------
 let rptRange = '7';
