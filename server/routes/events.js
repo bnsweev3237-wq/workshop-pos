@@ -46,13 +46,25 @@ router.post('/', requireEventManage, (req, res) => {
   res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(row.id)));
 });
 
-// Deletes any charity rules for this event first — event_charity_rules.event_id references
-// events(id) with foreign keys enforced, so deleting an event that still has rules attached
-// would otherwise fail outright (and silently, from the UI's point of view).
+// sales.event_id also references events(id) with foreign keys enforced, so an event with any
+// sales recorded against it couldn't be deleted either — same silent-failure shape the
+// charity-rules fix above addressed. Real sales are revenue history, not disposable the way
+// test data is, so rather than cascading through them we block the delete and say why. Test
+// sales are practice data (same philosophy as purgeTestData) and get cleared along with the
+// event's charity rules.
 router.delete('/:id', requireEventManage, (req, res) => {
+  const eventId = req.params.id;
+  const realSales = db.prepare('SELECT COUNT(*) AS n FROM sales WHERE event_id = ? AND test = 0').get(eventId).n;
+  if (realSales > 0) {
+    return res.status(409).json({
+      error: 'event_has_sales',
+      message: `This event has ${realSales} recorded sale${realSales === 1 ? '' : 's'} against it — delete those first if you really want to remove the event.`,
+    });
+  }
   const tx = db.transaction(() => {
-    db.prepare('DELETE FROM event_charity_rules WHERE event_id = ?').run(req.params.id);
-    db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM sales WHERE event_id = ?').run(eventId);
+    db.prepare('DELETE FROM event_charity_rules WHERE event_id = ?').run(eventId);
+    db.prepare('DELETE FROM events WHERE id = ?').run(eventId);
   });
   tx();
   res.json({ ok: true });

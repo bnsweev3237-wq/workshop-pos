@@ -777,7 +777,16 @@ function renderEventHistory() {
     viewBtn.hidden = evSalesList.length === 0; viewBtn.textContent = `View sales (${evSalesList.length})`;
     let built = false;
     viewBtn.onclick = () => { salesBox.hidden = !salesBox.hidden; viewBtn.textContent = (salesBox.hidden ? 'View' : 'Hide') + ` sales (${evSalesList.length})`; if (!salesBox.hidden && !built) { built = true; evSalesList.forEach(s => salesBox.appendChild(buildSaleReceipt(s))); } };
-    row.querySelector('.ev-del').onclick = async () => { if (!await askConfirm(`Delete “${ev.name || 'Event'}” from history?`, 'Delete event')) return; await api('DELETE', '/api/events/' + ev.id); await loadEvents(); };
+    row.querySelector('.ev-del').onclick = async () => {
+      if (!await askConfirm(`Delete “${ev.name || 'Event'}” from history?`, 'Delete event')) return;
+      try {
+        await api('DELETE', '/api/events/' + ev.id);
+      } catch (e) {
+        toast(e.message || 'Could not delete event — try again.');
+        return;
+      }
+      await loadEvents();
+    };
     box.appendChild(row);
   }
   updateTestControls();
