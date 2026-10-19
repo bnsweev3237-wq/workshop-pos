@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.9.1',
+    date: '2026-10-19',
+    notes: [
+      'Reports now shows test data while test mode is on, and real data while it\'s off — matching every other tab, instead of always showing real data regardless.',
+      'The "Test mode is on" banner now shows above every tab, not just Sell.',
+      'Added a way to exit test mode without deleting your test data, alongside the existing "clear" and "exit & purge" options.',
+    ],
+  },
+  {
     version: '0.9.0',
     date: '2026-10-19',
     notes: [

@@ -166,14 +166,21 @@ figures only appear in the admin/manager/lead Reports endpoints.
 Test mode (the Sell page → "Enter test / training mode") is a full, independent sandbox:
 items, materials, events, and sales each have their own separate test-side copy, alongside
 the real ones. Switching test mode on or off switches every tab — Calculator, Materials,
-Items, and Sell — over to that side, so practicing (including making items, adjusting stock,
-and running sales) never touches real data or real stock. Reports always reflects real data
-only, regardless of whether test mode happens to be on, since a real sale can only ever be
-rung up against a real item.
+Items, Reports, and Sell — over to that side, so practicing (including making items,
+adjusting stock, and running sales) never touches real data or real stock. Reports shows
+test data while test mode is on and real data while it's off, the same split as everywhere
+else — it never mixes the two.
 
-"Clear test data" / "Exit & purge test data" deletes everything on the test side (items,
-materials, events, sales, and any charity rules on those test events) and leaves the real
-side untouched.
+A banner reading "Test mode is on" shows above every tab, not just Sell, so it's never
+ambiguous which side you're looking at. From that banner:
+- **Exit test mode (keep test data)** — leaves test mode without deleting anything, so a
+  half-finished practice run (an open test event, items you were trying out) is still there
+  next time you turn test mode back on.
+- **Clear test data now** — wipes the test side without leaving test mode.
+- **Exit & purge test data** — leaves test mode and wipes the test side in one step.
+
+All three only ever touch the test side (items, materials, events, sales, and any charity
+rules on those test events) — the real side is never affected.
 
 ## Database maintenance
 

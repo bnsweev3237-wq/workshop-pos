@@ -876,7 +876,10 @@ function setTestMode(on) {
   // Items and materials are split into real/test catalogs too — switch every tab over to
   // whichever side matches now. Guarded by `me` since this also runs once at boot, before
   // login, when these endpoints would just 401.
-  if (me) Promise.all([loadPosItems(), loadMaterials(), loadItems()]).catch(() => {});
+  if (me) {
+    Promise.all([loadPosItems(), loadMaterials(), loadItems()]).catch(() => {});
+    if (currentTab === 'reports') renderReports().catch(() => {});
+  }
 }
 $('testModeOnLink').onclick = () => { setTestMode(true); toast('Test mode on — practice away'); };
 async function purgeTestData(askFirst) {
@@ -913,6 +916,10 @@ $('testModeOffLink').onclick = async () => {
   setTestMode(false);
   toast(r === 'purged' ? 'Exited test mode — test data purged' : 'Exited test mode');
 };
+$('testModeOffKeepLink').onclick = () => {
+  setTestMode(false);
+  toast('Exited test mode — test data kept for next time');
+};
 
 // ---------- Reports (core: stats, chart, top items, payment type) ----------
 let rptRange = '7';
@@ -922,14 +929,14 @@ function rptWindow(key) {
   if (key === 'today') return { start: today0, end: now };
   if (key === '7') return { start: today0 - 6 * 86400000, end: now };
   if (key === '30') return { start: today0 - 29 * 86400000, end: now };
-  const all = fullSales;
+  const all = fullSales.filter(s => !!s.test === testMode);
   const earliest = all.length ? Math.min(...all.map(s => s.createdAt || now)) : now;
   return { start: dayStart(earliest), end: now };
 }
 async function renderReports() {
-  [fullSales, items, appSettings] = await Promise.all([api('GET', '/api/sales/full'), api('GET', '/api/items/full'), api('GET', '/api/settings')]);
+  [fullSales, items, appSettings] = await Promise.all([api('GET', '/api/sales/full'), api('GET', `/api/items/full?test=${testMode ? 1 : 0}`), api('GET', '/api/settings')]);
   const { start, end } = rptWindow(rptRange);
-  const inRange = fullSales.filter(s => !s.test && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
+  const inRange = fullSales.filter(s => !!s.test === testMode && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
   const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   $('rptRangeHint').textContent = `${fmtDate(start)} – ${fmtDate(end)} · ${inRange.length ? `${inRange.length} sale${inRange.length === 1 ? '' : 's'}` : 'no sales yet'}`;
   const revenue = inRange.reduce((n, s) => n + num(s.total), 0);
@@ -1072,11 +1079,11 @@ function renderRptCost(inRange) {
 }
 function renderRptEvents() {
   const box = $('rptEventsList');
-  const evs = events.filter(e => !e.test).slice().sort((a, b) => (b.start || '').localeCompare(a.start || ''));
+  const evs = events.filter(e => !!e.test === testMode).slice().sort((a, b) => (b.start || '').localeCompare(a.start || ''));
   $('rptEventsEmpty').hidden = evs.length > 0;
   box.innerHTML = '';
   for (const ev of evs) {
-    const evSalesList = fullSales.filter(s => s.eventId === ev.id && !s.test);
+    const evSalesList = fullSales.filter(s => s.eventId === ev.id && !!s.test === testMode);
     const revenue = evSalesList.reduce((n, s) => n + num(s.total), 0);
     const grossProfit = evSalesList.reduce((n, s) => n + num(s.profit), 0);
     const charityDue = evSalesList.reduce((n, s) => n + num(s.charityDue), 0);

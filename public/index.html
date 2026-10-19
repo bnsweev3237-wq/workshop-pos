@@ -39,6 +39,15 @@
     <button data-tab="settings">Settings</button>
   </nav>
 
+  <div class="banner" id="testBanner" hidden>
+    <span>🧪 <b>Test mode is on.</b> Items, materials, events, and sales you create or change now are practice-only, kept completely separate from your real data.</span>
+    <div class="btn-row" style="margin:0">
+      <button class="btn sm" id="testModeOffKeepLink">Exit test mode (keep test data)</button>
+      <button class="btn sm" id="purgeTestLink">Clear test data now</button>
+      <button class="btn sm" id="testModeOffLink">Exit &amp; purge test data</button>
+    </div>
+  </div>
+
   <!-- ===== Calculator ===== -->
   <section id="tab-calc" hidden>
     <div class="grid">
@@ -203,13 +212,6 @@
     <div class="test-row" id="testOffRow">
       <button class="event-link" id="testModeOnLink" style="margin-bottom:16px">🧪 Enter test / training mode</button>
       <button class="event-link" id="purgeTestOffLink" hidden style="margin-bottom:16px">Purge leftover test data</button>
-    </div>
-    <div class="banner" id="testBanner" hidden>
-      <span>🧪 <b>Test mode is on.</b> Events and sales you create now are practice-only.</span>
-      <div class="btn-row" style="margin:0">
-        <button class="btn sm" id="purgeTestLink">Clear test data now</button>
-        <button class="btn sm" id="testModeOffLink">Exit &amp; purge test data</button>
-      </div>
     </div>
     <button class="event-link" id="eventSetupLink" hidden>+ Set up an event (break-even tracker)</button>
     <div class="event-bar-wrap" id="eventBar" hidden>
