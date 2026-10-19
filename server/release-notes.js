@@ -3,6 +3,16 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.8.0',
+    date: '2026-10-19',
+    notes: [
+      'Renamed "Saved items" to "Items".',
+      'Items can now be added directly with a manually entered cost and sale price — for things you buy ready-made and resell, instead of only pricing things you make from materials.',
+      'Added categories to items.',
+      'Charity giving moved from items to events: set up one or more rules per event — a % for a specific item category, and/or a checkbox to apply a % to every sale at the event. Reports now shows a per-event charity wrap-up broken out by category.',
+    ],
+  },
+  {
     version: '0.7.0',
     date: '2026-10-19',
     notes: [

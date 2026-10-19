@@ -34,7 +34,7 @@
     <button data-tab="pos" class="on">Sell</button>
     <button data-tab="calc">Calculator</button>
     <button data-tab="lib">Materials <span class="count" id="libCount"></span></button>
-    <button data-tab="items">Saved items <span class="count" id="itemCount"></span></button>
+    <button data-tab="items">Items <span class="count" id="itemCount"></span></button>
     <button data-tab="reports">Reports</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -45,14 +45,33 @@
       <main>
         <div class="card">
           <h2>Item</h2>
+          <div class="seg" id="itemTypeSeg">
+            <button data-type="made" class="on">Made</button>
+            <button data-type="resale">Resale (buy &amp; resell)</button>
+          </div>
           <label for="itemName">Item name</label><input id="itemName" placeholder="e.g. Wooden keychain">
           <div class="hint" id="itemNoHint" hidden></div>
+          <div class="row r2" style="margin-top:12px">
+            <div><label for="itemCategory">Category</label><input id="itemCategory" list="categoryList" placeholder="optional, e.g. Military"></div>
+            <div></div>
+          </div>
+          <datalist id="categoryList"></datalist>
           <div class="row r2" style="margin-top:12px">
             <div><label for="stock">Current stock (finished items on hand)</label><input id="stock" type="number" min="0" step="1" value="0"></div>
             <div><label for="itemLow">Low stock alert at</label><input id="itemLow" type="number" min="0" step="1" placeholder="optional"></div>
           </div>
         </div>
 
+        <div class="card" id="resaleCard" hidden>
+          <h2>Resale pricing</h2>
+          <div class="help">For items you buy ready-made and resell as-is — enter what you paid and what you charge directly, skipping the materials/labor/markup calculation below.</div>
+          <div class="row r2">
+            <div><label for="resaleCost">Your cost ($)</label><input id="resaleCost" type="number" min="0" step="0.01" value="0"></div>
+            <div><label for="resalePrice">Sale price ($)</label><input id="resalePrice" type="number" min="0" step="0.01" value="0"></div>
+          </div>
+        </div>
+
+        <div id="madeCards">
         <div class="card">
           <h2>Materials</h2>
           <div class="help">
@@ -110,11 +129,6 @@
           </div>
         </div>
 
-        <div class="card">
-          <h2>Charity</h2>
-          <label for="charityPct">% of profit to donate (optional)</label>
-          <input id="charityPct" type="number" min="0" max="100" step="1" placeholder="not a charity item">
-          <div class="hint">Applies automatically every time this item sells. An event can override this percentage — including giving a non-charity item one — just for that event, from the event's setup form on the Sell page.</div>
         </div>
       </main>
 
@@ -165,10 +179,10 @@
     </div>
   </section>
 
-  <!-- ===== Saved items ===== -->
+  <!-- ===== Items ===== -->
   <section id="tab-items" hidden>
     <div class="card">
-      <h2>Saved items</h2>
+      <h2>Items</h2>
       <div class="banner" id="changedBanner" hidden>
         <span id="changedText"></span>
         <button class="btn sm" id="acceptAll">Accept all new prices</button>
@@ -180,7 +194,7 @@
           <tbody id="itemRows"></tbody>
         </table>
       </div>
-      <div class="empty" id="itemsEmpty">Nothing saved yet.</div>
+      <div class="empty" id="itemsEmpty">No items yet.</div>
     </div>
   </section>
 
@@ -230,14 +244,18 @@
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedCash"><span>Cash: tax included in price</span></label>
       </div>
       <div id="evCharitySection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
-        <label style="margin-bottom:6px">Charity overrides for this event</label>
-        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Give an item a different share of its profit to donate — or a first one — just for this event. Items without an override here keep their own default (set in the Calculator).</div>
+        <label style="margin-bottom:6px">Charity giving for this event</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Donate a % of profit from sales at this event — either from a specific item category, or from every sale at the event. Add as many rules as you need.</div>
         <div id="evCharityList"></div>
         <div class="row r3" style="margin-top:8px">
-          <div><label for="evCharityItemPick">Item</label><select id="evCharityItemPick"></select></div>
+          <div><label for="evCharityCategory">Category</label><input id="evCharityCategory" list="categoryList" placeholder="e.g. Military"></div>
           <div><label for="evCharityPct">% to charity</label><input id="evCharityPct" type="number" min="0" max="100" step="1"></div>
-          <div style="display:flex;align-items:flex-end"><button class="btn sm" id="evCharityAdd" style="width:100%">+ Add override</button></div>
+          <div style="display:flex;align-items:flex-end"><button class="btn sm" id="evCharityAdd" style="width:100%">+ Add rule</button></div>
         </div>
+        <label class="chk-field" style="margin-top:10px">
+          <input type="checkbox" id="evCharityAllSales">
+          <span>Apply to all sales at this event <small style="color:var(--muted);font-weight:400">(ignores the category above)</small></span>
+        </label>
       </div>
       <div class="btn-row">
         <button class="btn primary sm" id="evSave">Save</button>
@@ -249,9 +267,9 @@
       <main>
         <div class="card">
           <h2>Add to ticket</h2>
-          <input id="posSearch" placeholder="Search your saved items…" style="margin-bottom:12px">
+          <input id="posSearch" placeholder="Search your items…" style="margin-bottom:12px">
           <div class="pos-grid" id="posItems"></div>
-          <div class="empty" id="posItemsEmpty" hidden>No saved items yet.</div>
+          <div class="empty" id="posItemsEmpty" hidden>No items yet.</div>
           <div class="btn-row"><button class="btn" id="posCustomToggle">+ Custom item</button></div>
           <div class="row r3" id="posCustomRow" hidden style="margin-top:12px">
             <div><label for="posCustomName">Name</label><input id="posCustomName" placeholder="e.g. Custom order"></div>

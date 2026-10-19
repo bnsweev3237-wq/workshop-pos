@@ -176,6 +176,10 @@ function roundPrice(p, how) {
 const laborIn = cm => cm === 'labor' || cm === 'both';
 const ovhIn = cm => cm === 'overhead' || cm === 'both';
 function computeItem(s) {
+  if (s.itemType === 'resale') {
+    const cost = num(s.resaleCost), price = num(s.resalePrice);
+    return { mat: 0, lab: 0, ovh: 0, cost, raw: price, suggested: price, overridden: false, price };
+  }
   const mat = s.materials.reduce((sum, r) => sum + unitCost(matSource(r)) * num(r.per), 0);
   const lab = laborIn(s.costMode) ? num(s.minutes) / 60 * num(s.rate) : 0;
   const ovh = ovhIn(s.costMode) ? (mat + lab) * num(s.overhead) / 100 : 0;
@@ -208,6 +212,16 @@ const isLow = (stock, low) => low !== '' && low != null && num(stock) <= num(low
 // ---------- Calculator form ----------
 let mode = 'markup';
 let costMode = 'none';
+let itemType = 'made';
+function setItemType(t) {
+  itemType = t === 'resale' ? 'resale' : 'made';
+  document.querySelectorAll('#itemTypeSeg button').forEach(b => b.classList.toggle('on', b.dataset.type === itemType));
+  $('madeCards').hidden = itemType !== 'made';
+  $('resaleCard').hidden = itemType !== 'resale';
+  calc();
+}
+document.querySelectorAll('#itemTypeSeg button').forEach(b => b.onclick = () => setItemType(b.dataset.type));
+['resaleCost', 'resalePrice'].forEach(id => $(id).addEventListener('input', calc));
 function setCostMode(m) {
   costMode = m;
   document.querySelectorAll('#costSeg button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
@@ -269,7 +283,9 @@ function addMaterial(m = {}) {
 
 function readForm() {
   return {
+    itemType,
     name: $('itemName').value.trim(),
+    category: $('itemCategory').value.trim(),
     stock: $('stock').value, low: $('itemLow').value,
     materials: [...$('mats').children].map(tr => {
       const [n, p, y, u] = tr.querySelectorAll('input');
@@ -279,7 +295,7 @@ function readForm() {
     }),
     costMode, minutes: $('minutes').value, rate: $('rate').value, overhead: $('overhead').value,
     mode, pct: $('pct').value, round: $('round').value, override: $('override').value,
-    charityPct: $('charityPct').value,
+    resaleCost: $('resaleCost').value, resalePrice: $('resalePrice').value,
   };
 }
 
@@ -328,7 +344,9 @@ document.querySelectorAll('#mode button').forEach(b => b.onclick = () => setMode
 ['minutes', 'rate', 'overhead', 'pct', 'round', 'override'].forEach(id => $(id).addEventListener('input', calc));
 
 function restore(s) {
+  setItemType(s.itemType || 'made');
   $('itemName').value = s.name;
+  $('itemCategory').value = s.category || '';
   $('itemNoHint').hidden = !s.itemNo;
   $('itemNoHint').textContent = s.itemNo ? `Item #${s.itemNo}` : '';
   $('stock').value = s.stock ?? 0; $('itemLow').value = s.low ?? '';
@@ -337,7 +355,7 @@ function restore(s) {
   $('minutes').value = s.minutes; $('rate').value = s.rate; $('overhead').value = s.overhead;
   setCostMode(s.costMode || 'none');
   $('pct').value = s.pct; $('round').value = s.round; $('override').value = s.override ?? '';
-  $('charityPct').value = s.charityPct ?? '';
+  $('resaleCost').value = s.cost ?? 0; $('resalePrice').value = s.price ?? 0;
   setMode(s.mode, true);
   currentEditId = s.id || null;
 }
@@ -346,7 +364,7 @@ let currentEditId = null;
 $('addMat').onclick = () => addMaterial().focus();
 $('reset').onclick = () => {
   currentEditId = null;
-  restore({ name: '', override: '', stock: 0, low: '', costMode, materials: [], minutes: 0, rate: $('rate').value, overhead: $('overhead').value, mode, pct: defaults[mode], round: 'whole' });
+  restore({ itemType: 'made', name: '', category: '', override: '', stock: 0, low: '', costMode, materials: [], minutes: 0, rate: $('rate').value, overhead: $('overhead').value, mode, pct: defaults[mode], round: 'whole', cost: 0, price: 0 });
   $('itemName').focus();
 };
 $('save').onclick = async () => {
@@ -428,7 +446,7 @@ function refreshLowMatBanner() {
 }
 async function deleteLib(m) {
   const u = usedIn(m.id);
-  if (u && !await askConfirm(`“${m.name || 'This material'}” is used in ${u} saved item${u > 1 ? 's' : ''}. Those items will keep its current price as a one-off.`, 'Delete material')) return;
+  if (u && !await askConfirm(`“${m.name || 'This material'}” is used in ${u} item${u > 1 ? 's' : ''}. Those items will keep its current price as a one-off.`, 'Delete material')) return;
   const touched = items.filter(it => it.materials.some(r => r.libId === m.id));
   for (const it of touched) { for (const r of it.materials) if (r.libId === m.id) { r.name = m.name; r.price = m.price; r.yield = m.yield; delete r.libId; } await api('POST', '/api/items', it); }
   lib = lib.filter(x => x !== m);
@@ -441,7 +459,7 @@ $('addLib').onclick = async () => {
   const names = $('libRows').querySelectorAll('.in-name'); names[names.length - 1].focus();
 };
 
-// ---------- Saved items ----------
+// ---------- Items ----------
 function freshCopy(it) {
   const c = computeItem(it);
   it.materials.forEach(r => { const m = libById(r.libId); if (m) { r.name = m.name; r.price = m.price; r.yield = m.yield; } });
@@ -453,7 +471,11 @@ function itemStatus(it) {
   const priceMoved = Math.abs(diff) >= 0.005;
   return { c, diff, costDiff, priceMoved, moved: priceMoved || Math.abs(costDiff) >= 0.005 };
 }
-async function loadItems() { items = await api('GET', '/api/items/full'); renderItems(); }
+async function loadItems() { items = await api('GET', '/api/items/full'); renderItems(); refreshCategoryList(); }
+function refreshCategoryList() {
+  const cats = [...new Set(items.map(it => (it.category || '').trim()).filter(Boolean))].sort();
+  $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+}
 async function makeBatch(it, qty) {
   qty = Math.max(1, Math.round(num(qty)) || 1);
   try {
@@ -476,9 +498,11 @@ function renderItems() {
     const { c, diff, costDiff, priceMoved, moved } = itemStatus(it);
     if (moved) changed++;
     const low = isLow(it.stock, it.low);
+    const typeLabel = it.itemType === 'resale' ? 'Resale item' : `${it.materials.length} material${it.materials.length === 1 ? '' : 's'}`;
+    const catBadge = it.category ? ` · <span class="cat-badge">${esc(it.category)}</span>` : '';
     const tr = document.createElement('tr'); tr.dataset.id = it.id;
     tr.innerHTML = `
-      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${it.materials.length} material${it.materials.length === 1 ? '' : 's'} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${it.charityPct ? ` · <span class="charity-badge" title="${it.charityPct}% of profit donated">🎗 ${it.charityPct}%</span>` : ''}</div></td>
+      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}</div></td>
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
@@ -552,7 +576,7 @@ function renderPosItems() {
   for (const it of list) {
     const low = isLow(it.stock, it.low);
     const btn = document.createElement('button'); btn.className = 'pos-item';
-    btn.innerHTML = `<span class="nm"></span>${it.charityPct ? `<span class="charity-badge" title="${it.charityPct}% of profit donated">🎗 ${it.charityPct}%</span>` : ''}<span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${num(it.stock)} in stock</span>`;
+    btn.innerHTML = `<span class="nm"></span><span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${num(it.stock)} in stock</span>`;
     btn.querySelector('.nm').textContent = it.name;
     btn.onclick = () => addToTicket(it);
     grid.appendChild(btn);
@@ -763,56 +787,59 @@ function fillEventForm(ev) {
   $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
   $('evEnd').hidden = !ev;
-  loadEventCharitySection(ev).catch(() => {});
+  loadEventCharityRules(ev).catch(() => {});
 }
 
-// ---------- Event charity overrides (admin/manager/lead only — same as event management) ----------
-let evCharityOverrides = [];
-let evCharityItems = [];
-async function loadEventCharitySection(ev) {
+// ---------- Event charity rules (admin/manager/lead only — same as event management) ----------
+let evCharityRules = [];
+async function loadEventCharityRules(ev) {
   $('evCharitySection').hidden = !ev;
-  if (!ev) { evCharityOverrides = []; evCharityItems = []; $('evCharityList').innerHTML = ''; return; }
-  [evCharityOverrides, evCharityItems] = await Promise.all([
-    api('GET', `/api/charity-overrides?eventId=${encodeURIComponent(ev.id)}`),
+  $('evCharityAllSales').checked = false; $('evCharityCategory').disabled = false;
+  if (!ev) { evCharityRules = []; $('evCharityList').innerHTML = ''; return; }
+  const [rules, fullItems] = await Promise.all([
+    api('GET', `/api/charity-rules?eventId=${encodeURIComponent(ev.id)}`),
     api('GET', '/api/items/full'),
   ]);
-  renderEvCharityPicker();
+  evCharityRules = rules;
+  const cats = [...new Set(fullItems.map(it => (it.category || '').trim()).filter(Boolean))].sort();
+  $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
   renderEvCharityList();
-}
-function renderEvCharityPicker() {
-  $('evCharityItemPick').innerHTML = evCharityItems.map(it => `<option value="${it.id}"></option>`).join('');
-  [...$('evCharityItemPick').options].forEach((opt, i) => { opt.textContent = evCharityItems[i].name || 'Unnamed item'; });
 }
 function renderEvCharityList() {
   const box = $('evCharityList');
-  if (!evCharityOverrides.length) { box.innerHTML = '<div class="hint">No overrides yet for this event.</div>'; return; }
+  if (!evCharityRules.length) { box.innerHTML = '<div class="hint">No charity rules yet for this event.</div>'; return; }
   box.innerHTML = '';
-  for (const o of evCharityOverrides) {
-    const item = evCharityItems.find(i => i.id === o.itemId);
+  const sorted = [...evCharityRules].sort((a, b) => a.category.localeCompare(b.category));
+  for (const r of sorted) {
     const row = document.createElement('div'); row.className = 'ev-charity-row';
-    row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="icon-btn del" title="Remove override">×</button>`;
-    row.querySelector('.ev-charity-name').textContent = item ? item.name : '(deleted item)';
-    row.querySelector('.ev-charity-pct').textContent = `${o.charityPct}%`;
+    row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="icon-btn del" title="Remove rule">×</button>`;
+    row.querySelector('.ev-charity-name').textContent = r.allSales ? 'All sales' : r.category;
+    row.querySelector('.ev-charity-pct').textContent = `${r.charityPct}%`;
     row.querySelector('.del').onclick = async () => {
-      try { await api('DELETE', `/api/charity-overrides/${o.eventId}/${o.itemId}`); evCharityOverrides = evCharityOverrides.filter(x => x !== o); renderEvCharityList(); toast('Override removed'); }
-      catch (e) { toast(e.message || 'Could not remove override'); }
+      try { await api('DELETE', `/api/charity-rules/${r.id}`); evCharityRules = evCharityRules.filter(x => x !== r); renderEvCharityList(); toast('Rule removed'); }
+      catch (e) { toast(e.message || 'Could not remove rule'); }
     };
     box.appendChild(row);
   }
 }
+$('evCharityAllSales').onchange = () => {
+  $('evCharityCategory').disabled = $('evCharityAllSales').checked;
+  if ($('evCharityAllSales').checked) $('evCharityCategory').value = '';
+};
 $('evCharityAdd').onclick = async () => {
   const ev = openEvent(); if (!ev) return;
-  const itemId = $('evCharityItemPick').value;
+  const allSales = $('evCharityAllSales').checked;
+  const category = $('evCharityCategory').value.trim();
   const pct = $('evCharityPct').value;
-  if (!itemId || pct === '' || num(pct) < 0 || num(pct) > 100) { toast('Pick an item and a % from 0–100'); return; }
+  if ((!allSales && !category) || pct === '' || num(pct) < 0 || num(pct) > 100) { toast('Pick a category (or check “all sales”) and a % from 0–100'); return; }
   try {
-    const saved = await api('POST', '/api/charity-overrides', { eventId: ev.id, itemId, charityPct: num(pct) });
-    evCharityOverrides = evCharityOverrides.filter(o => o.itemId !== itemId);
-    evCharityOverrides.push(saved);
-    $('evCharityPct').value = '';
+    const saved = await api('POST', '/api/charity-rules', { eventId: ev.id, category, allSales, charityPct: num(pct) });
+    evCharityRules = evCharityRules.filter(r => r.category !== saved.category);
+    evCharityRules.push(saved);
+    $('evCharityCategory').value = ''; $('evCharityPct').value = ''; $('evCharityAllSales').checked = false; $('evCharityCategory').disabled = false;
     renderEvCharityList();
-    toast('Override added');
-  } catch (e) { toast(e.message || 'Could not add override'); }
+    toast('Charity rule added');
+  } catch (e) { toast(e.message || 'Could not add rule'); }
 };
 $('eventSetupLink').onclick = () => { fillEventForm(null); $('eventForm').hidden = false; $('evStart').focus(); };
 $('eventGear').onclick = () => { fillEventForm(openEvent()); $('eventForm').hidden = !$('eventForm').hidden; };
@@ -935,10 +962,9 @@ function buildItemBreakdown(salesList) {
       const { sub } = lineTaxSplit(l, included);
       const key = l.itemId || ('custom:' + l.name);
       let entry = map.get(key);
-      if (!entry) entry = { itemId: l.itemId || null, name: l.name, qty: 0, revenue: 0, cost: 0, hasCost: !!l.itemId, charity: 0 };
+      if (!entry) entry = { itemId: l.itemId || null, name: l.name, qty: 0, revenue: 0, cost: 0, hasCost: !!l.itemId };
       entry.qty += num(l.qty);
       entry.revenue += sub;
-      entry.charity += num(l.charityAmt);
       if (l.itemId) {
         const it = itemById(l.itemId);
         entry.cost += (it ? num(it.cost) : 0) * num(l.qty);
@@ -947,6 +973,22 @@ function buildItemBreakdown(salesList) {
     }
   }
   return [...map.values()].sort((a, b) => b.revenue - a.revenue);
+}
+// Groups a list of (full) sales' charity amounts by the rule that produced them — a matched
+// item category, or '' for the event's "all sales" catch-all — for the per-event wrap-up
+// report. Item-level charity no longer exists, so this replaces the old per-item display.
+function buildCharityBreakdown(salesList) {
+  const map = new Map();
+  for (const s of salesList) {
+    for (const l of s.lines) {
+      if (!l.charityAmt) continue;
+      const key = l.charityRule || '';
+      const entry = map.get(key) || { label: key === '' ? 'All sales' : key, amt: 0 };
+      entry.amt += num(l.charityAmt);
+      map.set(key, entry);
+    }
+  }
+  return [...map.values()].sort((a, b) => b.amt - a.amt);
 }
 function materialBreakdownRows(entry) {
   if (!entry.itemId) return null;
@@ -974,12 +1016,6 @@ function buildCostRow(entry) {
     </button>
     <div class="rpt-cost-body" hidden></div>`;
   row.querySelector('.rpt-cost-name').textContent = entry.name;
-  if (entry.charity > 0) {
-    const badge = document.createElement('span'); badge.className = 'charity-badge'; badge.style.marginLeft = '8px';
-    badge.title = `${money(entry.charity)} of this item's profit owed to charity`;
-    badge.textContent = `🎗 ${money(entry.charity)}`;
-    row.querySelector('.rpt-cost-name').appendChild(badge);
-  }
   row.querySelector('.rpt-cost-qty').textContent = entry.qty + '×';
   row.querySelector('.rpt-cost-rev').textContent = money(entry.revenue);
   row.querySelector('.rpt-cost-cost').textContent = entry.hasCost ? money(entry.cost) : '—';
@@ -988,13 +1024,12 @@ function buildCostRow(entry) {
   profEl.classList.toggle('neg', entry.hasCost && profit < 0);
   const body = row.querySelector('.rpt-cost-body');
   const mats = materialBreakdownRows(entry);
-  const charityHtml = entry.charity > 0 ? `<div class="hint" style="color:var(--warn);margin-bottom:8px">🎗 ${money(entry.charity)} of this item's profit is owed to charity over this range.</div>` : '';
   if (mats === null) {
-    body.innerHTML = `${charityHtml}<div class="hint">Custom item — no recipe or cost on file.</div>`;
+    body.innerHTML = `<div class="hint">Custom item — no recipe or cost on file.</div>`;
   } else if (!mats.length) {
-    body.innerHTML = `${charityHtml}<div class="hint">This item has no materials recorded.</div>`;
+    body.innerHTML = `<div class="hint">This item has no materials recorded.</div>`;
   } else {
-    body.innerHTML = `${charityHtml}<table class="rpt-mat-table"><thead><tr><th>Material</th><th class="r">Used per item</th><th class="r">Total used</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead><tbody>${
+    body.innerHTML = `<table class="rpt-mat-table"><thead><tr><th>Material</th><th class="r">Used per item</th><th class="r">Total used</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead><tbody>${
       mats.map(m => `<tr><td>${esc(m.name)}</td><td class="r">${m.usedPerItem.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${m.totalUsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${money4(m.unitCost)}</td><td class="r">${money(m.totalCost)}</td></tr>`).join('')
     }</tbody></table>`;
   }
@@ -1035,6 +1070,7 @@ function renderRptEvents() {
     netEl.textContent = `True profit ${net >= 0 ? '+' : '−'}${money(Math.abs(net))}`;
     netEl.classList.add(net >= 0 ? 'pos' : 'neg');
     const body = row.querySelector('.rpt-ev-body');
+    const charityRows = buildCharityBreakdown(evSalesList);
     body.innerHTML = `
       <div class="rpt-ev-stats">
         <div><span>Revenue</span><b>${money(revenue)}</b></div>
@@ -1043,7 +1079,8 @@ function renderRptEvents() {
         <div><span>True profit</span><b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>
         ${charityDue > 0 ? `<div><span>Owed to charity</span><b style="color:var(--warn)">${money(charityDue)}</b></div>` : ''}
       </div>
-      <div class="hint">True profit is this event's sales profit minus its booth/space cost — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>`;
+      <div class="hint">True profit is this event's sales profit minus its booth/space cost — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>
+      ${charityRows.length ? `<div style="margin-top:12px"><h3 style="margin:0 0 6px;font-size:13px">Charity wrap-up</h3>${charityRows.map(r => `<div class="ev-charity-row"><span class="ev-charity-name">${esc(r.label)}</span><span class="ev-charity-pct">${money(r.amt)}</span></div>`).join('')}</div>` : ''}`;
     const itemRows = buildItemBreakdown(evSalesList);
     if (itemRows.length) {
       const list = document.createElement('div'); list.className = 'rpt-ev-items';
@@ -1226,7 +1263,7 @@ $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('rele
 
 // ---------- Boot ----------
 (async function boot() {
-  addMaterial(); setMode('markup'); setTender('cash'); setTestMode(testMode);
+  addMaterial(); setItemType('made'); setMode('markup'); setTender('cash'); setTestMode(testMode);
   $('footYear').textContent = new Date().getFullYear();
   loadVersionInfo().catch(() => {});
   try {

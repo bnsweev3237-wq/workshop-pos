@@ -59,6 +59,8 @@ function ensureColumn(table, column, definition) {
   }
 }
 ensureColumn('items', 'charity_pct', 'REAL');
+ensureColumn('items', 'item_type', "TEXT NOT NULL DEFAULT 'made'");
+ensureColumn('items', 'category', 'TEXT');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
 
 module.exports = db;

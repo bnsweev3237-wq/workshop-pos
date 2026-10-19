@@ -27,11 +27,12 @@ function defaultLineTaxRate(event, tender) {
   return Number(event.tax_rate) || 0;
 }
 
-// Each stored line carries charityPct/charityAmt for Reports' per-item charity breakdown —
-// both are profit-derived (amt = profit × pct), so the public shape strips them per line the
-// same way the sale itself hides `profit`. Without this, a cashier could back-calculate a
-// line's exact profit from its charityAmt even though toPublicSale never lists it directly.
-const stripLineCharity = (l) => { const { charityPct, charityAmt, ...rest } = l; return rest; };
+// Each stored line carries charityRule/charityPct/charityAmt for Reports' per-event charity
+// wrap-up — charityAmt is profit-derived (amt = profit × pct), so the public shape strips all
+// three per line the same way the sale itself hides `profit`. Without this, a cashier could
+// back-calculate a line's exact profit from its charityAmt even though toPublicSale never
+// lists it directly.
+const stripLineCharity = (l) => { const { charityRule, charityPct, charityAmt, ...rest } = l; return rest; };
 
 // Public shape: everything a receipt needs, nothing about profit margins. `soldBy` is
 // whatever was recorded at the time — if attribution was off then, it's null; turning the
@@ -83,12 +84,18 @@ router.post('/', requireLogin, (req, res) => {
     lines = rawLines.map((l) => ({ ...l, taxRate: forcedRate }));
   }
 
-  // Per-event charity overrides, loaded once rather than per line — an event can give an
-  // item a different (or its first) charity percentage just for that event; absence of a
-  // row here means "use the item's own default."
-  const overrides = b.eventId
-    ? new Map(db.prepare('SELECT item_id, charity_pct FROM event_charity_overrides WHERE event_id = ?').all(b.eventId).map((r) => [r.item_id, r.charity_pct]))
-    : new Map();
+  // This event's charity rules, loaded once rather than per line. category '' is the "all
+  // sales" catch-all; any other category only applies to items tagged with that category.
+  // A category-specific rule takes priority over the catch-all when an item matches both.
+  const charityRules = b.eventId
+    ? db.prepare('SELECT category, charity_pct FROM event_charity_rules WHERE event_id = ?').all(b.eventId)
+    : [];
+  const categoryRuleMap = new Map();
+  let allSalesPct = null;
+  for (const r of charityRules) {
+    if (r.category === '') allSalesPct = r.charity_pct;
+    else categoryRuleMap.set(r.category, r.charity_pct);
+  }
 
   let subtotal = 0, tax = 0, profit = 0, charityDue = 0;
   const stockChanges = [];
@@ -96,14 +103,21 @@ router.post('/', requireLogin, (req, res) => {
   for (const l of lines) {
     const { sub, tax: lineTax } = lineTaxSplit(l, included);
     subtotal += sub; tax += lineTax;
-    let charityPct = null, charityAmt = 0;
+    // charityRule records which rule produced charityAmt — the matched category, or '' for
+    // the all-sales catch-all — so Reports can group a wrap-up report by it. Custom
+    // (non-catalog) lines never get a charity figure: there's no known cost for them, so no
+    // profit to take a percentage of.
+    let charityRule = null, charityPct = null, charityAmt = 0;
     if (l.itemId) {
       const item = db.prepare('SELECT * FROM items WHERE id = ?').get(l.itemId);
       if (item) {
         const lineProfit = sub - item.cost * (Number(l.qty) || 0);
         profit += lineProfit;
         if (!test) stockChanges.push({ id: l.itemId, qty: Number(l.qty) || 0 });
-        const effectivePct = overrides.has(l.itemId) ? overrides.get(l.itemId) : item.charity_pct;
+        const cat = (item.category || '').trim();
+        let effectivePct = null;
+        if (cat && categoryRuleMap.has(cat)) { effectivePct = categoryRuleMap.get(cat); charityRule = cat; }
+        else if (allSalesPct != null) { effectivePct = allSalesPct; charityRule = ''; }
         if (effectivePct) {
           charityPct = effectivePct;
           charityAmt = Math.max(0, lineProfit) * effectivePct / 100;
@@ -111,7 +125,7 @@ router.post('/', requireLogin, (req, res) => {
         }
       }
     }
-    finalLines.push({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0, charityPct, charityAmt });
+    finalLines.push({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0, charityRule, charityPct, charityAmt });
   }
   const total = subtotal + tax;
   const received = b.tender === 'cash' ? (Number(b.received) || 0) : total;

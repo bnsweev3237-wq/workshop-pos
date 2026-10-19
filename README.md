@@ -13,7 +13,9 @@ real backend and a real database instead of relying on a third-party platform's 
 Working end to end, tested:
 - Calculator (materials, labor, overhead, markup/margin/multiplier pricing)
 - Material library
-- Saved items (make/sell stock tracking)
+- Items (make/sell stock tracking) — either priced from materials/labor/overhead ("made"),
+  or entered directly as a cost and sale price ("resale", for things bought ready-made and
+  resold as-is). Items can be tagged with a category, used to target charity rules (below).
 - Sell / point of sale — requires signing in; every role can reach it, but the base cashier
   role is restricted there (see roles below)
 - Four account roles — add/remove, reset passwords, change role, all from Settings
@@ -28,10 +30,10 @@ Working end to end, tested:
   shown on receipts and in a Reports breakdown by user; off means nothing new gets recorded,
   not just hidden
 - A sign-out button in the header
-- Charity giving — mark an item with a default % of its profit to donate (set in the
-  Calculator), optionally overridden per event (including giving a normally-non-charity item
-  a percentage just for one event, or vice versa). Reports calculates and shows what's owed,
-  overall and broken down by event and by item.
+- Charity giving — set up one or more rules per event (from the event's setup form on the
+  Sell page): a % of profit for a specific item category, and/or a checkbox to apply a % to
+  every sale at the event. Reports calculates and shows what's owed, overall, per event, and
+  broken out by category in each event's wrap-up.
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
 window with its own per-install database in the OS's standard app-data folder — and a GitHub
@@ -117,7 +119,7 @@ curious user," not "can't be reverse engineered by someone determined to."
 Four account roles, each strictly a subset of the one above it, except that only admins and
 managers can edit pricing/materials:
 
-| | Sell | Reports | Calculator / Materials / Saved Items | Settings |
+| | Sell | Reports | Calculator / Materials / Items | Settings |
 |---|---|---|---|---|
 | **Admin** | ✓ full | ✓ | ✓ | ✓ |
 | **Manager** | ✓ full | ✓ | ✓ | — |
@@ -133,24 +135,27 @@ corrected) even on a direct API request, not just a missing button.
 
 ## Charity giving
 
-An item can have a default "% of profit to donate" (Calculator → Charity). It applies
-automatically every time that item sells, at any event. An event can override that
-percentage for just that event — from the event's own setup form on the Sell page — including
-giving a normally-non-charity item a percentage it wouldn't otherwise have, or changing an
-existing one. No override on a given event means "use the item's own default."
+Charity rules live on the **event**, not the item (Sell page → the event's gear icon →
+Charity giving for this event). Each rule is either:
+- a % of profit from sales of items tagged with a specific **category**, or
+- a % of profit from **every** sale at the event (the "apply to all sales" checkbox).
 
-Each sale snapshots the percentage and dollar amount that applied *at the time*, per line, so
-a later change to an item's default or an event's override never rewrites history. Reports
+An event can have several rules — e.g. 5% for the "Military" category and 2% for
+"Education" — added one at a time with the "+ Add rule" button. If an item's category
+matches a rule, that rule applies; otherwise the event's "all sales" rule (if any) applies
+instead. Custom (off-catalog) ticket items never generate a charity figure, since there's no
+known cost for them to take a percentage of profit from.
+
+Each sale snapshots the matched rule, percentage, and dollar amount *at the time*, per line,
+so a later change to an item's category or an event's rules never rewrites history. Reports
 shows the total owed for the selected date range, a per-event figure (in the Events ledger,
-alongside true profit), and a per-item breakdown (in Cost & profit by item) — everywhere a
-dollar figure is shown, it's what should actually be set aside to donate, not merely what
-percentage applies. This is informational reporting only — there's no "mark as donated"
-ledger/payment-tracking workflow (yet).
+alongside true profit), and — inside each event's expandable panel — a "Charity wrap-up"
+broken out by category (or "All sales"). This is informational reporting only — there's no
+"mark as donated" ledger/payment-tracking workflow (yet).
 
-The charity percentage itself is visible on the Sell page (including to cashiers, as a small
-badge) since it's not cost or profit data — but the dollar amounts it produces are: both the
-per-sale and per-line charity figures are stripped from every public (cashier-visible)
-response, the same way profit is, and only appear in the admin/manager/lead Reports endpoints.
+The dollar amounts a rule produces are profit-derived, so they're stripped from every public
+(cashier-visible) response the same way profit is — both the per-sale total and the per-line
+figures only appear in the admin/manager/lead Reports endpoints.
 
 ## Security model
 
@@ -158,7 +163,7 @@ response, the same way profit is, and only appear in the admin/manager/lead Repo
   route is `/api/meta/version` (just a version number and changelog).
 - **Sell page**: reachable by any role — ticket, checkout, event setup, void sale, test mode —
   except that cashiers get the restricted version described above.
-- **Calculator / Materials / Saved Items**: admin and manager only.
+- **Calculator / Materials / Items**: admin and manager only.
 - **Reports**: admin, manager, and lead. The server never sends per-sale profit data to a role
   below that (a dedicated `/api/sales/full` endpoint is the only place profit figures are
   served from).

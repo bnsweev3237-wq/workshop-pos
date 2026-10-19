@@ -30,14 +30,19 @@ CREATE TABLE IF NOT EXISTS materials (
 
 -- `materials_json` holds each item's material rows (name/price/yield/per/libId) exactly
 -- as the pricing calculator already works with them — kept denormalized on purpose so
--- the ported frontend's computeItem() logic needs no changes to read it.
--- `charity_pct` is this item's default share of its own profit (0-100) earmarked for
--- donation, applied automatically whenever it sells. Null/0 means not a charity item. An
--- event can override this per item for just that event — see event_charity_overrides below.
+-- the ported frontend's computeItem() logic needs no changes to read it. Only meaningful
+-- when item_type = 'made'; a 'resale' item skips the materials/labor/pricing formula
+-- entirely and just stores the cost/price the user typed in directly.
+-- `category` is free text (e.g. "Military", "Education") — used to target charity rules
+-- set up on an event (see event_charity_rules below), nothing else reads it.
+-- `charity_pct` is unused — charity giving moved to event-level rules keyed by category.
+-- Left in place rather than dropped so existing rows aren't disturbed by a migration.
 CREATE TABLE IF NOT EXISTS items (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
   item_no TEXT UNIQUE,
+  item_type TEXT NOT NULL DEFAULT 'made',
+  category TEXT,
   materials_json TEXT NOT NULL DEFAULT '[]',
   cost_mode TEXT NOT NULL DEFAULT 'none',
   minutes REAL NOT NULL DEFAULT 0,
@@ -71,16 +76,20 @@ CREATE TABLE IF NOT EXISTS events (
   ended_at INTEGER
 );
 
--- Per-event charity-percentage overrides: lets one event donate a different share of an
--- item's profit than that item's own default (including giving a normally-0% item a
--- percentage just for this event, or vice versa). Absence of a row means "use the item's
--- own charity_pct." Checkout (server/routes/sales.js) is the only place that reads this.
-CREATE TABLE IF NOT EXISTS event_charity_overrides (
+-- Per-event charity rules: an event can donate a % of profit either from sales of items in
+-- a specific category, or from every sale at the event. `category = ''` is the sentinel for
+-- "all sales" (kept as '' rather than NULL so the unique index below works — SQLite treats
+-- NULLs as distinct from each other, which would let duplicate "all sales" rows sneak in).
+-- Checkout (server/routes/sales.js) matches a line's item category against these rules,
+-- preferring a category-specific rule over the all-sales one when both exist.
+CREATE TABLE IF NOT EXISTS event_charity_rules (
+  id TEXT PRIMARY KEY,
   event_id TEXT NOT NULL REFERENCES events(id),
-  item_id TEXT NOT NULL REFERENCES items(id),
+  category TEXT NOT NULL DEFAULT '',
   charity_pct REAL NOT NULL,
-  PRIMARY KEY (event_id, item_id)
+  created_at INTEGER NOT NULL
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_charity_rules_event_category ON event_charity_rules(event_id, category);
 
 -- `lines_json` holds each sale's line items exactly as the receipt/reports code expects.
 -- `user_name` is a snapshot of who rang it up at the time, kept even if that account is
