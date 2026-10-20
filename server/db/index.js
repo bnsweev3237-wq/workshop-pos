@@ -1,6 +1,7 @@
 const path = require('path');
 const fs = require('fs');
 const Database = require('better-sqlite3');
+const { uid } = require('../lib/ids');
 
 // Lives in a data/ folder next to the project by default, overridable so the Electron
 // packaging step later can point it at the OS's per-user app-data directory instead.
@@ -65,6 +66,38 @@ ensureColumn('items', 'test', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('materials', 'test', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('materials', 'source', 'TEXT');
 ensureColumn('materials', 'product_url', 'TEXT');
+ensureColumn('materials', 'source_id', 'TEXT');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
+
+// Seeds the sources list with common ones once, the first time this runs against a database
+// that has none at all — so there's something useful immediately instead of an empty list.
+// After that it's ordinary admin-editable data (Settings → Material sources); this never
+// runs again once at least one source exists, even if every seeded one gets deleted later.
+const DEFAULT_SOURCES = ['Amazon', 'Temu', 'Walmart', 'Home Depot', "Lowe's", 'Michaels', 'Hobby Lobby', 'Etsy', 'AliExpress', 'eBay'];
+if (db.prepare('SELECT COUNT(*) AS n FROM sources').get().n === 0) {
+  const insertSource = db.prepare('INSERT INTO sources (id, name, created_at) VALUES (?, ?, ?)');
+  const now = Date.now();
+  for (const name of DEFAULT_SOURCES) insertSource.run(uid(), name, now);
+}
+
+// One-time per-row migration: materials tagged under the old fixed source slug (temu/
+// amazon/homedepot/other, from before sources were user-editable) get pointed at a matching
+// `sources` row instead, so upgrading never silently drops an existing tag. Matches by name
+// against whatever's in `sources` now (including the seed above), creating a row if an old
+// slug doesn't match one — e.g. a renamed or deleted default. Naturally runs at most once per
+// material, since it only looks at rows that don't have source_id set yet.
+const OLD_SLUG_TO_NAME = { temu: 'Temu', amazon: 'Amazon', homedepot: 'Home Depot', other: 'Other' };
+const untagged = db.prepare("SELECT id, source FROM materials WHERE (source_id IS NULL OR source_id = '') AND source IS NOT NULL AND source != ''").all();
+if (untagged.length) {
+  const findSource = db.prepare('SELECT id FROM sources WHERE name = ? COLLATE NOCASE');
+  const insertSource = db.prepare('INSERT INTO sources (id, name, created_at) VALUES (?, ?, ?)');
+  const updateMaterial = db.prepare('UPDATE materials SET source_id = ? WHERE id = ?');
+  for (const row of untagged) {
+    const name = OLD_SLUG_TO_NAME[row.source] || row.source;
+    let src = findSource.get(name);
+    if (!src) { src = { id: uid() }; insertSource.run(src.id, name, Date.now()); }
+    updateMaterial.run(src.id, row.id);
+  }
+}
 
 module.exports = db;

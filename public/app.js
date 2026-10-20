@@ -157,7 +157,7 @@ function showTab(t) {
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -401,7 +401,13 @@ $('save').onclick = async () => {
 };
 
 // ---------- Material library ----------
-async function loadMaterials() { lib = await api('GET', `/api/materials?test=${testMode ? 1 : 0}`); renderLib(); }
+let sources = [];
+async function loadSources() { sources = await api('GET', '/api/sources'); renderSourceRows(); }
+async function loadMaterials() {
+  await loadSources();
+  lib = await api('GET', `/api/materials?test=${testMode ? 1 : 0}`);
+  renderLib();
+}
 function priceCheckErrorMessage(code) {
   switch (code) {
     case 'no_product_url': return 'Add a product link first.';
@@ -428,13 +434,7 @@ function renderLib() {
       <td class="num" data-l="Per piece"></td>
       <td data-l="In stock"><input class="in-tiny stockIn" type="number" min="0" step="any"></td>
       <td data-l="Low at"><input class="in-tiny lowIn" type="number" min="0" step="any" placeholder="off"></td>
-      <td data-l="Source"><select class="in-small sourceSelect">
-        <option value="">—</option>
-        <option value="temu">Temu</option>
-        <option value="amazon">Amazon</option>
-        <option value="homedepot">Home Depot</option>
-        <option value="other">Other</option>
-      </select></td>
+      <td data-l="Source"><select class="in-small sourceSelect"></select></td>
       <td class="num used" data-l="Used in"></td>
       <td class="acts">
         <button class="icon-btn link" title="Product link &amp; price check">🔗</button>
@@ -442,14 +442,15 @@ function renderLib() {
       </td>`;
     const [n, p, y, stockIn, lowIn] = tr.querySelectorAll('input');
     const sourceSelect = tr.querySelector('.sourceSelect');
+    sourceSelect.innerHTML = '<option value="">—</option>' + sources.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     n.value = m.name; p.value = m.price; y.value = m.yield; stockIn.value = m.stock ?? 0; lowIn.value = m.low ?? '';
-    sourceSelect.value = m.source || '';
+    sourceSelect.value = m.sourceId || '';
     const refresh = () => { tr.querySelector('.num').textContent = money4(unitCost(m)); const u = usedIn(m.id); tr.querySelector('.used').textContent = u ? `${u} item${u > 1 ? 's' : ''}` : '—'; };
     refresh();
     stockIn.classList.toggle('low-input', low);
     let saveTimer;
     const onRowChange = () => {
-      m.name = n.value; m.price = p.value; m.yield = y.value; m.stock = stockIn.value; m.low = lowIn.value; m.source = sourceSelect.value;
+      m.name = n.value; m.price = p.value; m.yield = y.value; m.stock = stockIn.value; m.low = lowIn.value; m.sourceId = sourceSelect.value || null;
       refresh(); stockIn.classList.toggle('low-input', isLow(m.stock, m.low)); refreshLowMatBanner();
       $('libList').innerHTML = lib.map(x => `<option value="${esc(x.name)}">`).join('');
       syncLinkedRows(); calc();
@@ -1308,6 +1309,34 @@ $('newAdminSave').onclick = async () => {
   } catch (e) { toast(e.code === 'username_taken' ? 'That username is already taken' : (e.message || 'Could not add account')); }
 };
 
+// ---------- Settings: material sources ----------
+function renderSourceRows() {
+  const tb = $('sourceRows'); if (!tb) return;
+  tb.innerHTML = '';
+  for (const s of sources) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td></td><td class="acts"><button class="icon-btn del" title="Remove source">×</button></td>`;
+    tr.querySelector('td').textContent = s.name;
+    tr.querySelector('.del').onclick = async () => {
+      if (!await askConfirm(`Remove “${s.name}” as a source? Materials tagged with it go back to untagged.`, 'Remove source')) return;
+      try { await api('DELETE', '/api/sources/' + s.id); toast(`Removed “${s.name}”`); await loadMaterials(); }
+      catch (e) { toast(e.message || 'Could not remove source'); }
+    };
+    tb.appendChild(tr);
+  }
+  $('sourcesEmpty').hidden = sources.length > 0;
+}
+$('newSourceAdd').onclick = async () => {
+  const name = $('newSourceName').value.trim();
+  if (!name) { $('newSourceName').focus(); toast('Give the source a name first'); return; }
+  try {
+    await api('POST', '/api/sources', { name });
+    $('newSourceName').value = '';
+    toast(`Added “${name}”`);
+    await loadMaterials();
+  } catch (e) { toast(e.message || 'Could not add source'); }
+};
+
 // ---------- Settings: database maintenance ----------
 $('purgeConfirmInput').addEventListener('input', () => {
   $('purgeAllBtn').disabled = $('purgeConfirmInput').value !== 'DELETE';
@@ -1333,8 +1362,8 @@ $('purgeAllBtn').onclick = async () => {
 
 // ---------- Backup ----------
 $('exportBtn').onclick = async () => {
-  const [allItems, allMats, allSales, allEvents] = await Promise.all([api('GET', '/api/items/full'), api('GET', '/api/materials'), api('GET', '/api/sales/full'), api('GET', '/api/events')]);
-  const data = { app: 'craftium', version: 1, exportedAt: new Date().toISOString(), materials: allMats, items: allItems, sales: allSales, events: allEvents };
+  const [allItems, allMats, allSales, allEvents, allSources] = await Promise.all([api('GET', '/api/items/full'), api('GET', '/api/materials'), api('GET', '/api/sales/full'), api('GET', '/api/events'), api('GET', '/api/sources')]);
+  const data = { app: 'craftium', version: 1, exportedAt: new Date().toISOString(), sources: allSources, materials: allMats, items: allItems, sales: allSales, events: allEvents };
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `craftium-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -1347,6 +1376,7 @@ $('importFile').onchange = async e => {
   try { d = JSON.parse(await f.text()); if (!Array.isArray(d.items) || !Array.isArray(d.materials)) throw new Error(); }
   catch { toast('That file isn’t a Craftium backup'); return; }
   if (!await askConfirm(`Import ${d.items.length} items and ${d.materials.length} materials? Existing items/materials with matching ids will be overwritten.`, 'Import backup')) return;
+  for (const s of (d.sources || [])) await api('POST', '/api/sources', s); // before materials — they may reference these by id
   for (const m of d.materials) await api('POST', '/api/materials', m);
   for (const it of d.items) await api('POST', '/api/items', it);
   for (const ev of (d.events || [])) await api('POST', '/api/events', ev);

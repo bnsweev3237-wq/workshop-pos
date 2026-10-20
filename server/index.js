@@ -25,6 +25,7 @@ function createApp() {
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/settings', require('./routes/settings'));
   app.use('/api/materials', require('./routes/materials'));
+  app.use('/api/sources', require('./routes/sources'));
   app.use('/api/items', require('./routes/items'));
   app.use('/api/events', require('./routes/events'));
   app.use('/api/sales', require('./routes/sales'));

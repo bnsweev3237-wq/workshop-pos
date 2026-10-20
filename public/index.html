@@ -421,6 +421,20 @@
     </div>
 
     <div class="card">
+      <h2>Material sources</h2>
+      <div class="help">Where you buy materials from — shown as a dropdown when tagging a material in the Materials tab, and usable with "Check price" there. Add, rename, or remove as needed.</div>
+      <table class="items-table">
+        <thead><tr><th>Source</th><th></th></tr></thead>
+        <tbody id="sourceRows"></tbody>
+      </table>
+      <div class="empty" id="sourcesEmpty" hidden>No sources yet.</div>
+      <div class="row r2" style="margin-top:12px;max-width:420px">
+        <div><label for="newSourceName">Add a source</label><input id="newSourceName" placeholder="e.g. Michaels"></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn sm" id="newSourceAdd" style="width:100%">+ Add</button></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Database maintenance</h2>
       <div class="help">These act on the whole database, not just one business's typical day-to-day use — handle with care.</div>
       <label style="margin-bottom:4px">Copy main data to test</label>

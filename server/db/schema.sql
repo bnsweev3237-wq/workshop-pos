@@ -18,16 +18,29 @@ CREATE TABLE IF NOT EXISTS users (
   created_at INTEGER NOT NULL
 );
 
+-- User-managed "where do you buy this" tags (Temu, Amazon, Home Depot, Walmart, etc.) —
+-- editable from Settings (server/routes/sources.js). Seeded with common ones on first run
+-- (see server/db/index.js) so there's something useful immediately, but after that it's
+-- ordinary admin-editable data; nothing about any specific source is hardcoded anywhere else.
+CREATE TABLE IF NOT EXISTS sources (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
 -- `test` splits the catalog into two fully independent copies, the same way events/sales
 -- already split: test mode's Calculator/Materials/Items tabs and Sell page only ever see and
 -- touch test = 1 rows, so practicing (including stock changes) never affects the real
 -- business data in test = 0 rows. See server/routes/maintenance.js for how the test side
 -- gets populated (a copy of the main side) or wiped.
--- `source` tags which vendor a material was bought from (temu/amazon/homedepot/other, or
--- blank for untagged). `product_url` is the saved link to that listing — the "Check price"
--- button in the Materials tab fetches it and tries to read off a current price for the admin
--- to review (see server/routes/materials.js and server/lib/priceFetch.js). Neither field, nor
--- that button, ever changes `price` on its own; it's always a manual accept.
+-- `source_id` tags which vendor a material was bought from, from the user-managed `sources`
+-- table above. `product_url` is the saved link to that listing — the "Check price" button in
+-- the Materials tab fetches it and tries to read off a current price for the admin to review
+-- (see server/routes/materials.js and server/lib/priceFetch.js). Neither field, nor that
+-- button, ever changes `price` on its own; it's always a manual accept.
+-- `source` (plain text) is unused — superseded by `source_id`, a proper reference to the
+-- user-editable sources table. Left in place rather than dropped so existing rows aren't
+-- disturbed by a migration; server/db/index.js migrates old values into `source_id` once.
 CREATE TABLE IF NOT EXISTS materials (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
@@ -36,6 +49,7 @@ CREATE TABLE IF NOT EXISTS materials (
   stock REAL NOT NULL DEFAULT 0,
   low REAL,
   source TEXT,
+  source_id TEXT REFERENCES sources(id),
   product_url TEXT,
   test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL

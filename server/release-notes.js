@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.11.0',
+    date: '2026-10-20',
+    notes: [
+      'Material sources are now a plain editable list in Settings instead of a fixed Temu/Amazon/Home Depot/Other set — prepopulated with common sites (Amazon, Temu, Walmart, Home Depot, Lowe\'s, Michaels, Hobby Lobby, Etsy, AliExpress, eBay), but add, rename, or remove any of them.',
+    ],
+  },
+  {
     version: '0.10.0',
     date: '2026-10-20',
     notes: [

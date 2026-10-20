@@ -21,14 +21,16 @@ router.post('/copy-to-test', (req, res) => {
     db.prepare('DELETE FROM items WHERE test = 1').run();
     db.prepare('DELETE FROM materials WHERE test = 1').run();
 
+    // source_id isn't remapped — `sources` (the vendor tag list) isn't split by test/main,
+    // it's shared, so the copy just keeps pointing at the same row the original did.
     const materialIdMap = new Map();
     for (const m of db.prepare('SELECT * FROM materials WHERE test = 0').all()) {
       const newId = uid();
       materialIdMap.set(m.id, newId);
       db.prepare(`
-        INSERT INTO materials (id, name, price, yield, stock, low, test, created_at)
-        VALUES (@id, @name, @price, @yield, @stock, @low, 1, @created_at)
-      `).run({ id: newId, name: m.name, price: m.price, yield: m.yield, stock: m.stock, low: m.low, created_at: m.created_at });
+        INSERT INTO materials (id, name, price, yield, stock, low, source_id, product_url, test, created_at)
+        VALUES (@id, @name, @price, @yield, @stock, @low, @source_id, @product_url, 1, @created_at)
+      `).run({ id: newId, name: m.name, price: m.price, yield: m.yield, stock: m.stock, low: m.low, source_id: m.source_id, product_url: m.product_url, created_at: m.created_at });
     }
 
     const itemIdMap = new Map();
