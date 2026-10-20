@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.11.1',
+    date: '2026-10-20',
+    notes: [
+      'Out-of-stock items now show up red in the Sell page\'s item grid, not just the small stock-count text.',
+    ],
+  },
+  {
     version: '0.11.0',
     date: '2026-10-20',
     notes: [

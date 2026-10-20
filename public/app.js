@@ -647,7 +647,8 @@ function renderPosItems() {
   grid.innerHTML = '';
   for (const it of list) {
     const low = isLow(it.stock, it.low);
-    const btn = document.createElement('button'); btn.className = 'pos-item';
+    const outOfStock = num(it.stock) <= 0;
+    const btn = document.createElement('button'); btn.className = 'pos-item' + (outOfStock ? ' out' : '');
     btn.innerHTML = `<span class="nm"></span><span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${num(it.stock)} in stock</span>`;
     btn.querySelector('.nm').textContent = it.name;
     btn.onclick = () => addToTicket(it);
