@@ -190,7 +190,7 @@ function showTab(t) {
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadServerBackups(); loadUpdateStatus(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -1392,6 +1392,87 @@ $('purgeAllBtn').onclick = async () => {
     toast('All business data purged');
     await Promise.all([loadMaterials(), loadItems(), loadEvents(), loadSales(), loadPosItems()]);
   } catch (e) { toast(e.message || 'Could not purge data'); }
+};
+
+// ---------- Automatic server backups ----------
+// Distinct from the manual export/import below: these are full-database snapshots the server
+// takes on its own once a day and keeps on disk, for disaster recovery — not something you
+// load back in through the UI.
+function formatBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+}
+async function loadServerBackups() {
+  const { keep, backups } = await api('GET', '/api/maintenance/backups');
+  $('backupKeepCount').textContent = keep;
+  const tb = $('backupRows'); tb.innerHTML = '';
+  for (const b of backups) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td></td><td>${formatBytes(b.size)}</td><td class="acts"><a class="btn sm" href="/api/maintenance/backups/${encodeURIComponent(b.file)}/download">Download</a></td>`;
+    tr.querySelector('td').textContent = new Date(b.createdAt).toLocaleString();
+    tb.appendChild(tr);
+  }
+  $('backupsEmpty').hidden = backups.length > 0;
+}
+$('backupNowBtn').onclick = async () => {
+  $('backupNowBtn').disabled = true;
+  try { await api('POST', '/api/maintenance/backups'); toast('Backup created'); await loadServerBackups(); }
+  catch (e) { toast(e.message || 'Backup failed'); }
+  finally { $('backupNowBtn').disabled = false; }
+};
+
+// ---------- Software updates ----------
+async function loadUpdateStatus() {
+  $('updateCheckBtn').disabled = true;
+  try {
+    const s = await api('GET', '/api/update/check');
+    if (!s.available && s.reason === 'not_a_git_checkout') {
+      $('updateUnavailableHelp').hidden = false;
+      $('updatePanel').hidden = true;
+      return;
+    }
+    $('updateUnavailableHelp').hidden = true;
+    $('updatePanel').hidden = false;
+    if (s.available) {
+      $('updateStatusLine').textContent = `Update available: v${s.currentVersion} → v${s.latestVersion} (${s.commitsBehind} commit${s.commitsBehind === 1 ? '' : 's'} behind).`;
+      $('updateApplyBtn').hidden = false;
+    } else {
+      $('updateStatusLine').textContent = `Up to date (v${s.currentVersion}).`;
+      $('updateApplyBtn').hidden = true;
+    }
+  } catch (e) {
+    $('updateUnavailableHelp').hidden = true;
+    $('updatePanel').hidden = false;
+    $('updateStatusLine').textContent = 'Could not check for updates.';
+    $('updateApplyBtn').hidden = true;
+  } finally {
+    $('updateCheckBtn').disabled = false;
+  }
+}
+$('updateCheckBtn').onclick = () => loadUpdateStatus();
+
+async function waitForServerRestart() {
+  for (let i = 0; i < 60; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try { if ((await fetch('/api/meta/version', { cache: 'no-store' })).ok) return true; } catch {}
+  }
+  return false;
+}
+$('updateApplyBtn').onclick = async () => {
+  if (!await askConfirm('Pull the latest version and restart the server now? The app will be briefly unreachable while it restarts.', 'Update now')) return;
+  $('updateApplyBtn').disabled = true; $('updateCheckBtn').disabled = true;
+  $('updateStatusLine').textContent = 'Updating… this can take a minute.';
+  try {
+    await api('POST', '/api/update/apply');
+    $('updateStatusLine').textContent = 'Restarting…';
+    if (await waitForServerRestart()) { toast('Updated — reloading'); location.reload(); return; }
+    toast('Update applied, but the server hasn’t come back online yet — check on it directly.');
+  } catch (e) {
+    toast(e.message || 'Update failed');
+    $('updateStatusLine').textContent = 'Update failed.';
+  }
+  $('updateApplyBtn').disabled = false; $('updateCheckBtn').disabled = false;
 };
 
 // ---------- Backup ----------

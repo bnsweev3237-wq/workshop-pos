@@ -435,6 +435,29 @@
     </div>
 
     <div class="card">
+      <h2>Automatic backups</h2>
+      <div class="help">A full database backup is taken once a day automatically and kept on this server — the most recent <span id="backupKeepCount">5</span> are kept, older ones are removed. Runs are skipped (not failed) if the server is low on disk space.</div>
+      <table class="items-table">
+        <thead><tr><th>Backup</th><th>Size</th><th></th></tr></thead>
+        <tbody id="backupRows"></tbody>
+      </table>
+      <div class="empty" id="backupsEmpty" hidden>No backups yet.</div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn sm" id="backupNowBtn">Back up now</button></div>
+    </div>
+
+    <div class="card">
+      <h2>Software updates</h2>
+      <div class="help" id="updateUnavailableHelp" hidden>This install isn't running from a server checkout Craftium can update itself (e.g. the desktop app) — update it the way you installed it instead.</div>
+      <div id="updatePanel" hidden>
+        <div class="hint" id="updateStatusLine">Checking for updates…</div>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn sm" id="updateCheckBtn">Check for updates</button>
+          <button class="btn primary sm" id="updateApplyBtn" hidden>Update now</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Database maintenance</h2>
       <div class="help">These act on the whole database, not just one business's typical day-to-day use — handle with care.</div>
       <label style="margin-bottom:4px">Copy main data to test</label>

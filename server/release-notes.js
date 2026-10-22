@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.13.0',
+    date: '2026-10-22',
+    notes: [
+      'Added automatic daily database backups, kept on the server (most recent 5) — viewable and downloadable from Settings, with a "Back up now" option too.',
+      'Added self-update for server installs: Settings can now check for and apply the latest version directly, restarting itself when done. Not available on the desktop app.',
+    ],
+  },
+  {
     version: '0.12.0',
     date: '2026-10-22',
     notes: [

@@ -4,6 +4,7 @@ const session = require('express-session');
 const SqliteStore = require('better-sqlite3-session-store')(session);
 const db = require('./db');
 const { getSessionSecret } = require('./lib/secret');
+const { scheduleDailyBackups } = require('./lib/backup');
 
 function createApp() {
   const app = express();
@@ -32,6 +33,7 @@ function createApp() {
   app.use('/api/charity-rules', require('./routes/charityRules'));
   app.use('/api/maintenance', require('./routes/maintenance'));
   app.use('/api/test-data', require('./routes/testData'));
+  app.use('/api/update', require('./routes/update'));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
   app.get('*', (req, res) => {
@@ -49,7 +51,7 @@ function startServer(port) {
   return new Promise((resolve, reject) => {
     const app = createApp();
     const server = app.listen(port);
-    server.once('listening', () => resolve({ server, port: server.address().port }));
+    server.once('listening', () => { scheduleDailyBackups(); resolve({ server, port: server.address().port }); });
     server.once('error', reject);
   });
 }

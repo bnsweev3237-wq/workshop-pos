@@ -1,10 +1,30 @@
 const express = require('express');
+const path = require('path');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
 const { requireAdmin } = require('../middleware/auth');
+const { runBackup, listBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
 
 const router = express.Router();
 router.use(requireAdmin);
+
+router.get('/backups', (req, res) => {
+  res.json({ keep: KEEP, backups: listBackups() });
+});
+
+router.post('/backups', async (req, res) => {
+  const result = await runBackup();
+  if (!result.ok) return res.status(502).json({ error: 'backup_failed', message: result.error });
+  res.json({ ok: true, file: result.file, backups: listBackups() });
+});
+
+// Filename is never taken from the request directly — only ever matched against the real
+// list of backups that already exist on disk, so there's no path to read anything else.
+router.get('/backups/:file/download', (req, res) => {
+  const match = listBackups().find((b) => b.file === req.params.file);
+  if (!match) return res.status(404).json({ error: 'not_found' });
+  res.download(path.join(BACKUP_DIR, match.file), match.file);
+});
 
 // Replaces whatever test data exists with a fresh, fully independent copy of the real
 // (non-test) materials, items, events, and sales. Every cross-reference — an item's linked

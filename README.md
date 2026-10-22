@@ -198,6 +198,30 @@ Settings → Database maintenance (admin only):
   `DELETE` to enable the button, and the server checks that confirmation again independently
   rather than trusting the client. This can't be undone.
 
+## Automatic backups
+
+Once a day, the server takes a full backup of the live database (using SQLite's own online
+backup API, so it's safe to run while the app is in use) and keeps it in `data/backups/` —
+the 5 most recent are kept, older ones are removed automatically. A run is skipped (not
+failed) if the server is low on disk space; it just tries again on the next scheduled run.
+Settings → Automatic backups (admin only) lists current backups with download links, and has
+a "Back up now" button for an on-demand one outside the daily schedule.
+
+This is separate from the manual **Export backup** button in the header, which downloads a
+portable JSON file of items/materials/sales/events you can re-import — the daily backups are
+raw database snapshots meant for disaster recovery on this same install, not for moving data
+between installs.
+
+## Software updates
+
+If the server is running from a git checkout (the documented VPS deploy, not the desktop
+Electron build), Settings → Software updates (admin only) can check whether `origin/master`
+has commits the running server doesn't, and apply them itself: `git pull --ff-only` followed
+by `npm install`. After a successful update the server exits on purpose — a process manager
+(the deploy guide sets this up with `pm2`) restarts it running the new code. Without one,
+the server just stops and needs to be started by hand. On the desktop app, or any install
+that isn't a git checkout, this section explains that and doesn't offer the button.
+
 ## Material sources & checking prices
 
 Settings → Material sources (admin only) is a plain editable list of where materials get
@@ -231,8 +255,10 @@ successful one is always one click away from being applied, never automatic.
   below that (a dedicated `/api/sales/full` endpoint is the only place profit figures are
   served from).
 - **Settings**: admin only, full stop — adding/removing accounts, changing roles, resetting
-  passwords, the sales-attribution toggle, managing the material sources list, and database
-  maintenance (copy-to-test, purge).
+  passwords, the sales-attribution toggle, managing the material sources list, database
+  maintenance (copy-to-test, purge), backups, and software updates. The update feature never
+  takes a repo/branch from the request — it's hardcoded to this install's own checkout and
+  `origin/master`, so there's no way to point it anywhere else.
 - **Item cost/materials**: the item list used by the Sell page never includes cost or materials
   data — only name, price, stock, and item number. Full item data requires Reports-level
   access or higher.

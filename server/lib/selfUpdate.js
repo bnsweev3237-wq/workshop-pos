@@ -1,0 +1,54 @@
+const fs = require('fs');
+const path = require('path');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+
+const REPO_ROOT = path.join(__dirname, '..', '..');
+const REMOTE = 'origin';
+const BRANCH = 'master';
+// Never let these be influenced by request input — there's no scenario where this app should
+// run git/npm against anything other than its own known checkout and branch.
+const GIT_OPTS = { cwd: REPO_ROOT, timeout: 60_000 };
+const NPM_OPTS = { cwd: REPO_ROOT, timeout: 5 * 60_000 };
+
+function isGitCheckout() {
+  return fs.existsSync(path.join(REPO_ROOT, '.git'));
+}
+
+function currentVersion() {
+  return require(path.join(REPO_ROOT, 'package.json')).version;
+}
+
+// Fetches the latest commit on the remote branch and compares against what's checked out
+// locally, without touching the working tree — `git pull` only happens in applyUpdate(), once
+// an admin explicitly asks for it.
+async function checkForUpdate() {
+  if (!isGitCheckout()) return { available: false, reason: 'not_a_git_checkout' };
+  await execFileAsync('git', ['fetch', REMOTE, BRANCH, '--quiet'], GIT_OPTS);
+  const { stdout: countOut } = await execFileAsync('git', ['rev-list', '--count', `HEAD..${REMOTE}/${BRANCH}`], GIT_OPTS);
+  const commitsBehind = parseInt(countOut.trim(), 10) || 0;
+  let latestVersion = currentVersion();
+  if (commitsBehind > 0) {
+    try {
+      const { stdout: pkgOut } = await execFileAsync('git', ['show', `${REMOTE}/${BRANCH}:package.json`], GIT_OPTS);
+      latestVersion = JSON.parse(pkgOut).version;
+    } catch {
+      // Fall back to just showing "an update is available" without a version number.
+    }
+  }
+  return { available: commitsBehind > 0, commitsBehind, currentVersion: currentVersion(), latestVersion };
+}
+
+// Pulls the latest code and installs dependencies. Does NOT restart the process — the caller
+// (the /apply route) responds to the request first, then exits, relying on a process manager
+// (pm2 in the documented VPS setup) to bring it back up running the new code. Running this
+// under plain `node server/index.js` with no process manager will leave the server stopped
+// until it's started again by hand.
+async function applyUpdate() {
+  if (!isGitCheckout()) throw new Error('Not running from a git checkout — nothing to update.');
+  await execFileAsync('git', ['pull', REMOTE, BRANCH, '--ff-only', '--quiet'], GIT_OPTS);
+  await execFileAsync('npm', ['install', '--omit=dev'], NPM_OPTS);
+}
+
+module.exports = { isGitCheckout, currentVersion, checkForUpdate, applyUpdate };
