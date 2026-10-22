@@ -212,6 +212,12 @@ portable JSON file of items/materials/sales/events you can re-import — the dai
 raw database snapshots meant for disaster recovery on this same install, not for moving data
 between installs.
 
+Settings → Disk space (admin only) shows a gauge of the filesystem the data directory lives
+on — used/free/total, color-shifting from green to yellow at 70% used and red at 90% — plus a
+breakdown of how much Craftium's own database and backups are using. A "Clear old backups"
+button deletes everything except the single most recent backup, for freeing space immediately
+rather than waiting for the daily keep-5 pruning to age old ones out on its own.
+
 ## Software updates
 
 If the server is running from a git checkout (the documented VPS deploy, not the desktop

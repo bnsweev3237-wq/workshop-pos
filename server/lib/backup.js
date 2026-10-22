@@ -25,6 +25,18 @@ function pruneOldBackups() {
   }
 }
 
+// Manual, on-demand version of the above — deletes everything except the single most recent
+// backup, for an admin who's short on disk space and wants it back now rather than waiting
+// for backups to age past the keep-5 window on their own.
+function clearOldBackups() {
+  const all = listBackups();
+  let freedBytes = 0, removed = 0;
+  for (const b of all.slice(1)) {
+    try { fs.unlinkSync(path.join(BACKUP_DIR, b.file)); freedBytes += b.size; removed++; } catch {}
+  }
+  return { removed, freedBytes };
+}
+
 // Uses SQLite's own online backup API (via better-sqlite3's `.backup()`) rather than copying
 // the file directly — safe to run while the database is live and being written to (WAL mode),
 // which a plain file copy isn't guaranteed to be consistent under.
@@ -59,4 +71,4 @@ function scheduleDailyBackups() {
   }, delay);
 }
 
-module.exports = { runBackup, listBackups, pruneOldBackups, scheduleDailyBackups, BACKUP_DIR, KEEP };
+module.exports = { runBackup, listBackups, pruneOldBackups, clearOldBackups, scheduleDailyBackups, BACKUP_DIR, KEEP };

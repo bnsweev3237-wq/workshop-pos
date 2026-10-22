@@ -1,9 +1,11 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
 const { requireAdmin } = require('../middleware/auth');
-const { runBackup, listBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
+const { runBackup, listBackups, clearOldBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
+const { getDiskUsage } = require('../lib/diskUsage');
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -18,12 +20,32 @@ router.post('/backups', async (req, res) => {
   res.json({ ok: true, file: result.file, backups: listBackups() });
 });
 
+// Keeps only the single newest backup, freeing the rest — for an admin who wants space back
+// now rather than waiting for the daily keep-5 window to age old ones out on its own.
+router.post('/backups/clear-old', (req, res) => {
+  const result = clearOldBackups();
+  res.json({ ok: true, ...result, backups: listBackups() });
+});
+
 // Filename is never taken from the request directly — only ever matched against the real
 // list of backups that already exist on disk, so there's no path to read anything else.
 router.get('/backups/:file/download', (req, res) => {
   const match = listBackups().find((b) => b.file === req.params.file);
   if (!match) return res.status(404).json({ error: 'not_found' });
   res.download(path.join(BACKUP_DIR, match.file), match.file);
+});
+
+router.get('/disk', (req, res) => {
+  try {
+    const dataDir = path.dirname(db.name);
+    const disk = getDiskUsage(dataDir);
+    const backupBytes = listBackups().reduce((sum, b) => sum + b.size, 0);
+    let dbBytes = 0;
+    try { dbBytes = fs.statSync(db.name).size; } catch {}
+    res.json({ ...disk, dbBytes, backupBytes });
+  } catch (err) {
+    res.status(502).json({ error: 'disk_check_failed', message: err.message });
+  }
 });
 
 // Replaces whatever test data exists with a fresh, fully independent copy of the real

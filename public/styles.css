@@ -207,6 +207,11 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .event-bar { height: 8px; border-radius: 99px; background: var(--bg); overflow: hidden; margin-top: 10px; }
 .event-bar-fill { height: 100%; background: var(--accent); transition: width .25s; }
 .event-bar-wrap:not(.met) .event-bar-fill { background: var(--warn); }
+
+.disk-gauge { height: 10px; border-radius: 99px; background: var(--bg); overflow: hidden; }
+.disk-gauge-fill { height: 100%; background: var(--accent); transition: width .25s; }
+.disk-gauge-fill.warn { background: var(--warn); }
+.disk-gauge-fill.danger { background: var(--danger); }
 .ev-row { padding: 10px 0; border-bottom: 1px solid var(--line); }
 .ev-row:last-child { border-bottom: none; }
 .ev-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }

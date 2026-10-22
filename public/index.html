@@ -435,6 +435,15 @@
     </div>
 
     <div class="card">
+      <h2>Disk space</h2>
+      <div class="help">How much storage this server has left. Worth keeping an eye on, especially on a free-tier VPS with a fixed storage limit.</div>
+      <div class="disk-gauge"><div class="disk-gauge-fill" id="diskGaugeFill"></div></div>
+      <div class="hint" id="diskStatusLine" style="margin-top:8px">Checking disk space…</div>
+      <div class="hint" id="diskBreakdownLine"></div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn sm" id="clearOldBackupsBtn">Clear old backups</button></div>
+    </div>
+
+    <div class="card">
       <h2>Automatic backups</h2>
       <div class="help">A full database backup is taken once a day automatically and kept on this server — the most recent <span id="backupKeepCount">5</span> are kept, older ones are removed. Runs are skipped (not failed) if the server is low on disk space.</div>
       <table class="items-table">

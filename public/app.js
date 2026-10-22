@@ -190,7 +190,7 @@ function showTab(t) {
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadServerBackups(); loadUpdateStatus(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -1402,8 +1402,9 @@ $('purgeAllBtn').onclick = async () => {
 // load back in through the UI.
 function formatBytes(n) {
   if (n < 1024) return n + ' B';
-  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
-  return (n / (1024 * 1024)).toFixed(1) + ' MB';
+  if (n < 1024 ** 2) return (n / 1024).toFixed(1) + ' KB';
+  if (n < 1024 ** 3) return (n / 1024 ** 2).toFixed(1) + ' MB';
+  return (n / 1024 ** 3).toFixed(1) + ' GB';
 }
 async function loadServerBackups() {
   const { keep, backups } = await api('GET', '/api/maintenance/backups');
@@ -1419,9 +1420,33 @@ async function loadServerBackups() {
 }
 $('backupNowBtn').onclick = async () => {
   $('backupNowBtn').disabled = true;
-  try { await api('POST', '/api/maintenance/backups'); toast('Backup created'); await loadServerBackups(); }
+  try { await api('POST', '/api/maintenance/backups'); toast('Backup created'); await Promise.all([loadServerBackups(), loadDiskUsage()]); }
   catch (e) { toast(e.message || 'Backup failed'); }
   finally { $('backupNowBtn').disabled = false; }
+};
+
+// ---------- Disk space ----------
+async function loadDiskUsage() {
+  try {
+    const d = await api('GET', '/api/maintenance/disk');
+    const pct = d.total > 0 ? Math.min(100, Math.round((d.used / d.total) * 100)) : 0;
+    const fill = $('diskGaugeFill');
+    fill.style.width = pct + '%';
+    fill.className = 'disk-gauge-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
+    $('diskStatusLine').textContent = `${formatBytes(d.used)} used of ${formatBytes(d.total)} (${pct}%) — ${formatBytes(d.free)} free`;
+    $('diskBreakdownLine').textContent = `Craftium's own data: database ${formatBytes(d.dbBytes)}, backups ${formatBytes(d.backupBytes)}`;
+  } catch (e) {
+    $('diskStatusLine').textContent = 'Could not check disk space.';
+    $('diskBreakdownLine').textContent = '';
+  }
+}
+$('clearOldBackupsBtn').onclick = async () => {
+  if (!await askConfirm('Delete all backups except the most recent one, to free up space? You can always make a fresh one afterward.', 'Clear old backups')) return;
+  try {
+    const r = await api('POST', '/api/maintenance/backups/clear-old');
+    toast(r.removed > 0 ? `Freed ${formatBytes(r.freedBytes)} (removed ${r.removed} backup${r.removed === 1 ? '' : 's'})` : 'No old backups to clear');
+    await Promise.all([loadServerBackups(), loadDiskUsage()]);
+  } catch (e) { toast(e.message || 'Could not clear old backups'); }
 };
 
 // ---------- Software updates ----------

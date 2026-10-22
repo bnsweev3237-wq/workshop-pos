@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.14.0',
+    date: '2026-10-22',
+    notes: [
+      'Added a disk space gauge to Settings, showing how much storage this server has left and how much Craftium\'s own database and backups are using.',
+      'Added a "Clear old backups" button to free space immediately — keeps the most recent backup, removes the rest.',
+    ],
+  },
+  {
     version: '0.13.2',
     date: '2026-10-22',
     notes: [
