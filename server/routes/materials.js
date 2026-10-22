@@ -66,7 +66,8 @@ router.post('/:id/check-price', async (req, res) => {
     const price = await checkPrice(url.toString());
     res.json({ price });
   } catch (err) {
-    res.status(err.code === 'price_not_found' ? 422 : err.code === 'timed_out' ? 504 : 502).json({ error: err.code || 'fetch_error' });
+    const STATUS = { price_not_found: 422, timed_out: 504, invalid_url: 400, blocked_address: 400 };
+    res.status(STATUS[err.code] || 502).json({ error: err.code || 'fetch_error' });
   }
 });
 

@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.13.1',
+    date: '2026-10-22',
+    notes: [
+      'Security: sign-in is now rate-limited, so a deployed install can\'t have its password brute-forced over unlimited attempts.',
+      'Security: the "Check price" feature can no longer be pointed at this server\'s own internal network or a cloud metadata address — only real external product pages.',
+      'Security: the session cookie is now marked HTTPS-only automatically when running behind HTTPS (e.g. the VPS deploy), without affecting a plain-HTTP LAN install.',
+    ],
+  },
+  {
     version: '0.13.0',
     date: '2026-10-22',
     notes: [

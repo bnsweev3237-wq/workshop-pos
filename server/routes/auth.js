@@ -1,10 +1,22 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { uid } = require('../lib/ids');
 const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
 
 const router = express.Router();
+
+// Caps sign-in attempts per IP — without this, a password could be brute-forced with
+// unlimited guesses now that this runs on the open internet. Keyed by IP (not username) so
+// it also limits someone hammering many different usernames from one source.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_attempts', message: 'Too many sign-in attempts. Wait a few minutes and try again.' },
+});
 
 const toPublic = (row) => ({ id: row.id, name: row.name, username: row.username, role: row.role, mustChangePassword: !!row.must_change_password, createdAt: row.created_at });
 
@@ -36,7 +48,7 @@ router.post('/setup', (req, res) => {
   res.json({ ok: true, me: toPublic(row) });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', loginLimiter, (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'invalid_input' });
   const row = db.prepare('SELECT * FROM users WHERE username = ?').get(username.trim());

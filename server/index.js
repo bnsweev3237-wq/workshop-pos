@@ -8,6 +8,13 @@ const { scheduleDailyBackups } = require('./lib/backup');
 
 function createApp() {
   const app = express();
+  // Trust the first hop only (the reverse proxy in front of it, e.g. nginx on the VPS deploy)
+  // so req.ip and req.secure reflect the real visitor/connection instead of the proxy's own
+  // loopback address — needed for both the login rate limiter below and the cookie's `secure`
+  // flag to work correctly. A direct, un-proxied install (plain `node server/index.js`, no
+  // nginx in front) is unaffected: there's no X-Forwarded-* header to trust in that case, so
+  // Express just falls back to the real connection either way.
+  app.set('trust proxy', 1);
   app.use(express.json());
 
   app.use(session({
@@ -18,6 +25,10 @@ function createApp() {
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
+      // 'auto': sent as Secure (HTTPS-only) when the request is actually HTTPS — e.g. behind
+      // the documented nginx+Let's Encrypt deploy — but not required over plain HTTP, which
+      // this app also supports (a LAN-only install at a craft fair booth with no domain/cert).
+      secure: 'auto',
       maxAge: 30 * 24 * 60 * 60 * 1000, // 30 days — this runs on trusted local/business hardware, not a public kiosk
     },
   }));

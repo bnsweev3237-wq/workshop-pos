@@ -6,7 +6,57 @@
 // actively block non-browser requests — this is expected, which is why the result is always
 // shown to the admin to accept or ignore, never applied automatically.
 
+const dns = require('dns').promises;
+const net = require('net');
+
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+const MAX_REDIRECTS = 5;
+
+// This fetches a URL the admin typed in, server-side — without checking where it actually
+// points, that's a standing SSRF: a product link set to, say, a cloud metadata address or an
+// internal service would have the server fetch it on the attacker's behalf. Every hop
+// (including ones a redirect leads to) gets its hostname resolved and the resulting IP
+// checked against private/loopback/link-local ranges before it's ever fetched — checking the
+// IP after DNS resolution, not the hostname string, is what stops a rebinding bypass (a
+// public-looking domain whose DNS answer is actually a private address).
+function ipv4ToLong(ip) {
+  return ip.split('.').reduce((acc, octet) => (acc << 8) + parseInt(octet, 10), 0) >>> 0;
+}
+function inCidr4(ip, cidr) {
+  const [range, bitsStr] = cidr.split('/');
+  const bits = parseInt(bitsStr, 10);
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return (ipv4ToLong(ip) & mask) === (ipv4ToLong(range) & mask);
+}
+// Private, loopback, link-local (includes 169.254.169.254, the cloud metadata address on
+// AWS/Oracle/GCP/Azure alike), carrier-grade NAT, and other non-public ranges.
+const BLOCKED_V4_RANGES = [
+  '0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16',
+  '172.16.0.0/12', '192.0.0.0/24', '192.168.0.0/16', '198.18.0.0/15', '224.0.0.0/4', '240.0.0.0/4',
+];
+function isBlockedAddress(ip) {
+  if (net.isIPv4(ip)) return BLOCKED_V4_RANGES.some((c) => inCidr4(ip, c));
+  if (net.isIPv6(ip)) {
+    const lower = ip.toLowerCase();
+    if (lower === '::1') return true;
+    if (lower.startsWith('::ffff:')) { const v4 = lower.slice(7); if (net.isIPv4(v4)) return BLOCKED_V4_RANGES.some((c) => inCidr4(v4, c)); }
+    if (/^fe80:/i.test(lower)) return true; // link-local
+    if (/^f[cd][0-9a-f]{2}:/i.test(lower)) return true; // unique local, fc00::/7
+    return false;
+  }
+  return true; // not a recognizable IP at all — block rather than guess
+}
+async function assertPublicHost(hostname) {
+  let addresses;
+  try {
+    addresses = await dns.lookup(hostname, { all: true });
+  } catch {
+    const e = new Error('fetch_error'); e.code = 'fetch_error'; throw e;
+  }
+  if (addresses.some((a) => isBlockedAddress(a.address))) {
+    const e = new Error('blocked_address'); e.code = 'blocked_address'; throw e;
+  }
+}
 
 function findLdPrice(node) {
   if (Array.isArray(node)) {
@@ -45,42 +95,62 @@ function extractPrice(html) {
 }
 
 // Fetches `url` and extracts a price, or throws an Error with a `.code` the client can show
-// a specific message for. 10s timeout — a hung request shouldn't hang the request handler.
+// a specific message for. 10s timeout per hop — a hung request shouldn't hang the request
+// handler. Redirects are followed manually (not via fetch's own `redirect: 'follow'`) so each
+// hop's destination gets the same private-address check as the original URL — a site that
+// looks public but redirects to an internal address would otherwise slip the SSRF guard above.
 async function checkPrice(url) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10000);
-  let response;
-  try {
-    response = await fetch(url, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: {
-        'User-Agent': UA,
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-  } catch (err) {
-    const e = new Error(err.name === 'AbortError' ? 'timed_out' : 'fetch_error');
-    e.code = err.name === 'AbortError' ? 'timed_out' : 'fetch_error';
-    throw e;
-  } finally {
-    clearTimeout(timer);
+  let current = url;
+  for (let hop = 0; hop < MAX_REDIRECTS; hop++) {
+    const parsed = new URL(current);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      const e = new Error('invalid_url'); e.code = 'invalid_url'; throw e;
+    }
+    await assertPublicHost(parsed.hostname);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 10000);
+    let response;
+    try {
+      response = await fetch(current, {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: {
+          'User-Agent': UA,
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      });
+    } catch (err) {
+      const e = new Error(err.name === 'AbortError' ? 'timed_out' : 'fetch_error');
+      e.code = err.name === 'AbortError' ? 'timed_out' : 'fetch_error';
+      throw e;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const location = response.headers.get('location');
+      if (!location) { const e = new Error('fetch_failed'); e.code = 'fetch_failed'; e.status = response.status; throw e; }
+      current = new URL(location, current).toString();
+      continue;
+    }
+    if (!response.ok) {
+      const e = new Error('fetch_failed');
+      e.code = 'fetch_failed';
+      e.status = response.status;
+      throw e;
+    }
+    const html = await response.text();
+    const price = extractPrice(html);
+    if (price == null) {
+      const e = new Error('price_not_found');
+      e.code = 'price_not_found';
+      throw e;
+    }
+    return price;
   }
-  if (!response.ok) {
-    const e = new Error('fetch_failed');
-    e.code = 'fetch_failed';
-    e.status = response.status;
-    throw e;
-  }
-  const html = await response.text();
-  const price = extractPrice(html);
-  if (price == null) {
-    const e = new Error('price_not_found');
-    e.code = 'price_not_found';
-    throw e;
-  }
-  return price;
+  const e = new Error('too_many_redirects'); e.code = 'too_many_redirects'; throw e;
 }
 
 module.exports = { checkPrice, extractPrice };

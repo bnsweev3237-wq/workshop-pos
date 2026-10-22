@@ -448,6 +448,8 @@ function priceCheckErrorMessage(code) {
     case 'timed_out': return 'The page took too long to respond — try again.';
     case 'price_not_found': return 'Couldn’t find a price on that page — the site may block automated checks, or render its price with JavaScript instead of including it in the page itself.';
     case 'fetch_failed': return 'Could not load that page.';
+    case 'blocked_address': return 'That link points somewhere this feature isn’t allowed to check.';
+    case 'too_many_redirects': return 'That link redirected too many times — try the direct product page link instead.';
     default: return 'Could not check the price — try again later.';
   }
 }

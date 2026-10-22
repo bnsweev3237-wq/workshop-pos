@@ -265,7 +265,17 @@ successful one is always one click away from being applied, never automatic.
 - Every one of the above is checked server-side on every request, independent of the UI — a
   role's server session is rejected with 403 on a route it can't use even if it guesses the
   URL or calls the API directly.
-- Passwords are bcrypt-hashed; sessions are server-side, cookie-based, httpOnly.
+- Passwords are bcrypt-hashed; sessions are server-side, cookie-based, httpOnly, and marked
+  `Secure` (HTTPS-only) automatically when the app detects it's being served over HTTPS —
+  e.g. the documented nginx + Let's Encrypt VPS deploy — without breaking a plain-HTTP LAN
+  install (a booth with no domain/cert).
+- Sign-in is rate-limited (10 attempts per IP per 15 minutes) — a deployed, internet-reachable
+  install isn't exposed to unlimited password guessing.
+- The "Check price" feature's server-side fetch resolves the saved product link's hostname
+  and refuses to request anything that resolves to a private, loopback, or link-local address
+  (including a cloud provider's instance metadata address) — checked on every redirect hop,
+  not just the original link, so a malicious or compromised account can't use it to probe this
+  server's own internal network.
 - "Forgot password" recovery: any admin can reset anyone's password from Settings. There's no
   outbound email in this version, so if you're the *only* admin and get locked out, recovery
   requires direct access to the server (see below).
