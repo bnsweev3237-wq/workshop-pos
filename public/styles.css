@@ -25,6 +25,8 @@ header p { margin: 0; color: var(--muted); }
 .tabs button { border: none; background: none; font: inherit; font-weight: 500; color: var(--muted); padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .tabs button:hover { color: var(--ink); }
 .tabs button.on { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.tabs.sub { margin-bottom: 0; }
+.tabs.sub button { padding: 8px 12px; font-size: 13px; }
 .count { font-size: 11px; background: var(--line); color: var(--muted); border-radius: 99px; padding: 1px 7px; font-weight: 600; }
 .count:empty { display: none; }
 
@@ -294,7 +296,7 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .rpt-cost-head { width: 100%; display: flex; align-items: center; gap: 10px; background: none; border: none; padding: 10px 14px; cursor: pointer; font: inherit; color: var(--ink); text-align: left; }
 .rpt-cost-head:hover { background: var(--bg); }
 .rpt-cost-name { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: 500; }
-.rpt-cost-qty, .rpt-cost-rev, .rpt-cost-cost, .rpt-cost-profit { width: 90px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.rpt-cost-qty, .rpt-cost-rev, .rpt-cost-cost, .rpt-cost-profit, .rpt-cost-num { width: 90px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .rpt-cost-profit { font-weight: 600; color: var(--accent); }
 .rpt-cost-profit.neg { color: var(--danger); }
 .rpt-cost-body { padding: 0 14px 14px; }
@@ -303,7 +305,7 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) {
   .rpt-cost-headerrow { display: none; }
   .rpt-cost-head { flex-wrap: wrap; }
-  .rpt-cost-qty, .rpt-cost-rev, .rpt-cost-cost, .rpt-cost-profit { width: auto; }
+  .rpt-cost-qty, .rpt-cost-rev, .rpt-cost-cost, .rpt-cost-profit, .rpt-cost-num { width: auto; }
 }
 
 .rpt-ev-row { border-bottom: 1px solid var(--line); }

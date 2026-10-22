@@ -1279,6 +1279,10 @@ $('testModeOffKeepLink').onclick = () => {
 
 // ---------- Reports (core: stats, chart, top items, payment type) ----------
 let rptRange = '7';
+let rptTab = 'overview';
+let voidedSales = [];
+let rptInvItemSearch = '';
+let rptInvMatSearch = '';
 const dayStart = ms => { const d = new Date(ms); d.setHours(0, 0, 0, 0); return d.getTime(); };
 function rptWindow(key) {
   const now = Date.now(); const today0 = dayStart(now);
@@ -1290,7 +1294,13 @@ function rptWindow(key) {
   return { start: dayStart(earliest), end: now };
 }
 async function renderReports() {
-  [fullSales, items, appSettings] = await Promise.all([api('GET', '/api/sales/full'), api('GET', `/api/items/full?test=${testMode ? 1 : 0}`), api('GET', '/api/settings')]);
+  [fullSales, items, appSettings, lib, voidedSales] = await Promise.all([
+    api('GET', '/api/sales/full'),
+    api('GET', `/api/items/full?test=${testMode ? 1 : 0}`),
+    api('GET', '/api/settings'),
+    api('GET', `/api/materials?test=${testMode ? 1 : 0}`),
+    api('GET', '/api/sales/voids'),
+  ]);
   const { start, end } = rptWindow(rptRange);
   const inRange = fullSales.filter(s => !!s.test === testMode && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
   const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
@@ -1314,10 +1324,21 @@ async function renderReports() {
   renderRptCost(inRange);
   renderRptEvents();
   renderRptByUser(inRange);
+  renderRptInventory();
+  renderRptTax(inRange, start, end);
+  renderRptVoids(start, end);
+  showReportTab(rptTab);
 }
+function showReportTab(t) {
+  rptTab = t;
+  document.querySelectorAll('#rptTabs button').forEach(b => b.classList.toggle('on', b.dataset.rpttab === t));
+  ['overview', 'byuser', 'byitem', 'events', 'inventory', 'tax', 'voids'].forEach(x => $('rpt-tab-' + x).hidden = x !== t);
+}
+document.querySelectorAll('#rptTabs button').forEach(b => b.onclick = () => showReportTab(b.dataset.rpttab));
 function renderRptByUser(inRange) {
-  const box = $('rptByUserList'), empty = $('rptByUserEmpty');
+  const box = $('rptByUserList'), empty = $('rptByUserEmpty'), header = $('rptByUserHeader');
   if (!appSettings.trackSaleAttribution) {
+    header.hidden = true;
     box.innerHTML = ''; box.hidden = true;
     empty.hidden = false; empty.textContent = 'Off — turn on "Record which user rang up each sale" in Settings to see this.';
     return;
@@ -1325,19 +1346,37 @@ function renderRptByUser(inRange) {
   const map = new Map();
   for (const s of inRange) {
     const key = s.soldBy || 'Unknown';
-    const entry = map.get(key) || { name: key, qty: 0, revenue: 0 };
+    const entry = map.get(key) || { name: key, qty: 0, revenue: 0, profit: 0 };
     entry.qty += 1;
     entry.revenue += num(s.total);
+    entry.profit += num(s.profit);
     map.set(key, entry);
   }
-  const rows = [...map.values()].sort((a, b) => b.revenue - a.revenue);
+  const rows = [...map.values()].sort((a, b) => b.profit - a.profit);
+  header.hidden = rows.length === 0;
   empty.hidden = rows.length > 0;
   empty.textContent = 'No sales in this range yet.';
   box.hidden = rows.length === 0;
-  if (!rows.length) { box.innerHTML = ''; return; }
-  const max = Math.max(1, ...rows.map(r => r.revenue));
-  box.innerHTML = rows.map(r => `<div class="rpt-top-row"><span class="rpt-top-name"></span><div class="rpt-top-track"><div class="rpt-top-fill" style="width:${r.revenue / max * 100}%"></div></div><span class="rpt-top-num">${money(r.revenue)} <small style="color:var(--muted)">· ${r.qty} sale${r.qty === 1 ? '' : 's'}</small></span></div>`).join('');
-  box.querySelectorAll('.rpt-top-name').forEach((el, i) => { el.textContent = rows[i].name; });
+  box.innerHTML = '';
+  for (const r of rows) {
+    const avg = r.qty ? r.revenue / r.qty : 0;
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-qty"></span>
+      <span class="rpt-cost-rev"></span>
+      <span class="rpt-cost-profit"></span>
+      <span class="rpt-cost-num"></span>
+    </div>`;
+    row.querySelector('.rpt-cost-name').textContent = r.name;
+    row.querySelector('.rpt-cost-qty').textContent = r.qty;
+    row.querySelector('.rpt-cost-rev').textContent = money(r.revenue);
+    const profEl = row.querySelector('.rpt-cost-profit');
+    profEl.textContent = money(r.profit);
+    profEl.classList.toggle('neg', r.profit < 0);
+    row.querySelector('.rpt-cost-num').textContent = money(avg);
+    box.appendChild(row);
+  }
 }
 
 // Aggregates a list of (full, profit-bearing) sales by item, for the cost-breakdown and
@@ -1525,6 +1564,168 @@ function renderRptTender(inRange, revenue) {
   const pct = v => revenue > 0 ? Math.round(v / revenue * 100) + '%' : '—';
   box.innerHTML = [['Cash', money(cash), pct(cash)], ['Card / Other', money(other), pct(other)]].map(([lbl, val, sub]) => `<div class="stat-tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub} of revenue</div></div>`).join('');
 }
+
+// ---------- Inventory report — a point-in-time snapshot (stock on hand right now), not
+// limited by the date-range selector the other reports use. ----------
+function renderRptInventory() {
+  const totalPotentialRevenue = items.reduce((s, it) => s + num(it.stock) * num(it.price), 0);
+  const totalItemStockValue = items.reduce((s, it) => s + num(it.stock) * num(it.cost), 0);
+  const totalMaterialValue = lib.reduce((s, m) => s + num(m.stock) * unitCost(m), 0);
+  const lowItems = items.filter(it => isLow(it.stock, it.low));
+  const lowMats = lib.filter(m => isLow(m.stock, m.low));
+  const tiles = [
+    { lbl: 'Potential revenue', val: money(totalPotentialRevenue), highlight: true },
+    { lbl: 'Item stock value (cost)', val: money(totalItemStockValue) },
+    { lbl: 'Material value', val: money(totalMaterialValue) },
+    { lbl: 'Needs ordering', val: lowItems.length + lowMats.length, neg: (lowItems.length + lowMats.length) > 0 },
+  ];
+  $('rptInvStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}"><div class="lbl">${t.lbl}</div><div class="val${t.neg ? ' neg' : ''}">${t.val}</div></div>`).join('');
+
+  const qi = rptInvItemSearch.trim().toLowerCase();
+  const itemRows = items.filter(it => !qi || it.name.toLowerCase().includes(qi));
+  $('rptInvItemHeader').hidden = itemRows.length === 0;
+  $('rptInvItemEmpty').hidden = itemRows.length > 0;
+  $('rptInvItemEmpty').textContent = items.length === 0 ? 'No items yet.' : 'No items match your search.';
+  const itemBox = $('rptInvItemList'); itemBox.innerHTML = '';
+  for (const it of itemRows) {
+    const stock = num(it.stock);
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-qty"></span>
+      <span class="rpt-cost-cost"></span>
+      <span class="rpt-cost-rev"></span>
+      <span class="rpt-cost-num"></span>
+    </div>`;
+    row.querySelector('.rpt-cost-name').textContent = it.name;
+    row.querySelector('.rpt-cost-qty').textContent = stock;
+    row.querySelector('.rpt-cost-cost').textContent = money(num(it.price));
+    row.querySelector('.rpt-cost-rev').textContent = money(stock * num(it.price));
+    row.querySelector('.rpt-cost-num').textContent = money(stock * num(it.cost));
+    itemBox.appendChild(row);
+  }
+
+  const qm = rptInvMatSearch.trim().toLowerCase();
+  const matRows = lib.filter(m => !qm || m.name.toLowerCase().includes(qm));
+  $('rptInvMatHeader').hidden = matRows.length === 0;
+  $('rptInvMatEmpty').hidden = matRows.length > 0;
+  $('rptInvMatEmpty').textContent = lib.length === 0 ? 'No materials yet.' : 'No materials match your search.';
+  const matBox = $('rptInvMatList'); matBox.innerHTML = '';
+  for (const m of matRows) {
+    const stock = num(m.stock);
+    const unit = unitCost(m);
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-qty"></span>
+      <span class="rpt-cost-cost"></span>
+      <span class="rpt-cost-num"></span>
+    </div>`;
+    row.querySelector('.rpt-cost-name').textContent = m.name;
+    row.querySelector('.rpt-cost-qty').textContent = stock;
+    row.querySelector('.rpt-cost-cost').textContent = money4(unit);
+    row.querySelector('.rpt-cost-num').textContent = money(stock * unit);
+    matBox.appendChild(row);
+  }
+
+  const reorderRows = [
+    ...lowItems.map(it => ({ name: it.name, kind: 'Item', stock: num(it.stock), low: it.low })),
+    ...lowMats.map(m => ({ name: m.name, kind: 'Material', stock: num(m.stock), low: m.low })),
+  ];
+  $('rptInvReorderEmpty').hidden = reorderRows.length > 0;
+  const reorderBox = $('rptInvReorderList'); reorderBox.innerHTML = '';
+  for (const r of reorderRows) {
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default"><span class="rpt-cost-name"></span></div>`;
+    row.querySelector('.rpt-cost-name').textContent = `${r.name} (${r.kind}) — ${r.stock} on hand, low at ${r.low}`;
+    reorderBox.appendChild(row);
+  }
+}
+$('rptInvItemSearch').addEventListener('input', () => { rptInvItemSearch = $('rptInvItemSearch').value; renderRptInventory(); });
+$('rptInvMatSearch').addEventListener('input', () => { rptInvMatSearch = $('rptInvMatSearch').value; renderRptInventory(); });
+
+// ---------- Tax report — same date range as the rest. ----------
+function renderRptTax(inRange, start, end) {
+  const totalTax = inRange.reduce((n, s) => n + num(s.tax), 0);
+  const totalSubtotal = inRange.reduce((n, s) => n + num(s.subtotal), 0);
+  const effectiveRate = totalSubtotal > 0 ? (totalTax / totalSubtotal * 100) : 0;
+  const tiles = [
+    { lbl: 'Tax collected', val: money(totalTax), highlight: true },
+    { lbl: 'Taxable sales (subtotal)', val: money(totalSubtotal) },
+    { lbl: 'Effective rate', val: effectiveRate.toFixed(1) + '%' },
+  ];
+  $('rptTaxStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}"><div class="lbl">${t.lbl}</div><div class="val">${t.val}</div></div>`).join('');
+
+  const box = $('rptTaxChart');
+  const taxed = inRange.filter(s => num(s.tax) > 0);
+  $('rptTaxChartEmpty').hidden = taxed.length > 0; box.hidden = taxed.length === 0;
+  if (taxed.length) {
+    const spanDays = Math.max(1, Math.round((dayStart(end) - start) / 86400000) + 1);
+    const bucketDays = spanDays <= 31 ? 1 : spanDays <= 180 ? 7 : 30;
+    const n = Math.min(60, Math.max(1, Math.ceil(spanDays / bucketDays)));
+    const buckets = Array.from({ length: n }, (_, i) => ({ startMs: start + i * bucketDays * 86400000, tax: 0 }));
+    for (const s of inRange) { const idx = Math.min(n - 1, Math.max(0, Math.floor((dayStart(s.createdAt) - start) / 86400000 / bucketDays))); buckets[idx].tax += num(s.tax); }
+    const max = Math.max(1, ...buckets.map(b => b.tax));
+    const labelEvery = Math.max(1, Math.ceil(n / 10));
+    const fmt = bucketDays === 1 ? (ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })) : bucketDays === 30 ? (ms => new Date(ms).toLocaleDateString(undefined, { month: 'short' })) : (ms => `wk of ${new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`);
+    box.innerHTML = buckets.map((b, i) => { const h = Math.max(3, Math.round(b.tax / max * 130)); const label = i % labelEvery === 0 ? fmt(b.startMs) : ''; return `<div class="rpt-bar-col"><div class="rpt-bar-tip">${esc(fmt(b.startMs))}<br>Tax ${money(b.tax)}</div><div class="rpt-bar" style="height:${h}px"></div><div class="rpt-bar-label">${esc(label)}</div></div>`; }).join('');
+  } else { box.innerHTML = ''; }
+
+  const map = new Map();
+  for (const s of inRange) {
+    const included = !!s.taxIncluded;
+    for (const l of s.lines) {
+      const rate = num(l.taxRate);
+      if (rate <= 0) continue;
+      const { sub, tax } = lineTaxSplit(l, included);
+      const entry = map.get(rate) || { rate, taxable: 0, tax: 0 };
+      entry.taxable += sub; entry.tax += tax;
+      map.set(rate, entry);
+    }
+  }
+  const rateRows = [...map.values()].sort((a, b) => b.tax - a.tax);
+  $('rptTaxRateHeader').hidden = rateRows.length === 0;
+  $('rptTaxRateEmpty').hidden = rateRows.length > 0;
+  const rateBox = $('rptTaxRateList'); rateBox.innerHTML = '';
+  for (const r of rateRows) {
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-cost"></span>
+      <span class="rpt-cost-num"></span>
+    </div>`;
+    row.querySelector('.rpt-cost-name').textContent = `${r.rate}%`;
+    row.querySelector('.rpt-cost-cost').textContent = money(r.taxable);
+    row.querySelector('.rpt-cost-num').textContent = money(r.tax);
+    rateBox.appendChild(row);
+  }
+}
+
+// ---------- Voided sales — who rang it up and who voided it, same date range (by when it
+// was voided, not when the original sale happened). ----------
+function renderRptVoids(start, end) {
+  const inRange = voidedSales.filter(v => !!v.test === testMode && (v.voidedAt || 0) >= start && (v.voidedAt || 0) <= end);
+  const rows = inRange.slice().sort((a, b) => b.voidedAt - a.voidedAt);
+  $('rptVoidHeader').hidden = rows.length === 0;
+  $('rptVoidEmpty').hidden = rows.length > 0;
+  const box = $('rptVoidList'); box.innerHTML = '';
+  for (const v of rows) {
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-cost"></span>
+      <span class="rpt-cost-profit"></span>
+    </div>`;
+    const nameEl = row.querySelector('.rpt-cost-name');
+    nameEl.innerHTML = `${esc(new Date(v.voidedAt).toLocaleString())}<br><small style="color:var(--muted);font-weight:400">Sold by ${esc(v.soldBy || 'unknown')} · voided by ${esc(v.voidedBy || 'unknown')}</small>`;
+    row.querySelector('.rpt-cost-cost').textContent = money(v.total);
+    const profEl = row.querySelector('.rpt-cost-profit');
+    profEl.textContent = money(v.profit);
+    profEl.classList.toggle('neg', v.profit < 0);
+    box.appendChild(row);
+  }
+}
+
 document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => { rptRange = b.dataset.range; document.querySelectorAll('#rptRangeSeg button').forEach(x => x.classList.toggle('on', x === b)); renderReports(); });
 
 // ---------- Settings: sales tracking ----------

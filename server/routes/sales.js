@@ -188,6 +188,17 @@ router.delete('/:id', requireLogin, (req, res) => {
   if (!sale) return res.status(404).json({ error: 'not_found' });
   const lines = JSON.parse(sale.lines_json);
   const tx = db.transaction(() => {
+    // Snapshot the sale before it's gone — voiding has always deleted the row outright, which
+    // otherwise leaves no trace a void ever happened (see Reports → Voids).
+    db.prepare(`
+      INSERT INTO voided_sales (id, original_sale_id, event_id, test, lines_json, subtotal, tax, total, tender, profit, sold_by_user_id, sold_by_user_name, sale_created_at, voided_by_user_id, voided_by_user_name, voided_at)
+      VALUES (@id, @originalSaleId, @eventId, @test, @linesJson, @subtotal, @tax, @total, @tender, @profit, @soldByUserId, @soldByUserName, @saleCreatedAt, @voidedByUserId, @voidedByUserName, @voidedAt)
+    `).run({
+      id: uid(), originalSaleId: sale.id, eventId: sale.event_id, test: sale.test, linesJson: sale.lines_json,
+      subtotal: sale.subtotal, tax: sale.tax, total: sale.total, tender: sale.tender, profit: sale.profit,
+      soldByUserId: sale.user_id, soldByUserName: sale.user_name, saleCreatedAt: sale.created_at,
+      voidedByUserId: req.user.id, voidedByUserName: req.user.name, voidedAt: Date.now(),
+    });
     // Same reasoning as checkout: restoring stock is safe regardless of test or not, since
     // each item only ever belongs to one side of the real/test split.
     for (const l of lines) {
@@ -198,6 +209,18 @@ router.delete('/:id', requireLogin, (req, res) => {
   });
   tx();
   res.json({ ok: true });
+});
+
+// Void history for Reports — profit-bearing (same role level as /full), so it's never exposed
+// to a cashier who can void their own sales but shouldn't see margin figures.
+router.get('/voids', requireReports, (req, res) => {
+  const rows = db.prepare('SELECT * FROM voided_sales ORDER BY voided_at DESC').all();
+  res.json(rows.map((r) => ({
+    id: r.id, originalSaleId: r.original_sale_id, eventId: r.event_id, test: !!r.test,
+    lines: JSON.parse(r.lines_json), subtotal: r.subtotal, tax: r.tax, total: r.total, tender: r.tender,
+    profit: r.profit, soldBy: r.sold_by_user_name || null, saleCreatedAt: r.sale_created_at,
+    voidedBy: r.voided_by_user_name || null, voidedAt: r.voided_at,
+  })));
 });
 
 module.exports = router;

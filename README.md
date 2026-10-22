@@ -175,6 +175,30 @@ the catalog untouched, just not sellable at that particular event. Switching bac
 items" reverts immediately. Materials and Items are also now searchable from their own tabs,
 and the item picker here has its own search too.
 
+## Reports
+
+Reports is organized into sub-tabs (admin/manager/lead), sharing one date-range selector
+across the ones that use it:
+
+- **Overview**: revenue/profit/tax stat tiles, revenue by day, top items, payment type split.
+- **By salesperson**: revenue, true profit, and sale count per person who rang up a sale
+  (requires the "sold by" setting to be on). Needs Settings → Sales tracking turned on.
+- **By item**: cost and profit per item, with a per-material drill-down.
+- **Events**: every event with true profit after booth/space cost. Not date-range limited.
+- **Inventory**: a point-in-time snapshot, not date-range limited — items on hand and what
+  they're worth at full price ("potential revenue") and at cost ("stock value"), materials on
+  hand and what they cost you, and a reorder list of anything at or below its low-stock
+  threshold (the same threshold already used for the red low-stock badges elsewhere). Reading
+  material cost/stock here is open to the same roles as the rest of Reports (admin/manager/
+  lead) — previously materials data required admin/manager, which would have left a lead role
+  unable to see this report; editing/deleting a material is still admin/manager only.
+- **Tax**: tax collected for the range, a day-by-day chart, and a breakdown by the actual rate
+  charged — useful if cash and card ever use different rates.
+- **Voids**: every voided sale in the range, with who rang it up and who voided it. Voiding a
+  sale has always deleted it outright (stock gets restored); this is a permanent record of
+  that happening, kept in a separate table so a void stays visible here even though the
+  original sale is gone.
+
 ## Test mode
 
 Test mode (the Sell page → "Enter test / training mode") is a full, independent sandbox:

@@ -167,6 +167,31 @@ CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
 -- install's sales table that doesn't have client_sale_id yet, and an index on a column that
 -- doesn't exist yet crashes the whole process before the migration ever gets to add it.
 
+-- A snapshot of a sale taken the moment it's voided, before the row in `sales` itself is
+-- deleted — voiding a sale has always deleted it outright (stock gets restored, the sale is
+-- gone), which meant there was never any record a void even happened. This is a brand new
+-- table with no dependency on a column added to an existing one, so (unlike client_sale_id
+-- above) it's safe to create unconditionally right here.
+CREATE TABLE IF NOT EXISTS voided_sales (
+  id TEXT PRIMARY KEY,
+  original_sale_id TEXT NOT NULL,
+  event_id TEXT REFERENCES events(id),
+  test INTEGER NOT NULL DEFAULT 0,
+  lines_json TEXT NOT NULL DEFAULT '[]',
+  subtotal REAL NOT NULL DEFAULT 0,
+  tax REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL DEFAULT 0,
+  tender TEXT NOT NULL DEFAULT 'cash',
+  profit REAL NOT NULL DEFAULT 0,
+  sold_by_user_id TEXT,
+  sold_by_user_name TEXT,
+  sale_created_at INTEGER NOT NULL,
+  voided_by_user_id TEXT,
+  voided_by_user_name TEXT,
+  voided_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voided_sales_voided_at ON voided_sales(voided_at);
+
 -- Small key/value store for app-wide preferences that don't warrant their own table.
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

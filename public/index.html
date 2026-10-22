@@ -365,47 +365,134 @@
         <button data-range="all">All time</button>
       </div>
       <div class="hint" id="rptRangeHint"></div>
-      <div class="stat-grid" id="rptStats" style="margin-top:16px"></div>
+      <nav class="tabs sub" id="rptTabs" style="margin-top:14px">
+        <button data-rpttab="overview" class="on">Overview</button>
+        <button data-rpttab="byuser">By salesperson</button>
+        <button data-rpttab="byitem">By item</button>
+        <button data-rpttab="events">Events</button>
+        <button data-rpttab="inventory">Inventory</button>
+        <button data-rpttab="tax">Tax</button>
+        <button data-rpttab="voids">Voids</button>
+      </nav>
     </div>
-    <div class="card">
-      <h2>Revenue by day</h2>
-      <div class="rpt-chart" id="rptChart"></div>
-      <div class="empty" id="rptChartEmpty" hidden>No sales in this range yet.</div>
-    </div>
-    <div class="grid">
-      <main>
-        <div class="card">
-          <h2>Top items</h2>
-          <div id="rptTopList"></div>
-          <div class="empty" id="rptTopEmpty" hidden>No sales in this range yet.</div>
-        </div>
-      </main>
-      <aside class="summary">
-        <div class="card">
-          <h2>Payment type</h2>
-          <div class="stat-grid" id="rptTender"></div>
-        </div>
-      </aside>
-    </div>
-    <div class="card">
-      <h2>Cost &amp; profit by item</h2>
-      <div class="hint" style="margin-top:-8px;margin-bottom:10px">Tap an item to see the materials that make up its cost.</div>
-      <div class="rpt-cost-headerrow" id="rptCostHeader" hidden>
-        <span>Item</span><span>Qty</span><span>Revenue</span><span>Cost</span><span>Profit</span>
+
+    <div id="rpt-tab-overview">
+      <div class="card">
+        <div class="stat-grid" id="rptStats"></div>
       </div>
-      <div id="rptCostList"></div>
-      <div class="empty" id="rptCostEmpty" hidden>No sales in this range yet.</div>
+      <div class="card">
+        <h2>Revenue by day</h2>
+        <div class="rpt-chart" id="rptChart"></div>
+        <div class="empty" id="rptChartEmpty" hidden>No sales in this range yet.</div>
+      </div>
+      <div class="grid">
+        <main>
+          <div class="card">
+            <h2>Top items</h2>
+            <div id="rptTopList"></div>
+            <div class="empty" id="rptTopEmpty" hidden>No sales in this range yet.</div>
+          </div>
+        </main>
+        <aside class="summary">
+          <div class="card">
+            <h2>Payment type</h2>
+            <div class="stat-grid" id="rptTender"></div>
+          </div>
+        </aside>
+      </div>
     </div>
-    <div class="card">
-      <h2>Events</h2>
-      <div class="hint" style="margin-top:-8px;margin-bottom:4px">Every event you've run, with "true profit" after deducting booth/space cost — useful when splitting proceeds among partners. Not limited by the date range above.</div>
-      <div id="rptEventsList"></div>
-      <div class="empty" id="rptEventsEmpty" hidden>No events yet.</div>
+
+    <div id="rpt-tab-byuser" hidden>
+      <div class="card">
+        <h2>Sales by salesperson</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Revenue, true profit, and sale count per person who rang up a sale, for the date range above.</div>
+        <div class="rpt-cost-headerrow" id="rptByUserHeader" hidden>
+          <span>Salesperson</span><span>Sales</span><span>Revenue</span><span>Profit</span><span>Avg sale</span>
+        </div>
+        <div id="rptByUserList"></div>
+        <div class="empty" id="rptByUserEmpty" hidden></div>
+      </div>
     </div>
-    <div class="card">
-      <h2>Sales by user</h2>
-      <div id="rptByUserList"></div>
-      <div class="empty" id="rptByUserEmpty" hidden></div>
+
+    <div id="rpt-tab-byitem" hidden>
+      <div class="card">
+        <h2>Cost &amp; profit by item</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Tap an item to see the materials that make up its cost.</div>
+        <div class="rpt-cost-headerrow" id="rptCostHeader" hidden>
+          <span>Item</span><span>Qty</span><span>Revenue</span><span>Cost</span><span>Profit</span>
+        </div>
+        <div id="rptCostList"></div>
+        <div class="empty" id="rptCostEmpty" hidden>No sales in this range yet.</div>
+      </div>
+    </div>
+
+    <div id="rpt-tab-events" hidden>
+      <div class="card">
+        <h2>Events</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:4px">Every event you've run, with "true profit" after deducting booth/space cost — useful when splitting proceeds among partners. Not limited by the date range above.</div>
+        <div id="rptEventsList"></div>
+        <div class="empty" id="rptEventsEmpty" hidden>No events yet.</div>
+      </div>
+    </div>
+
+    <div id="rpt-tab-inventory" hidden>
+      <div class="card">
+        <div class="stat-grid" id="rptInvStats"></div>
+      </div>
+      <div class="card">
+        <h2>Items</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Stock on hand and what it's worth if sold at full price. A snapshot of right now, not limited by the date range above.</div>
+        <input id="rptInvItemSearch" placeholder="Search items…" style="margin-bottom:10px">
+        <div class="rpt-cost-headerrow" id="rptInvItemHeader" hidden>
+          <span>Item</span><span>Stock</span><span>Price</span><span>Potential revenue</span><span>Stock value (cost)</span>
+        </div>
+        <div id="rptInvItemList"></div>
+        <div class="empty" id="rptInvItemEmpty" hidden>No items yet.</div>
+      </div>
+      <div class="card">
+        <h2>Materials</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">What your material inventory is worth, at what you paid for it.</div>
+        <input id="rptInvMatSearch" placeholder="Search materials…" style="margin-bottom:10px">
+        <div class="rpt-cost-headerrow" id="rptInvMatHeader" hidden>
+          <span>Material</span><span>Stock</span><span>Unit cost</span><span>Value</span>
+        </div>
+        <div id="rptInvMatList"></div>
+        <div class="empty" id="rptInvMatEmpty" hidden>No materials yet.</div>
+      </div>
+      <div class="card">
+        <h2>Needs to be ordered</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Items and materials at or below their low-stock threshold.</div>
+        <div id="rptInvReorderList"></div>
+        <div class="empty" id="rptInvReorderEmpty" hidden>Nothing is low right now.</div>
+      </div>
+    </div>
+
+    <div id="rpt-tab-tax" hidden>
+      <div class="card">
+        <div class="stat-grid" id="rptTaxStats"></div>
+      </div>
+      <div class="card">
+        <h2>Tax collected by day</h2>
+        <div class="rpt-chart" id="rptTaxChart"></div>
+        <div class="empty" id="rptTaxChartEmpty" hidden>No taxable sales in this range yet.</div>
+      </div>
+      <div class="card">
+        <h2>By tax rate</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Broken out by the rate actually charged — useful if you've used more than one (e.g. a cash rate different from card).</div>
+        <div class="rpt-cost-headerrow" id="rptTaxRateHeader" hidden><span>Rate</span><span>Taxable sales</span><span>Tax collected</span></div>
+        <div id="rptTaxRateList"></div>
+        <div class="empty" id="rptTaxRateEmpty" hidden>No taxable sales in this range yet.</div>
+      </div>
+    </div>
+
+    <div id="rpt-tab-voids" hidden>
+      <div class="card">
+        <h2>Voided sales</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Every sale voided in the date range above, with who rang it up and who voided it.</div>
+        <div class="rpt-cost-headerrow" id="rptVoidHeader" hidden><span>Voided</span><span>Amount</span><span>Profit lost</span></div>
+        <div id="rptVoidList"></div>
+        <div class="empty" id="rptVoidEmpty" hidden>No voided sales in this range.</div>
+      </div>
     </div>
   </section>
 

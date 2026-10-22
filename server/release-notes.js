@@ -3,6 +3,17 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.18.0',
+    date: '2026-10-22',
+    notes: [
+      'Reports is now organized into sub-tabs: Overview, By salesperson, By item, Events, Inventory, Tax, and Voids.',
+      '"By salesperson" now shows true profit per person, not just revenue.',
+      'New Inventory report: items/materials on hand and what they\'re worth, plus a reorder list of anything running low.',
+      'New Tax report: tax collected by day and by the rate actually charged.',
+      'New Voids report: every voided sale, who rang it up, and who voided it — voiding a sale now keeps a permanent record of that happening instead of leaving no trace.',
+    ],
+  },
+  {
     version: '0.17.0',
     date: '2026-10-22',
     notes: [
