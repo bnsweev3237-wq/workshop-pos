@@ -56,8 +56,10 @@ router.get('/disk', (req, res) => {
 router.post('/copy-to-test', (req, res) => {
   const tx = db.transaction(() => {
     // Replace: clear whatever test data already exists first, so repeated use doesn't pile
-    // up duplicates. event_charity_rules has to go before events (it references events.id).
+    // up duplicates. event_charity_rules/event_items have to go before events (both reference
+    // events.id).
     db.prepare('DELETE FROM event_charity_rules WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
+    db.prepare('DELETE FROM event_items WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
     db.prepare('DELETE FROM sales WHERE test = 1').run();
     db.prepare('DELETE FROM events WHERE test = 1').run();
     db.prepare('DELETE FROM items WHERE test = 1').run();
@@ -98,17 +100,25 @@ router.post('/copy-to-test', (req, res) => {
       const newId = uid();
       eventIdMap.set(ev.id, newId);
       db.prepare(`
-        INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, tax_included_cash, tax_included_other, test, created_at, ended_at)
-        VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @tax_included_cash, @tax_included_other, 1, @created_at, @ended_at)
+        INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+        VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @tax_included_cash, @tax_included_other, 1, @item_scope, @created_at, @ended_at)
       `).run({
         id: newId, name: ev.name, start: ev.start, days: ev.days, cost: ev.cost, status: ev.status,
         tax_rate: ev.tax_rate, cash_tax_rate: ev.cash_tax_rate, tax_included_cash: ev.tax_included_cash,
-        tax_included_other: ev.tax_included_other, created_at: ev.created_at, ended_at: ev.ended_at,
+        tax_included_other: ev.tax_included_other, item_scope: ev.item_scope, created_at: ev.created_at, ended_at: ev.ended_at,
       });
       for (const rule of db.prepare('SELECT * FROM event_charity_rules WHERE event_id = ?').all(ev.id)) {
         db.prepare(`
           INSERT INTO event_charity_rules (id, event_id, category, charity_pct, created_at) VALUES (@id, @eventId, @category, @pct, @createdAt)
         `).run({ id: uid(), eventId: newId, category: rule.category, pct: rule.charity_pct, createdAt: rule.created_at });
+      }
+      // Remap through itemIdMap, same as a sale's line items above — a selected-items event
+      // must point at the new test-side item copies, never the real ones.
+      if (ev.item_scope === 'selected') {
+        const insertEventItem = db.prepare('INSERT OR IGNORE INTO event_items (event_id, item_id) VALUES (?, ?)');
+        for (const row of db.prepare('SELECT item_id FROM event_items WHERE event_id = ?').all(ev.id)) {
+          if (itemIdMap.has(row.item_id)) insertEventItem.run(newId, itemIdMap.get(row.item_id));
+        }
       }
     }
 
@@ -140,6 +150,7 @@ router.post('/purge', (req, res) => {
   if (req.body?.confirm !== 'DELETE') return res.status(400).json({ error: 'confirmation_required' });
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM event_charity_rules').run();
+    db.prepare('DELETE FROM event_items').run();
     db.prepare('DELETE FROM sales').run();
     db.prepare('DELETE FROM events').run();
     db.prepare('DELETE FROM items').run();

@@ -462,13 +462,17 @@ function priceCheckErrorMessage(code) {
     default: return 'Could not check the price — try again later.';
   }
 }
+let libSearch = '';
 function renderLib() {
   $('libList').innerHTML = lib.map(m => `<option value="${esc(m.name)}">`).join('');
   $('libCount').textContent = lib.length || '';
-  $('libEmpty').hidden = lib.length > 0;
-  $('libTable').hidden = lib.length === 0;
+  const q = libSearch.trim().toLowerCase();
+  const visible = lib.filter(m => !q || m.name.toLowerCase().includes(q));
+  $('libEmpty').hidden = visible.length > 0;
+  $('libEmpty').textContent = lib.length === 0 ? 'No materials yet.' : 'No materials match your search.';
+  $('libTable').hidden = visible.length === 0;
   const tb = $('libRows'); tb.innerHTML = '';
-  for (const m of lib) {
+  for (const m of visible) {
     const tr = document.createElement('tr'); tr.className = 'erow'; tr.dataset.id = m.id;
     const low = isLow(m.stock, m.low);
     tr.innerHTML = `
@@ -574,6 +578,7 @@ $('addLib').onclick = async () => {
   lib.push(m); renderLib();
   const names = $('libRows').querySelectorAll('.in-name'); names[names.length - 1].focus();
 };
+$('libSearch').addEventListener('input', () => { libSearch = $('libSearch').value; renderLib(); });
 
 // ---------- Items ----------
 function freshCopy(it) {
@@ -608,11 +613,16 @@ async function sellItem(it, qty) {
   } catch (e) { toast('Could not update stock — try again.'); }
   await Promise.all([loadItems(), loadPosItems()]);
 }
+let itemsSearch = '';
 function renderItems() {
-  const tb = $('itemRows'); tb.innerHTML = ''; let changed = 0;
+  const tb = $('itemRows'); tb.innerHTML = ''; let changed = 0, visibleCount = 0;
+  const q = itemsSearch.trim().toLowerCase();
+  const matchesSearch = (it) => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q) || (it.category || '').toLowerCase().includes(q);
   for (const it of items) {
     const { c, diff, costDiff, priceMoved, moved } = itemStatus(it);
     if (moved) changed++;
+    if (!matchesSearch(it)) continue;
+    visibleCount++;
     const low = isLow(it.stock, it.low);
     const typeLabel = it.itemType === 'resale' ? 'Resale item' : `${it.materials.length} material${it.materials.length === 1 ? '' : 's'}`;
     const catBadge = it.category ? ` · <span class="cat-badge">${esc(it.category)}</span>` : '';
@@ -658,8 +668,9 @@ function renderItems() {
     };
     tb.appendChild(tr);
   }
-  $('itemsEmpty').hidden = items.length > 0;
-  tb.parentElement.hidden = items.length === 0;
+  $('itemsEmpty').hidden = visibleCount > 0;
+  $('itemsEmpty').textContent = items.length === 0 ? 'No items yet.' : 'No items match your search.';
+  tb.parentElement.hidden = visibleCount === 0;
   $('changedBanner').hidden = changed === 0;
   $('changedText').textContent = `Material costs changed for ${changed} item${changed > 1 ? 's' : ''}. Review the new numbers below.`;
   refreshLowItemBanner();
@@ -677,6 +688,7 @@ $('acceptAll').onclick = async () => {
   toast('All items updated to current costs');
   await Promise.all([loadItems(), loadPosItems()]);
 };
+$('itemsSearch').addEventListener('input', () => { itemsSearch = $('itemsSearch').value; renderItems(); });
 
 // ---------- Offline mode (Sell page only — see README) ----------
 // A checked-out sale that failed to reach the server because the connection is actually
@@ -802,8 +814,13 @@ async function loadPosItems() {
 }
 function renderPosItems() {
   const grid = $('posItems');
+  // An event scoped to "selected items" only offers the ones it was given — everything else
+  // stays in the catalog, just not sellable at this particular event.
+  const ev = openEvent();
+  const restrictedIds = ev && ev.itemScope === 'selected' ? new Set(ev.selectedItemIds || []) : null;
+  const eventFiltered = restrictedIds ? posItemsList.filter(it => restrictedIds.has(it.id)) : posItemsList;
   const q = posSearch.trim().toLowerCase();
-  const list = posItemsList.filter(it => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q));
+  const list = eventFiltered.filter(it => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q));
   grid.innerHTML = '';
   for (const it of list) {
     const low = isLow(it.stock, it.low);
@@ -814,8 +831,9 @@ function renderPosItems() {
     btn.onclick = () => addToTicket(it);
     grid.appendChild(btn);
   }
-  $('posItemsEmpty').hidden = posItemsList.length > 0;
-  grid.hidden = posItemsList.length === 0;
+  $('posItemsEmpty').hidden = eventFiltered.length > 0;
+  $('posItemsEmpty').textContent = eventFiltered.length === 0 && posItemsList.length > 0 ? 'No items are available at this event — check the event’s setup.' : 'No items yet.';
+  grid.hidden = eventFiltered.length === 0;
 }
 function defaultLineTaxRate(forTender) {
   const ev = openEvent();
@@ -1077,24 +1095,67 @@ function fillEventForm(ev) {
   $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
   $('evEnd').hidden = !ev;
-  loadEventCharityRules(ev).catch(() => {});
+  loadEventFormExtras(ev).catch(() => {});
 }
 
-// ---------- Event charity rules (admin/manager/lead only — same as event management) ----------
+// ---------- Event charity rules + item availability (admin/manager/lead only — same as
+// event management). Both need an eventId to attach to, so — like charity rules already did —
+// neither section is usable until the event has been saved at least once.
 let evCharityRules = [];
-async function loadEventCharityRules(ev) {
+let evItemScope = 'all';
+let evSelectedItemIds = new Set();
+let evPickerItems = [];
+let evItemSearch = '';
+async function loadEventFormExtras(ev) {
   $('evCharitySection').hidden = !ev;
+  $('evItemsSection').hidden = !ev;
   $('evCharityAllSales').checked = false; $('evCharityCategory').disabled = false;
-  if (!ev) { evCharityRules = []; $('evCharityList').innerHTML = ''; return; }
+  evItemScope = ev?.itemScope || 'all';
+  evSelectedItemIds = new Set(ev?.selectedItemIds || []);
+  evItemSearch = ''; $('evItemSearch').value = '';
+  if (!ev) {
+    evCharityRules = []; $('evCharityList').innerHTML = '';
+    evPickerItems = []; renderEvItemScope();
+    return;
+  }
   const [rules, fullItems] = await Promise.all([
     api('GET', `/api/charity-rules?eventId=${encodeURIComponent(ev.id)}`),
-    api('GET', '/api/items/full'),
+    api('GET', `/api/items/full?test=${ev.test ? 1 : 0}`),
   ]);
   evCharityRules = rules;
   const cats = [...new Set(fullItems.map(it => (it.category || '').trim()).filter(Boolean))].sort();
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
   renderEvCharityList();
+  evPickerItems = fullItems;
+  renderEvItemScope();
 }
+function renderEvItemScope() {
+  document.querySelectorAll('#evItemScopeSeg button').forEach(b => b.classList.toggle('on', b.dataset.scope === evItemScope));
+  $('evItemPicker').hidden = evItemScope !== 'selected';
+  if (evItemScope === 'selected') renderEvItemCheckList();
+}
+function renderEvItemCheckList() {
+  const box = $('evItemCheckList');
+  const q = evItemSearch.trim().toLowerCase();
+  const list = evPickerItems.filter(it => !q || it.name.toLowerCase().includes(q));
+  box.innerHTML = '';
+  for (const it of list) {
+    const label = document.createElement('label'); label.className = 'chk-field'; label.style.marginTop = '8px';
+    label.innerHTML = `<input type="checkbox"><span></span>`;
+    const chk = label.querySelector('input');
+    chk.checked = evSelectedItemIds.has(it.id);
+    label.querySelector('span').textContent = it.name;
+    chk.onchange = () => { chk.checked ? evSelectedItemIds.add(it.id) : evSelectedItemIds.delete(it.id); updateEvItemPickCount(); };
+    box.appendChild(label);
+  }
+  if (!list.length) box.innerHTML = '<div class="hint">No items match.</div>';
+  updateEvItemPickCount();
+}
+function updateEvItemPickCount() {
+  $('evItemPickCount').textContent = `${evSelectedItemIds.size} item${evSelectedItemIds.size === 1 ? '' : 's'} selected`;
+}
+document.querySelectorAll('#evItemScopeSeg button').forEach(b => b.onclick = () => { evItemScope = b.dataset.scope; renderEvItemScope(); });
+$('evItemSearch').addEventListener('input', () => { evItemSearch = $('evItemSearch').value; renderEvItemCheckList(); });
 function renderEvCharityList() {
   const box = $('evCharityList');
   if (!evCharityRules.length) { box.innerHTML = '<div class="hint">No charity rules yet for this event.</div>'; return; }
@@ -1137,13 +1198,17 @@ $('evClose').onclick = () => { $('eventForm').hidden = true; };
 $('evSave').onclick = async () => {
   if (!$('evStart').value || num($('evDays').value) < 1 || num($('evCost').value) <= 0) { toast('Add a start date, number of days, and space cost'); return; }
   const ev = openEvent();
-  await api('POST', '/api/events', {
+  const saved = await api('POST', '/api/events', {
     id: ev?.id, name: $('evName').value.trim(), cost: $('evCost').value, start: $('evStart').value, days: $('evDays').value,
     taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
-    status: 'open', test: testMode,
+    status: 'open', test: testMode, itemScope: ev ? evItemScope : 'all',
   });
+  if (ev && evItemScope === 'selected') {
+    await api('POST', `/api/events/${saved.id}/items`, { itemIds: [...evSelectedItemIds] });
+  }
   $('eventForm').hidden = true; toast('Event saved');
   await loadEvents();
+  renderPosItems();
 };
 $('evEnd').onclick = async () => {
   const ev = openEvent(); if (!ev) return;
@@ -1151,6 +1216,7 @@ $('evEnd').onclick = async () => {
   await api('POST', '/api/events', { ...ev, status: 'ended', endedAt: Date.now() });
   $('eventForm').hidden = true; toast('Event ended');
   await loadEvents();
+  renderPosItems();
 };
 
 // ---------- Test / training mode ----------

@@ -164,6 +164,17 @@ The dollar amounts a rule produces are profit-derived, so they're stripped from 
 (cashier-visible) response the same way profit is — both the per-sale total and the per-line
 figures only appear in the admin/manager/lead Reports endpoints.
 
+## Items available at an event
+
+By default every item in the catalog can be sold at any event — the same as before this
+existed. An event can instead be scoped to just a chosen few (Sell page → the event's gear
+icon → Items available at this event → "Selected items", then check off which ones): useful
+for a smaller pop-up or a themed table where you're only bringing part of your catalog. While
+that's set, the Sell page's item grid only offers the chosen items; everything else stays in
+the catalog untouched, just not sellable at that particular event. Switching back to "All
+items" reverts immediately. Materials and Items are also now searchable from their own tabs,
+and the item picker here has its own search too.
+
 ## Test mode
 
 Test mode (the Sell page → "Enter test / training mode") is a full, independent sandbox:

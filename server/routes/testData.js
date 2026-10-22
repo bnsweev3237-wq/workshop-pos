@@ -17,6 +17,7 @@ router.post('/purge', (req, res) => {
   const counts = {};
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM event_charity_rules WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
+    db.prepare('DELETE FROM event_items WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
     counts.sales = db.prepare('DELETE FROM sales WHERE test = 1').run().changes;
     counts.events = db.prepare('DELETE FROM events WHERE test = 1').run().changes;
     counts.items = db.prepare('DELETE FROM items WHERE test = 1').run().changes;

@@ -186,6 +186,7 @@
         update it here and every item recalculates. Keep <b>In stock</b> up to date to get low-stock warnings.
       </div>
       <div class="banner" id="lowMatBanner" hidden><span id="lowMatText"></span></div>
+      <input id="libSearch" placeholder="Search materials…" style="margin-bottom:12px">
       <table class="erow-table" id="libTable">
         <thead><tr><th>Material</th><th>Price paid</th><th>Makes / pack of</th><th class="r">Per piece</th><th class="r">In stock</th><th class="r">Low at</th><th>Source</th><th class="r">Used in</th><th></th></tr></thead>
         <tbody id="libRows"></tbody>
@@ -204,6 +205,7 @@
         <button class="btn sm" id="acceptAll">Accept all new prices</button>
       </div>
       <div class="banner" id="lowItemBanner" hidden><span id="lowItemText"></span></div>
+      <input id="itemsSearch" placeholder="Search items…" style="margin-bottom:12px">
       <div class="scroll">
         <table class="items-table">
           <thead><tr><th>Item</th><th class="r">Cost now</th><th class="r">Sales price</th><th class="r">Stock</th><th></th></tr></thead>
@@ -265,6 +267,19 @@
           <input type="checkbox" id="evCharityAllSales">
           <span>Apply to all sales at this event <small style="color:var(--muted);font-weight:400">(ignores the category above)</small></span>
         </label>
+      </div>
+      <div id="evItemsSection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+        <label style="margin-bottom:6px">Items available at this event</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">By default every item in your catalog can be sold at this event. Restrict it to a chosen few if you're only bringing a subset — e.g. a smaller pop-up or a themed table.</div>
+        <div class="seg" id="evItemScopeSeg" style="max-width:320px">
+          <button data-scope="all" class="on">All items</button>
+          <button data-scope="selected">Selected items</button>
+        </div>
+        <div id="evItemPicker" hidden style="margin-top:10px">
+          <input id="evItemSearch" placeholder="Search items…" style="margin-bottom:10px">
+          <div id="evItemCheckList" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
+          <div class="hint" id="evItemPickCount" style="margin-top:6px"></div>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn primary sm" id="evSave">Save</button>

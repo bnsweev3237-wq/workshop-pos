@@ -101,8 +101,19 @@ CREATE TABLE IF NOT EXISTS events (
   tax_included_cash INTEGER NOT NULL DEFAULT 0,
   tax_included_other INTEGER NOT NULL DEFAULT 0,
   test INTEGER NOT NULL DEFAULT 0,
+  -- 'all' (default): every item in the catalog is sellable at this event, same as before this
+  -- column existed. 'selected': only items listed in event_items below show up on the Sell
+  -- page's item grid while this event is open — everything else stays in the catalog, just
+  -- not offered for sale at this particular event.
+  item_scope TEXT NOT NULL DEFAULT 'all',
   created_at INTEGER NOT NULL,
   ended_at INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS event_items (
+  event_id TEXT NOT NULL REFERENCES events(id),
+  item_id TEXT NOT NULL REFERENCES items(id),
+  PRIMARY KEY (event_id, item_id)
 );
 
 -- Per-event charity rules: an event can donate a % of profit either from sales of items in

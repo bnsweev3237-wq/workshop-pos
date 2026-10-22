@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.17.0',
+    date: '2026-10-22',
+    notes: [
+      'Materials and Items are now searchable from their own tabs.',
+      'Events can now be restricted to a chosen set of items instead of your whole catalog being sellable — useful for a smaller pop-up or a themed table. Set it from the event\'s gear icon → "Items available at this event".',
+    ],
+  },
+  {
     version: '0.16.0',
     date: '2026-10-22',
     notes: [

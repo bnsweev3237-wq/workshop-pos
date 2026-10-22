@@ -70,6 +70,7 @@ ensureColumn('materials', 'source_id', 'TEXT');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
 ensureColumn('sales', 'client_sale_id', 'TEXT');
 ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+ensureColumn('events', 'item_scope', "TEXT NOT NULL DEFAULT 'all'");
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before
