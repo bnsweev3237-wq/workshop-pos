@@ -96,6 +96,36 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .link { background: none; border: none; padding: 0; font: inherit; color: var(--accent); font-weight: 600; cursor: pointer; text-decoration: underline; }
 
 .summary { position: sticky; top: 20px; }
+
+/* Sell page on a phone: the ticket moves out of normal document flow into a bottom sheet —
+   otherwise checking out means scrolling past the entire item grid, recent sales, and past
+   events first. A persistent bar shows the live total; tapping it slides the full ticket
+   (lines, tax, tender, checkout) up from the bottom. Desktop/tablet keep the original
+   side-by-side layout untouched — this only kicks in alongside the existing 1-column
+   breakpoint below. */
+.mobile-cart-bar, .cart-backdrop { display: none; }
+@media (max-width: 860px) {
+  #tab-pos .summary {
+    position: fixed; left: 0; right: 0; bottom: 0; margin: 0;
+    max-height: 82vh; overflow-y: auto; z-index: 9;
+    transform: translateY(100%); transition: transform .25s ease;
+    padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0; box-shadow: 0 -8px 28px rgba(0,0,0,.18);
+  }
+  #tab-pos .summary.open { transform: translateY(0); }
+  #tab-pos .summary .card { border: none; box-shadow: none; padding: 16px 0 0; margin: 0; }
+  #tab-pos main { padding-bottom: 76px; } /* room for the fixed bar so it never covers the last card */
+  .cart-backdrop { display: block; position: fixed; inset: 0; background: var(--overlay); z-index: 8; }
+  .mobile-cart-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom));
+    z-index: 9; border: none; border-radius: 14px; padding: 14px 18px;
+    background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+    box-shadow: var(--shadow);
+  }
+  .mobile-cart-bar .chev { transition: transform .2s; }
+  .mobile-cart-bar.open .chev { transform: rotate(180deg); }
+}
 .price-box { background: var(--accent-soft); border-radius: 12px; padding: 20px; text-align: center; margin-bottom: 16px; }
 .price-box .lbl { font-size: 13px; color: var(--accent); font-weight: 600; text-transform: uppercase; letter-spacing: .06em; }
 .price-box .big { font-size: 44px; font-weight: 700; letter-spacing: -.03em; font-variant-numeric: tabular-nums; margin: 4px 0; }

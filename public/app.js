@@ -850,13 +850,24 @@ function recalcTicketTotals() {
   $('changeDue').value = money(Math.max(0, num($('received').value) - total));
   $('checkout').disabled = ticket.length === 0;
   $('posCount') && ($('posCount').textContent = ticket.length || '');
+  const itemCount = ticket.reduce((n, l) => n + num(l.qty), 0);
+  $('mobileCartCount').textContent = itemCount ? `${itemCount} item${itemCount === 1 ? '' : 's'} in ticket` : 'Ticket empty';
+  $('mobileCartTotal').textContent = money(total);
 }
+function setMobileCartOpen(open) {
+  $('posSummary').classList.toggle('open', open);
+  $('mobileCartBar').classList.toggle('open', open);
+  $('cartBackdrop').hidden = !open;
+}
+$('mobileCartBar').onclick = () => setMobileCartOpen(!$('posSummary').classList.contains('open'));
+$('posSummaryClose').onclick = () => setMobileCartOpen(false);
+$('cartBackdrop').onclick = () => setMobileCartOpen(false);
 function renderTicket() {
   const box = $('ticketLines'); box.innerHTML = '';
   for (const l of ticket) {
     const row = document.createElement('div'); row.className = 'tline';
     row.innerHTML = `<div class="nm"></div><div class="qstep"><button class="minus">−</button><span></span><button class="plus">+</button></div>
-      <div class="taxmini"><input type="number" min="0" step="0.1" class="lineTax" title="Tax rate for this item"><span>%</span></div>
+      <div class="taxmini"><input type="number" min="0" step="0.1" inputmode="decimal" class="lineTax" title="Tax rate for this item"><span>%</span></div>
       <div class="amt"></div><button class="icon-btn del" title="Remove">×</button>`;
     row.querySelector('.nm').textContent = l.name;
     row.querySelector('.qstep span').textContent = l.qty;
@@ -910,6 +921,7 @@ $('checkout').onclick = async () => {
   try {
     const sale = await api('POST', '/api/sales', payload);
     ticket = []; $('received').value = ''; renderTicket();
+    setMobileCartOpen(false);
     setOnlineStatus(true);
     toast(`${testMode ? 'Test sale' : 'Sale'} complete — ${money(sale.total)}`);
     await Promise.all([loadPosItems(), loadSales(), renderEventWidget()]);
@@ -917,6 +929,7 @@ $('checkout').onclick = async () => {
     if (isNetworkError(e)) {
       await completeOfflineSale(payload);
       ticket = []; $('received').value = ''; renderTicket();
+      setMobileCartOpen(false);
       renderEventWidget();
     } else {
       toast('Checkout failed — ' + (e.message || 'try again'));

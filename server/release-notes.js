@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.16.0',
+    date: '2026-10-22',
+    notes: [
+      'Redesigned the Sell page for phone screens — the ticket is now a bottom sheet with a persistent total/item-count bar, instead of being buried below the entire item grid and sales history.',
+      'Numeric fields on the Sell page (price, quantity, received, tax rate) now bring up a number pad on mobile instead of a full keyboard.',
+    ],
+  },
+  {
     version: '0.15.1',
     date: '2026-10-22',
     notes: [

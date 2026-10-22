@@ -228,6 +228,14 @@ by `npm install`. After a successful update the server exits on purpose — a pr
 the server just stops and needs to be started by hand. On the desktop app, or any install
 that isn't a git checkout, this section explains that and doesn't offer the button.
 
+## Sell page on a phone
+
+Below the same ~860px width where the rest of the app switches to a single column, the Sell
+page's ticket moves out of the normal page flow into a bottom sheet: a persistent bar shows
+the live item count and total, and tapping it slides the full ticket (lines, tax, tender,
+checkout) up from the bottom instead of it sitting buried below the entire item grid and sales
+history. Desktop and tablet keep the original side-by-side layout untouched.
+
 ## Offline mode (Sell page only)
 
 Craftium is installable as a PWA (add it to a tablet's home screen — a service worker caches
