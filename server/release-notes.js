@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.12.0',
+    date: '2026-10-22',
+    notes: [
+      'New accounts and password resets now force a password change on next sign-in — when an admin sets someone\'s password (a new account, or a reset), that person has to replace it with one only they know before they can use the app at all.',
+    ],
+  },
+  {
     version: '0.11.1',
     date: '2026-10-20',
     notes: [

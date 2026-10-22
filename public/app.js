@@ -43,6 +43,7 @@ const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', lead: 'Lead', cashier: 
 const isRestrictedCashier = () => !!me && me.role === 'cashier';
 let me = null;
 let needsSetup = false;
+let forceChangePassword = false;
 let pendingTab = null;
 let currentTab = 'pos';
 
@@ -79,8 +80,11 @@ $('signOutBtn').onclick = () => logout();
 
 function openLogin(forTab) {
   pendingTab = forTab || null;
+  forceChangePassword = false;
   $('loginError').hidden = true;
   $('forgotPanel').hidden = true;
+  $('forceChangeFields').hidden = true;
+  $('loginSubmit').textContent = 'Sign in';
   if (needsSetup) {
     $('loginTitle').textContent = 'Set up the first admin';
     $('loginSub').textContent = 'No account exists yet — create the first admin to manage pricing, materials, and other accounts.';
@@ -99,12 +103,40 @@ function openLogin(forTab) {
 }
 function closeLogin() { $('loginScreen').hidden = true; pendingTab = null; }
 
+// Shown right after a fresh account's first login or an admin-reset login, instead of
+// entering the app — the password that got them in was chosen by someone else, so they have
+// to replace it with one only they know before going any further. No way to dismiss this
+// screen except submitting a new password: no forgot-password link, no close button.
+function showForceChangeScreen() {
+  forceChangePassword = true;
+  $('loginError').hidden = true;
+  $('forgotPanel').hidden = true;
+  $('forgotLink').hidden = true;
+  $('loginTitle').textContent = 'Set a new password';
+  $('loginSub').textContent = `Welcome, ${me.name}. For security, set a password only you know before continuing.`;
+  $('loginFields').hidden = true;
+  $('setupFields').hidden = true;
+  $('forceChangeFields').hidden = false;
+  $('forcePassword1').value = '';
+  $('forcePassword2').value = '';
+  $('loginSubmit').textContent = 'Set password';
+  $('loginScreen').hidden = false;
+  $('forcePassword1').focus();
+}
+
 $('forgotLink').onclick = () => { $('forgotPanel').hidden = !$('forgotPanel').hidden; };
 
 $('loginSubmit').onclick = async () => {
   $('loginError').hidden = true;
   try {
-    if (needsSetup) {
+    if (forceChangePassword) {
+      const p1 = $('forcePassword1').value, p2 = $('forcePassword2').value;
+      if (p1.length < 8) throw new Error('Password must be at least 8 characters.');
+      if (p1 !== p2) throw new Error('Passwords don’t match.');
+      const r = await api('POST', '/api/auth/password', { newPassword: p1 });
+      me = r.me;
+      forceChangePassword = false;
+    } else if (needsSetup) {
       const name = $('setupName').value.trim(), username = $('setupUsername').value.trim(), password = $('setupPassword').value;
       if (!name || !username || password.length < 8) throw new Error('Name, username, and a password of at least 8 characters are required.');
       const r = await api('POST', '/api/auth/setup', { name, username, password });
@@ -114,6 +146,7 @@ $('loginSubmit').onclick = async () => {
       const r = await api('POST', '/api/auth/login', { username, password });
       me = r.me;
     }
+    if (me.mustChangePassword) { showForceChangeScreen(); return; }
     updateAuthUI();
     const dest = (pendingTab && (ROLE_TABS[me.role] || ['pos']).includes(pendingTab)) ? pendingTab : 'pos';
     closeLogin();
@@ -125,7 +158,7 @@ $('loginSubmit').onclick = async () => {
     $('loginError').hidden = false;
   }
 };
-[$('loginUsername'), $('loginPassword')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') $('loginSubmit').click(); }));
+[$('loginUsername'), $('loginPassword'), $('forcePassword1'), $('forcePassword2')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') $('loginSubmit').click(); }));
 
 async function logout() {
   await api('POST', '/api/auth/logout');
@@ -1428,6 +1461,7 @@ $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('rele
     const s = await refreshAuthStatus();
     $('app').hidden = false;
     if (s.needsSetup || !s.me) { openLogin('pos'); return; }
+    if (s.me.mustChangePassword) { showForceChangeScreen(); return; }
     closeLogin();
     await afterLogin();
     showTab('pos');

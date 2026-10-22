@@ -68,6 +68,7 @@ ensureColumn('materials', 'source', 'TEXT');
 ensureColumn('materials', 'product_url', 'TEXT');
 ensureColumn('materials', 'source_id', 'TEXT');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
+ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
 
 // Seeds the sources list with common ones once, the first time this runs against a database
 // that has none at all — so there's something useful immediately instead of an empty list.

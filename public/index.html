@@ -483,6 +483,10 @@
       <label for="setupUsername" style="margin-top:10px">Choose a username</label><input id="setupUsername">
       <label for="setupPassword" style="margin-top:10px">Choose a password</label><input id="setupPassword" type="password" placeholder="min 8 characters">
     </div>
+    <div id="forceChangeFields" hidden>
+      <label for="forcePassword1">New password</label><input id="forcePassword1" type="password" placeholder="min 8 characters" autocomplete="new-password">
+      <label for="forcePassword2" style="margin-top:10px">Confirm new password</label><input id="forcePassword2" type="password" autocomplete="new-password">
+    </div>
     <div class="btn-row">
       <button class="btn primary" id="loginSubmit">Sign in</button>
     </div>

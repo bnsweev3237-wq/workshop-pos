@@ -2,11 +2,11 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireAdmin, ROLES } = require('../middleware/auth');
+const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
 
 const router = express.Router();
 
-const toPublic = (row) => ({ id: row.id, name: row.name, username: row.username, role: row.role, createdAt: row.created_at });
+const toPublic = (row) => ({ id: row.id, name: row.name, username: row.username, role: row.role, mustChangePassword: !!row.must_change_password, createdAt: row.created_at });
 
 // Whether any account exists yet — a fresh install has none, so the very first account is
 // created through a one-time "setup" flow instead of a normal login, and is always an admin
@@ -52,6 +52,17 @@ router.post('/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
+// Self-service password change — any logged-in user, for themselves only. This is what the
+// forced "set a new password" screen calls after a fresh account or an admin reset, and
+// clears must_change_password so it isn't asked again until the next reset.
+router.post('/password', requireLogin, (req, res) => {
+  const { newPassword } = req.body || {};
+  if (!newPassword || newPassword.length < 8) return res.status(400).json({ error: 'invalid_input', message: 'Password must be at least 8 characters.' });
+  db.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').run(bcrypt.hashSync(newPassword, 12), req.user.id);
+  const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  res.json({ ok: true, me: toPublic(row) });
+});
+
 // ---- User management (Settings page) — admin-only; cashiers can't reach this at all ----
 
 router.get('/users', requireAdmin, (req, res) => {
@@ -69,18 +80,21 @@ router.post('/users', requireAdmin, (req, res) => {
   }
   const existing = db.prepare('SELECT 1 FROM users WHERE username = ?').get(username.trim());
   if (existing) return res.status(409).json({ error: 'username_taken' });
-  const row = { id: uid(), name, username: username.trim(), password_hash: bcrypt.hashSync(password, 12), role, created_at: Date.now() };
-  db.prepare('INSERT INTO users (id, name, username, password_hash, role, created_at) VALUES (@id, @name, @username, @password_hash, @role, @created_at)').run(row);
+  // must_change_password = 1: the admin picked this password, not the account's owner, so
+  // they're forced to set their own the moment they first sign in with it.
+  const row = { id: uid(), name, username: username.trim(), password_hash: bcrypt.hashSync(password, 12), role, must_change_password: 1, created_at: Date.now() };
+  db.prepare('INSERT INTO users (id, name, username, password_hash, role, must_change_password, created_at) VALUES (@id, @name, @username, @password_hash, @role, @must_change_password, @created_at)').run(row);
   res.json(toPublic(row));
 });
 
 // Any logged-in admin can reset another user's password — this IS the "forgot password"
 // recovery path (a teammate with access resets it for you), since a standalone install has
-// no mail server to send reset links through by default.
+// no mail server to send reset links through by default. Same as a brand-new account, the
+// reset password is admin-chosen, so the user is forced to set their own on next sign-in.
 router.post('/users/:id/password', requireAdmin, (req, res) => {
   const { password } = req.body || {};
   if (!password || password.length < 8) return res.status(400).json({ error: 'invalid_input', message: 'Password must be at least 8 characters.' });
-  const result = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 12), req.params.id);
+  const result = db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(bcrypt.hashSync(password, 12), req.params.id);
   if (result.changes === 0) return res.status(404).json({ error: 'not_found' });
   res.json({ ok: true });
 });

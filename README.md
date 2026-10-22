@@ -243,6 +243,9 @@ successful one is always one click away from being applied, never automatic.
 - "Forgot password" recovery: any admin can reset anyone's password from Settings. There's no
   outbound email in this version, so if you're the *only* admin and get locked out, recovery
   requires direct access to the server (see below).
+- A password set by someone other than the account's own owner — a brand-new account's
+  initial password, or an admin's reset — must be replaced the moment that account next signs
+  in. There's no way to reach the app with an admin-chosen password still in place.
 
 ### Manually resetting a password (last-admin lockout)
 
@@ -250,7 +253,7 @@ successful one is always one click away from being applied, never automatic.
 node -e "
 const bcrypt = require('bcryptjs');
 const db = require('./server/db');
-db.prepare('UPDATE users SET password_hash = ? WHERE username = ?')
+db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE username = ?')
   .run(bcrypt.hashSync('newpassword', 12), 'theusername');
 console.log('done');
 "
