@@ -151,7 +151,10 @@ CREATE TABLE IF NOT EXISTS sales (
 
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_client_id ON sales(client_sale_id) WHERE client_sale_id IS NOT NULL;
+-- idx_sales_client_id is created in server/db/index.js, AFTER the ensureColumn migrations run,
+-- not here — this file runs unconditionally on every boot, including against an existing
+-- install's sales table that doesn't have client_sale_id yet, and an index on a column that
+-- doesn't exist yet crashes the whole process before the migration ever gets to add it.
 
 -- Small key/value store for app-wide preferences that don't warrant their own table.
 CREATE TABLE IF NOT EXISTS settings (

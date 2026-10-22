@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.15.1',
+    date: '2026-10-22',
+    notes: [
+      'Fixed a crash on startup for existing installs introduced in 0.15.0 — the new database index for offline sale syncing was being created before the migration that adds the column it needs.',
+    ],
+  },
+  {
     version: '0.15.0',
     date: '2026-10-22',
     notes: [
