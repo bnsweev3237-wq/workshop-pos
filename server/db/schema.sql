@@ -141,11 +141,17 @@ CREATE TABLE IF NOT EXISTS sales (
   charity_due REAL NOT NULL DEFAULT 0,
   user_id TEXT REFERENCES users(id),
   user_name TEXT,
+  -- Set only by a sale completed offline on the Sell page and synced once back online — lets
+  -- a retried sync (e.g. the connection drops right after the first attempt's response) land
+  -- exactly once instead of recording the same sale twice. Ordinary online checkouts never
+  -- send one, so this stays NULL for the vast majority of rows.
+  client_sale_id TEXT,
   created_at INTEGER NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_sales_created ON sales(created_at);
 CREATE INDEX IF NOT EXISTS idx_sales_event ON sales(event_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_client_id ON sales(client_sale_id) WHERE client_sale_id IS NOT NULL;
 
 -- Small key/value store for app-wide preferences that don't warrant their own table.
 CREATE TABLE IF NOT EXISTS settings (

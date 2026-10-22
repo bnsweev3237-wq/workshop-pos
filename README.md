@@ -228,6 +228,29 @@ by `npm install`. After a successful update the server exits on purpose — a pr
 the server just stops and needs to be started by hand. On the desktop app, or any install
 that isn't a git checkout, this section explains that and doesn't offer the button.
 
+## Offline mode (Sell page only)
+
+Craftium is installable as a PWA (add it to a tablet's home screen — a service worker caches
+the app shell so it opens even with no connection) and the **Sell page specifically** keeps
+working when the connection drops mid-session: ringing up items, checking out, and voiding a
+sale you haven't synced yet all still work, using the last-known item list and stock cached on
+the device. Completed sales are queued locally (in IndexedDB) and synced to the server
+automatically the moment the connection comes back — each carries a client-generated id so a
+retried sync after a dropped connection can't record the same sale twice. An orange banner
+shows while offline and while sales are still waiting to sync, with a manual "Sync now" option.
+
+This is deliberately scoped to just the Sell page. Calculator, Materials, Items, Reports, and
+Settings all still require a live connection — you wouldn't normally edit pricing or materials
+mid-sale at a booth anyway, and giving every screen the same offline/sync treatment would be a
+much bigger undertaking for little real benefit.
+
+A couple of limitations worth knowing: stock shown while offline is whatever was last synced,
+so two devices offline at once could both "sell" the last unit of something — the same risk
+any offline point of sale has, there's no way around it without a connection. And opening the
+app for the very first time with no connection at all won't work — it needs to have loaded
+successfully at least once (e.g. at the start of the day) before it can fall back to cached
+data; what it supports is losing the connection *during* a session, not never having had one.
+
 ## Material sources & checking prices
 
 Settings → Material sources (admin only) is a plain editable list of where materials get

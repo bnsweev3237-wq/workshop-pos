@@ -40,7 +40,8 @@ const stripLineCharity = (l) => { const { charityRule, charityPct, charityAmt, .
 const toPublicSale = (r) => ({
   id: r.id, eventId: r.event_id, test: !!r.test, taxIncluded: !!r.tax_included,
   lines: JSON.parse(r.lines_json).map(stripLineCharity), subtotal: r.subtotal, tax: r.tax, total: r.total,
-  tender: r.tender, received: r.received, change: r.change, soldBy: r.user_name || null, createdAt: r.created_at,
+  tender: r.tender, received: r.received, change: r.change, soldBy: r.user_name || null,
+  clientSaleId: r.client_sale_id || null, createdAt: r.created_at,
 });
 const toFullSale = (r) => ({
   ...toPublicSale(r),
@@ -70,6 +71,16 @@ router.post('/', requireLogin, (req, res) => {
   if (!rawLines.length) return res.status(400).json({ error: 'empty_ticket' });
   const included = !!b.taxIncluded;
   const test = !!b.test;
+
+  // A sale completed offline and now syncing carries the client-generated id it was queued
+  // under. If a sale with that id already exists, this is a retried sync (the first attempt's
+  // response was lost, e.g. connectivity dropped right after) — return the existing sale
+  // as-is rather than recording (and double-decrementing stock for) the same sale twice.
+  const clientSaleId = typeof b.clientSaleId === 'string' && b.clientSaleId ? b.clientSaleId : null;
+  if (clientSaleId) {
+    const existing = db.prepare('SELECT * FROM sales WHERE client_sale_id = ?').get(clientSaleId);
+    if (existing) return res.json(toPublicSale(existing));
+  }
 
   // Cashier restrictions, enforced here rather than trusted from the UI: no custom (non-
   // catalog) items, and no per-line tax-rate override — their ticket always uses the event's
@@ -136,18 +147,31 @@ router.post('/', requireLogin, (req, res) => {
   const change = b.tender === 'cash' ? Math.max(0, received - total) : 0;
 
   const trackAttribution = getBool('trackSaleAttribution', true);
+  // A synced offline sale carries the time it actually happened at the register, not when the
+  // device finally reconnected — only trusted from the client for that specific path, never
+  // for an ordinary online checkout, so there's no way to otherwise backdate a sale's figures
+  // into a different reporting window.
+  const createdAt = clientSaleId && Number(b.createdAt) > 0 ? Number(b.createdAt) : Date.now();
   const row = {
     id: uid(), event_id: b.eventId || null, test: test ? 1 : 0, tax_included: included ? 1 : 0,
     lines_json: JSON.stringify(finalLines),
     subtotal, tax, total, tender: b.tender || 'cash', received, change, profit, charity_due: charityDue,
     user_id: trackAttribution ? req.user.id : null, user_name: trackAttribution ? req.user.name : null,
-    created_at: Date.now(),
+    client_sale_id: clientSaleId, created_at: createdAt,
   };
 
+  let saleId = row.id;
   const tx = db.transaction(() => {
+    // Defense in depth against the UNIQUE index below — the pre-check above already covers
+    // the normal case, this only matters if two syncs for the same queued sale somehow
+    // overlapped. Falls back to the row that actually won, rather than erroring.
+    if (clientSaleId) {
+      const raced = db.prepare('SELECT id FROM sales WHERE client_sale_id = ?').get(clientSaleId);
+      if (raced) { saleId = raced.id; return; }
+    }
     db.prepare(`
-      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, user_id, user_name, created_at)
-      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @user_id, @user_name, @created_at)
+      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, user_id, user_name, client_sale_id, created_at)
+      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @user_id, @user_name, @client_sale_id, @created_at)
     `).run(row);
     for (const c of stockChanges) {
       db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);
@@ -155,7 +179,7 @@ router.post('/', requireLogin, (req, res) => {
   });
   tx();
 
-  res.json(toPublicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(row.id)));
+  res.json(toPublicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId)));
 });
 
 // Void a sale (Sell page), restoring stock atomically.

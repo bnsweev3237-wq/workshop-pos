@@ -68,7 +68,13 @@ ensureColumn('materials', 'source', 'TEXT');
 ensureColumn('materials', 'product_url', 'TEXT');
 ensureColumn('materials', 'source_id', 'TEXT');
 ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
+ensureColumn('sales', 'client_sale_id', 'TEXT');
 ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+
+// CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
+// unconditional (idempotent) statement to reach installs that already had a sales table before
+// client_sale_id existed.
+db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_client_id ON sales(client_sale_id) WHERE client_sale_id IS NOT NULL');
 
 // Seeds the sources list with common ones once, the first time this runs against a database
 // that has none at all — so there's something useful immediately instead of an empty list.

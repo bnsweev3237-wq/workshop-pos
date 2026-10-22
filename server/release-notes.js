@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.15.0',
+    date: '2026-10-22',
+    notes: [
+      'The Sell page now works offline — losing the connection mid-shift no longer stops you from ringing up sales. Checkouts are saved on the device and sync automatically once you\'re reconnected, with an on-screen indicator while anything is still waiting to sync.',
+      'Craftium is now installable as an app on a tablet or phone (add it to your home screen) for a more native feel, separate from the offline support above.',
+    ],
+  },
+  {
     version: '0.14.0',
     date: '2026-10-22',
     notes: [

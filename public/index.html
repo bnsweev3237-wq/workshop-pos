@@ -6,6 +6,8 @@
 <title>Craftium</title>
 <link rel="icon" href="/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#2f7d5b">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
@@ -46,6 +48,11 @@
       <button class="btn sm" id="purgeTestLink">Clear test data now</button>
       <button class="btn sm" id="testModeOffLink">Exit &amp; purge test data</button>
     </div>
+  </div>
+
+  <div class="banner offline-banner" id="offlineBanner" hidden>
+    <span id="offlineBannerText"></span>
+    <div class="btn-row" style="margin:0"><button class="btn sm" id="syncNowBtn" hidden>Sync now</button></div>
   </div>
 
   <!-- ===== Calculator ===== -->
@@ -537,6 +544,7 @@
   </div>
 </div>
 
+<script src="/offline.js"></script>
 <script src="/app.js"></script>
 </body>
 </html>

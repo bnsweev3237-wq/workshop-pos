@@ -5,6 +5,13 @@ const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random());
 
+// Caches the app shell so it can open at all with no connection (installable as a PWA too —
+// see manifest.json). Has nothing to do with the Sell page's actual offline sale handling,
+// which lives below and in offline.js.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}
+
 // ---------- API client ----------
 async function api(method, path, body) {
   const res = await fetch(path, {
@@ -57,6 +64,7 @@ async function refreshAuthStatus() {
   const s = await api('GET', '/api/auth/status');
   needsSetup = s.needsSetup;
   me = s.me;
+  if (me) Offline.saveSnapshot('me', me);
   updateAuthUI();
   return s;
 }
@@ -174,6 +182,7 @@ async function logout() {
 let pollTimer = null;
 async function afterLogin() {
   await Promise.all([loadPosItems(), loadSales(), loadEvents()]);
+  trySyncQueuedSales(); // picks up anything still queued from a prior offline session, if we're online now
   if (!pollTimer) {
     pollTimer = setInterval(() => { if (!document.hidden && me) Promise.all([loadPosItems(), loadSales(), loadEvents()]).catch(() => {}); }, 20000);
   }
@@ -669,12 +678,128 @@ $('acceptAll').onclick = async () => {
   await Promise.all([loadItems(), loadPosItems()]);
 };
 
+// ---------- Offline mode (Sell page only — see README) ----------
+// A checked-out sale that failed to reach the server because the connection is actually
+// down, vs. a real error the server sent back (bad input, etc.) — api() always sets .code on
+// the latter (see onUnauthorized/401 and the !res.ok branch above), and never on a fetch()
+// that threw before getting a response at all. That's the one reliable signal available here.
+function isNetworkError(e) { return !e || !e.code; }
+
+let isOnline = navigator.onLine;
+let queuedSales = [];
+let syncing = false;
+
+function updateOfflineBanner() {
+  const pending = queuedSales.length;
+  const banner = $('offlineBanner');
+  if (!isOnline) {
+    $('offlineBannerText').textContent = `📡 You're offline. The Sell page keeps working — sales are saved on this device and sync automatically once you're reconnected.${pending ? ` (${pending} queued)` : ''} Other tabs need a connection.`;
+    $('syncNowBtn').hidden = true;
+    banner.hidden = false;
+  } else if (pending > 0) {
+    $('offlineBannerText').textContent = `Syncing ${pending} queued sale${pending === 1 ? '' : 's'}…`;
+    $('syncNowBtn').hidden = false;
+    banner.hidden = false;
+  } else {
+    banner.hidden = true;
+  }
+}
+function setOnlineStatus(online) {
+  const changed = isOnline !== online;
+  isOnline = online;
+  updateOfflineBanner();
+  if (changed && online) trySyncQueuedSales();
+}
+window.addEventListener('online', () => setOnlineStatus(true));
+window.addEventListener('offline', () => setOnlineStatus(false));
+$('syncNowBtn').onclick = () => trySyncQueuedSales();
+
+async function loadQueuedSales() {
+  queuedSales = (await Offline.getQueuedSales()).map((q) => q.localSale).sort((a, b) => b.createdAt - a.createdAt);
+  updateOfflineBanner();
+}
+
+function applyLocalStockDelta(lines, sign) {
+  for (const l of lines) {
+    if (!l.itemId) continue;
+    const it = posItemsList.find((x) => x.id === l.itemId);
+    if (it) it.stock = Math.max(0, num(it.stock) + sign * num(l.qty));
+  }
+  renderPosItems();
+  Offline.saveSnapshot(`posItems:${testMode ? 1 : 0}`, posItemsList);
+}
+
+// Builds the same shape a synced sale would have (minus server-only fields like profit, which
+// the client never sees anyway) so the receipt/sales-list code can render it identically.
+async function completeOfflineSale(payload) {
+  setOnlineStatus(false);
+  const clientSaleId = cid();
+  const createdAt = Date.now();
+  let subtotal = 0, tax = 0;
+  for (const l of payload.lines) { const s = lineTaxSplit(l, payload.taxIncluded); subtotal += s.sub; tax += s.tax; }
+  const total = subtotal + tax;
+  const localSale = {
+    id: clientSaleId, clientSaleId, eventId: payload.eventId, test: payload.test, taxIncluded: payload.taxIncluded,
+    lines: payload.lines, subtotal, tax, total, tender: payload.tender,
+    received: payload.tender === 'cash' ? payload.received : total,
+    change: payload.tender === 'cash' ? Math.max(0, payload.received - total) : 0,
+    soldBy: me ? me.name : null, createdAt, pendingSync: true,
+  };
+  await Offline.queueSale({ clientSaleId, createdAt, payload: { ...payload, clientSaleId, createdAt }, localSale });
+  queuedSales.unshift(localSale);
+  applyLocalStockDelta(payload.lines, -1);
+  toast(`Sale saved offline — ${money(localSale.total)} (will sync automatically)`);
+  renderSales();
+  updateOfflineBanner();
+}
+
+async function trySyncQueuedSales() {
+  if (syncing || !isOnline) return;
+  const queue = await Offline.getQueuedSales();
+  if (!queue.length) return;
+  syncing = true;
+  let syncedAny = false;
+  try {
+    for (const q of queue.sort((a, b) => a.createdAt - b.createdAt)) {
+      try {
+        const synced = await api('POST', '/api/sales', q.payload);
+        await Offline.removeQueuedSale(q.clientSaleId);
+        queuedSales = queuedSales.filter((s) => s.clientSaleId !== q.clientSaleId);
+        sales = [synced, ...sales];
+        syncedAny = true;
+      } catch (e) {
+        if (isNetworkError(e)) { setOnlineStatus(false); break; }
+        console.error('Could not sync queued sale', q.clientSaleId, e);
+        toast('A queued sale failed to sync — it will stay queued. Check with an admin.');
+      }
+    }
+  } finally {
+    syncing = false;
+    if (syncedAny) await loadPosItems().catch(() => {}); // reconcile optimistic local stock with the server's authoritative figures
+    renderSales();
+    updateOfflineBanner();
+  }
+}
+
 // ---------- Point of sale ----------
 let ticket = [];
 let tender = 'cash';
 let posSearch = '';
 
-async function loadPosItems() { posItemsList = await api('GET', `/api/items?test=${testMode ? 1 : 0}`); renderPosItems(); }
+async function loadPosItems() {
+  const key = `posItems:${testMode ? 1 : 0}`;
+  try {
+    posItemsList = await api('GET', `/api/items?test=${testMode ? 1 : 0}`);
+    setOnlineStatus(true);
+    Offline.saveSnapshot(key, posItemsList);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    setOnlineStatus(false);
+    const cached = await Offline.getSnapshot(key);
+    if (cached) posItemsList = cached;
+  }
+  renderPosItems();
+}
 function renderPosItems() {
   const grid = $('posItems');
   const q = posSearch.trim().toLowerCase();
@@ -777,16 +902,26 @@ $('checkout').onclick = async () => {
   const ev = openEvent();
   const total = num($('tTotal').textContent.replace(/[^0-9.-]/g, ''));
   const received = tender === 'cash' ? num($('received').value) : total;
+  const payload = {
+    eventId: ev?.id || null, test: testMode, taxIncluded: eventTaxIncluded(ev, tender),
+    lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate) })),
+    tender, received,
+  };
   try {
-    const sale = await api('POST', '/api/sales', {
-      eventId: ev?.id || null, test: testMode, taxIncluded: eventTaxIncluded(ev, tender),
-      lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate) })),
-      tender, received,
-    });
+    const sale = await api('POST', '/api/sales', payload);
     ticket = []; $('received').value = ''; renderTicket();
+    setOnlineStatus(true);
     toast(`${testMode ? 'Test sale' : 'Sale'} complete — ${money(sale.total)}`);
     await Promise.all([loadPosItems(), loadSales(), renderEventWidget()]);
-  } catch (e) { toast('Checkout failed — ' + (e.message || 'try again')); }
+  } catch (e) {
+    if (isNetworkError(e)) {
+      await completeOfflineSale(payload);
+      ticket = []; $('received').value = ''; renderTicket();
+      renderEventWidget();
+    } else {
+      toast('Checkout failed — ' + (e.message || 'try again'));
+    }
+  }
 };
 
 function buildSaleReceipt(sale) {
@@ -794,7 +929,7 @@ function buildSaleReceipt(sale) {
   const itemCount = sale.lines.reduce((n, l) => n + num(l.qty), 0);
   const head = document.createElement('button'); head.type = 'button'; head.className = 'receipt-head';
   head.innerHTML = `<span class="rh-time"></span><span class="rh-total"></span>`;
-  head.querySelector('.rh-time').textContent = `${sale.createdAt ? new Date(sale.createdAt).toLocaleString() : ''} · ${itemCount} item${itemCount === 1 ? '' : 's'}${sale.test ? ' · test' : ''}${sale.soldBy ? ' · ' + sale.soldBy : ''}`;
+  head.querySelector('.rh-time').textContent = `${sale.createdAt ? new Date(sale.createdAt).toLocaleString() : ''} · ${itemCount} item${itemCount === 1 ? '' : 's'}${sale.test ? ' · test' : ''}${sale.soldBy ? ' · ' + sale.soldBy : ''}${sale.pendingSync ? ' · ⏳ not synced' : ''}`;
   head.querySelector('.rh-total').textContent = money(sale.total);
   const body = document.createElement('div'); body.className = 'receipt-body'; body.hidden = true;
   const included = !!sale.taxIncluded;
@@ -809,19 +944,31 @@ function buildSaleReceipt(sale) {
     <div class="rline subtot"><span>Tax${included ? ' (included in price)' : ''}</span><span>${money(sale.tax)}</span></div>
     <div class="rline grand"><span>Total</span><span>${money(sale.total)}</span></div>
     <div class="rline meta"><span>${sale.tender === 'cash' ? `Cash · received ${money(sale.received)} · change ${money(sale.change)}` : 'Card / Other'}</span></div>`;
-  const voidBtn = document.createElement('button'); voidBtn.className = 'sale-void'; voidBtn.textContent = sale.test ? 'Void test sale' : 'Void sale';
+  const voidBtn = document.createElement('button'); voidBtn.className = 'sale-void'; voidBtn.textContent = sale.pendingSync ? 'Remove (unsynced)' : sale.test ? 'Void test sale' : 'Void sale';
   voidBtn.onclick = e => { e.stopPropagation(); voidSale(sale); };
   body.appendChild(voidBtn);
   head.onclick = () => { body.hidden = !body.hidden; };
   wrap.appendChild(head); wrap.appendChild(body);
   return wrap;
 }
-async function loadSales() { sales = await api('GET', '/api/sales'); renderSales(); }
+async function loadSales() {
+  try {
+    sales = await api('GET', '/api/sales');
+    setOnlineStatus(true);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    setOnlineStatus(false);
+    sales = sales || [];
+  }
+  await loadQueuedSales();
+  renderSales();
+}
 function renderSales() {
   const box = $('salesList');
   const ev = openEvent(); const ctxId = ev ? ev.id : null;
   $('salesHeading').textContent = ev ? `${ev.name || 'Event'} — sales` : (testMode ? 'Recent test sales' : 'Recent sales');
-  let visible = sales.filter(s => !!s.test === testMode && s.eventId === ctxId);
+  const combined = [...queuedSales, ...sales].sort((a, b) => b.createdAt - a.createdAt);
+  let visible = combined.filter(s => !!s.test === testMode && s.eventId === ctxId);
   if (!ctxId) visible = visible.slice(0, 30);
   box.innerHTML = '';
   for (const sale of visible) box.appendChild(buildSaleReceipt(sale));
@@ -830,6 +977,16 @@ function renderSales() {
   updateTestControls();
 }
 async function voidSale(sale) {
+  if (sale.pendingSync) {
+    if (!await askConfirm(`Remove this unsynced ${money(sale.total)} sale? It never reached the server.`, 'Remove sale')) return;
+    await Offline.removeQueuedSale(sale.clientSaleId);
+    queuedSales = queuedSales.filter((s) => s.clientSaleId !== sale.clientSaleId);
+    applyLocalStockDelta(sale.lines, 1);
+    toast('Unsynced sale removed');
+    renderSales();
+    updateOfflineBanner();
+    return;
+  }
   if (!await askConfirm(sale.test ? `Void this ${money(sale.total)} test sale?` : `Void this ${money(sale.total)} sale? Any stock it used will be added back.`, 'Void sale')) return;
   try { await api('DELETE', '/api/sales/' + sale.id); toast(sale.test ? 'Test sale voided' : 'Sale voided — stock restored'); }
   catch (e) { toast('Could not void that sale — try again.'); }
@@ -843,9 +1000,21 @@ function eventWindow(ev) {
   const days = Math.max(1, Math.round(num(ev.days)));
   return { startMs, endMs: startMs + days * 86400000, days };
 }
-const eventSales = ev => sales.filter(s => s.eventId === ev.id);
+const eventSales = ev => [...queuedSales, ...sales].filter(s => s.eventId === ev.id);
 const eventProfit = ev => eventSales(ev).reduce((sum, s) => sum + num(s.profit || 0), 0); // public sales have no profit; see Reports for real totals
-async function loadEvents() { events = await api('GET', '/api/events'); renderEventWidget(); renderEventHistory(); }
+async function loadEvents() {
+  try {
+    events = await api('GET', '/api/events');
+    setOnlineStatus(true);
+    Offline.saveSnapshot('events', events);
+  } catch (e) {
+    if (!isNetworkError(e)) throw e;
+    setOnlineStatus(false);
+    const cached = await Offline.getSnapshot('events');
+    if (cached) events = cached;
+  }
+  renderEventWidget(); renderEventHistory();
+}
 function renderEventWidget() {
   const bar = $('eventBar'), link = $('eventSetupLink'), gear = $('eventGear');
   const ev = openEvent();
@@ -1575,6 +1744,24 @@ $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('rele
     showTab('pos');
   } catch (e) {
     $('app').hidden = false;
+    // Opening the app with no connection at all (not just losing it mid-session) — fall back
+    // to the last account/data this device saw while it was last online, so the Sell page can
+    // still ring up sales. There's no way to verify the session is still valid without a
+    // connection; this trusts the browser's session cookie is probably still good, same as
+    // any offline-first app has to.
+    if (isNetworkError(e)) {
+      const cachedMe = await Offline.getSnapshot('me');
+      if (cachedMe) {
+        me = cachedMe; needsSetup = false;
+        setOnlineStatus(false);
+        updateAuthUI();
+        closeLogin();
+        await afterLogin();
+        showTab('pos');
+        toast('Offline — showing the last data saved on this device');
+        return;
+      }
+    }
     toast('Could not reach the server. Check that it’s running.');
   }
 })();
