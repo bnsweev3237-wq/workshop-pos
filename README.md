@@ -276,6 +276,11 @@ successful one is always one click away from being applied, never automatic.
   (including a cloud provider's instance metadata address) — checked on every redirect hop,
   not just the original link, so a malicious or compromised account can't use it to probe this
   server's own internal network.
+- Baseline hardening headers are set on every response (via `helmet`), including a
+  Content-Security-Policy scoped to exactly what the app actually loads (its own script, its
+  own stylesheet plus inline styles, and Google Fonts — nothing else), clickjacking protection
+  (`X-Frame-Options: SAMEORIGIN` / `frame-ancestors 'none'`), and HSTS (which browsers ignore
+  entirely over plain HTTP, so it doesn't affect a no-TLS LAN install).
 - "Forgot password" recovery: any admin can reset anyone's password from Settings. There's no
   outbound email in this version, so if you're the *only* admin and get locked out, recovery
   requires direct access to the server (see below).

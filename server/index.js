@@ -1,5 +1,6 @@
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
 const session = require('express-session');
 const SqliteStore = require('better-sqlite3-session-store')(session);
 const db = require('./db');
@@ -15,6 +16,32 @@ function createApp() {
   // nginx in front) is unaffected: there's no X-Forwarded-* header to trust in that case, so
   // Express just falls back to the real connection either way.
   app.set('trust proxy', 1);
+
+  // Baseline security headers. The Content-Security-Policy is spelled out explicitly to match
+  // what this app actually loads — app.js is the only script, Google Fonts is the only outside
+  // origin, and the UI relies heavily on inline `style="..."` attributes throughout (hence
+  // style-src needs 'unsafe-inline'; there's no inline *script*, so script-src doesn't). Using
+  // helmet's defaults blind here would risk silently breaking rendering instead of actually
+  // protecting anything.
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+        fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+        imgSrc: ["'self'", 'data:'],
+        connectSrc: ["'self'"],
+        objectSrc: ["'none'"],
+        baseUri: ["'self'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    // HSTS is also set at the nginx layer on the documented VPS deploy; setting it here too is
+    // harmless belt-and-suspenders — browsers ignore it entirely over a plain-HTTP connection,
+    // so it doesn't affect a LAN-only, no-TLS install.
+  }));
   app.use(express.json());
 
   app.use(session({

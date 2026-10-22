@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.13.2',
+    date: '2026-10-22',
+    notes: [
+      'Security: added baseline hardening response headers (Content-Security-Policy, clickjacking protection, HSTS) scoped specifically to what the app actually loads, so nothing had to be loosened to avoid breaking the UI.',
+    ],
+  },
+  {
     version: '0.13.1',
     date: '2026-10-22',
     notes: [
