@@ -327,7 +327,7 @@ function readForm() {
   return {
     itemType,
     name: $('itemName').value.trim(),
-    category: $('itemCategory').value.trim(),
+    categories: [...new Set($('itemCategory').value.split(',').map(c => c.trim()).filter(Boolean))],
     stock: $('stock').value, low: $('itemLow').value,
     materials: [...$('mats').children].map(tr => {
       const [n, p, y, u] = tr.querySelectorAll('input');
@@ -388,7 +388,7 @@ document.querySelectorAll('#mode button').forEach(b => b.onclick = () => setMode
 function restore(s) {
   setItemType(s.itemType || 'made');
   $('itemName').value = s.name;
-  $('itemCategory').value = s.category || '';
+  $('itemCategory').value = (s.categories || []).join(', ');
   $('itemNoHint').hidden = !s.itemNo;
   $('itemNoHint').textContent = s.itemNo ? `Item #${s.itemNo}` : '';
   $('stock').value = s.stock ?? 0; $('itemLow').value = s.low ?? '';
@@ -406,7 +406,7 @@ let currentEditId = null;
 $('addMat').onclick = () => addMaterial().focus();
 $('reset').onclick = () => {
   currentEditId = null;
-  restore({ itemType: 'made', name: '', category: '', override: '', stock: 0, low: '', costMode, materials: [], minutes: 0, rate: $('rate').value, overhead: $('overhead').value, mode, pct: defaults[mode], round: 'whole', cost: 0, price: 0 });
+  restore({ itemType: 'made', name: '', categories: [], override: '', stock: 0, low: '', costMode, materials: [], minutes: 0, rate: $('rate').value, overhead: $('overhead').value, mode, pct: defaults[mode], round: 'whole', cost: 0, price: 0 });
   $('itemName').focus();
 };
 $('save').onclick = async () => {
@@ -594,7 +594,7 @@ function itemStatus(it) {
 }
 async function loadItems() { items = await api('GET', `/api/items/full?test=${testMode ? 1 : 0}`); renderItems(); refreshCategoryList(); }
 function refreshCategoryList() {
-  const cats = [...new Set(items.map(it => (it.category || '').trim()).filter(Boolean))].sort();
+  const cats = [...new Set(items.flatMap(it => it.categories || []))].sort();
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
 }
 async function makeBatch(it, qty) {
@@ -617,7 +617,7 @@ let itemsSearch = '';
 function renderItems() {
   const tb = $('itemRows'); tb.innerHTML = ''; let changed = 0, visibleCount = 0;
   const q = itemsSearch.trim().toLowerCase();
-  const matchesSearch = (it) => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q) || (it.category || '').toLowerCase().includes(q);
+  const matchesSearch = (it) => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q) || (it.categories || []).some(c => c.toLowerCase().includes(q));
   for (const it of items) {
     const { c, diff, costDiff, priceMoved, moved } = itemStatus(it);
     if (moved) changed++;
@@ -625,7 +625,7 @@ function renderItems() {
     visibleCount++;
     const low = isLow(it.stock, it.low);
     const typeLabel = it.itemType === 'resale' ? 'Resale item' : `${it.materials.length} material${it.materials.length === 1 ? '' : 's'}`;
-    const catBadge = it.category ? ` · <span class="cat-badge">${esc(it.category)}</span>` : '';
+    const catBadge = (it.categories || []).map(c => ` · <span class="cat-badge">${esc(c)}</span>`).join('');
     const tr = document.createElement('tr'); tr.dataset.id = it.id;
     tr.innerHTML = `
       <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}</div></td>
@@ -815,18 +815,35 @@ async function loadPosItems() {
 function renderPosItems() {
   const grid = $('posItems');
   // An event scoped to "selected items" only offers the ones it was given — everything else
-  // stays in the catalog, just not sellable at this particular event.
+  // stays in the catalog, just not sellable at this particular event. Each selected item can
+  // also carry a qtyBrought ("bringing X of these") — how many are left of that at this event
+  // is derived from it, never stored: qtyBrought minus however many this event's sales (synced
+  // or still queued offline) have sold of that item so far. That makes a void self-correcting —
+  // delete the sale and the remaining count is right again with no extra bookkeeping.
   const ev = openEvent();
-  const restrictedIds = ev && ev.itemScope === 'selected' ? new Set(ev.selectedItemIds || []) : null;
-  const eventFiltered = restrictedIds ? posItemsList.filter(it => restrictedIds.has(it.id)) : posItemsList;
+  const restrictedMap = ev && ev.itemScope === 'selected'
+    ? new Map((ev.selectedItems || []).map(s => [s.itemId, s.qtyBrought]))
+    : null;
+  const eventFiltered = restrictedMap ? posItemsList.filter(it => restrictedMap.has(it.id)) : posItemsList;
+  let soldAtEvent = null;
+  if (restrictedMap) {
+    soldAtEvent = new Map();
+    for (const s of eventSales(ev)) for (const l of s.lines) {
+      if (!l.itemId) continue;
+      soldAtEvent.set(l.itemId, (soldAtEvent.get(l.itemId) || 0) + num(l.qty));
+    }
+  }
   const q = posSearch.trim().toLowerCase();
   const list = eventFiltered.filter(it => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q));
   grid.innerHTML = '';
   for (const it of list) {
-    const low = isLow(it.stock, it.low);
-    const outOfStock = num(it.stock) <= 0;
+    const qtyBrought = restrictedMap ? restrictedMap.get(it.id) : null;
+    const remaining = qtyBrought != null ? Math.max(0, qtyBrought - (soldAtEvent.get(it.id) || 0)) : null;
+    const outOfStock = (remaining != null ? remaining : num(it.stock)) <= 0;
+    const low = remaining == null && isLow(it.stock, it.low);
+    const stLabel = remaining != null ? `${remaining} bringing here` : `${num(it.stock)} in stock`;
     const btn = document.createElement('button'); btn.className = 'pos-item' + (outOfStock ? ' out' : '');
-    btn.innerHTML = `<span class="nm"></span><span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${num(it.stock)} in stock</span>`;
+    btn.innerHTML = `<span class="nm"></span><span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${stLabel}</span>`;
     btn.querySelector('.nm').textContent = it.name;
     btn.onclick = () => addToTicket(it);
     grid.appendChild(btn);
@@ -993,6 +1010,10 @@ async function loadSales() {
   }
   await loadQueuedSales();
   renderSales();
+  // renderPosItems() also reads `sales`/`queuedSales` now (for a per-event item's remaining
+  // count) — refreshing it here too means that's always current no matter which of
+  // loadSales()/loadPosItems() a caller's Promise.all happens to settle last.
+  renderPosItems();
 }
 function renderSales() {
   const box = $('salesList');
@@ -1021,7 +1042,7 @@ async function voidSale(sale) {
   if (!await askConfirm(sale.test ? `Void this ${money(sale.total)} test sale?` : `Void this ${money(sale.total)} sale? Any stock it used will be added back.`, 'Void sale')) return;
   try { await api('DELETE', '/api/sales/' + sale.id); toast(sale.test ? 'Test sale voided' : 'Sale voided — stock restored'); }
   catch (e) { toast('Could not void that sale — try again.'); }
-  await Promise.all([loadSales(), loadPosItems(), renderEventWidget(), renderEventHistory()]);
+  await Promise.all([loadSales(), loadPosItems(), renderEventWidget(), renderEventHistory(), renderEventUpcoming()]);
 }
 
 // ---------- Events & break-even tracker ----------
@@ -1044,14 +1065,18 @@ async function loadEvents() {
     const cached = await Offline.getSnapshot('events');
     if (cached) events = cached;
   }
-  renderEventWidget(); renderEventHistory();
+  renderEventWidget(); renderEventHistory(); renderEventUpcoming();
 }
 function renderEventWidget() {
   const bar = $('eventBar'), link = $('eventSetupLink'), gear = $('eventGear');
   const ev = openEvent();
   const restricted = isRestrictedCashier();
-  if (!ev) { bar.hidden = true; link.hidden = restricted; return; }
-  link.hidden = true; bar.hidden = false;
+  // The "+ Set up an event" link stays available even while one is already open — it's also
+  // how you add another draft event for later, not just the first one.
+  link.hidden = restricted;
+  link.textContent = ev ? '+ Add another event' : '+ Set up an event (break-even tracker)';
+  if (!ev) { bar.hidden = true; return; }
+  bar.hidden = false;
   gear.hidden = restricted;
   const { startMs, days } = eventWindow(ev);
   const cost = num(ev.cost);
@@ -1090,20 +1115,62 @@ function renderEventHistory() {
   }
   updateTestControls();
 }
+// Draft events — set up in advance, sitting ready until "Start event" makes one the live
+// event. As many as wanted can exist at once (unlike open events, capped at one per
+// test/real side — see events.js), so this is its own list, separate from past/open.
+function renderEventUpcoming() {
+  const card = $('eventUpcomingCard'), box = $('eventUpcomingList');
+  const drafts = events.filter(e => e.status === 'draft' && !!e.test === testMode)
+    .sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  card.hidden = drafts.length === 0; box.innerHTML = '';
+  for (const ev of drafts) {
+    const { days } = eventWindow(ev);
+    const row = document.createElement('div'); row.className = 'ev-row';
+    row.innerHTML = `<div class="ev-top"><b></b></div><div class="ev-meta"></div><button class="btn sm ev-start">Start event</button><button class="icon-btn gear ev-edit" title="Edit">⚙</button><button class="ev-del">Delete</button>`;
+    row.querySelector('.ev-top b').textContent = ev.name || 'Event';
+    row.querySelector('.ev-meta').textContent = `${ev.start ? new Date(ev.start + 'T00:00:00').toLocaleDateString() : 'No start date set'} · ${days} day${days > 1 ? 's' : ''} · ${money(num(ev.cost))} space cost`;
+    row.querySelector('.ev-start').onclick = async () => {
+      try {
+        await api('POST', '/api/events', { ...ev, status: 'open' });
+        toast(`“${ev.name || 'Event'}” started`);
+        $('eventForm').hidden = true;
+        await loadEvents();
+        renderPosItems();
+      } catch (e) { toast(e.message || 'Could not start event'); }
+    };
+    row.querySelector('.ev-edit').onclick = () => { fillEventForm(ev); $('eventForm').hidden = false; };
+    row.querySelector('.ev-del').onclick = async () => { if (!await askConfirm(`Delete “${ev.name || 'Event'}”?`, 'Delete event')) return; await api('DELETE', '/api/events/' + ev.id); await loadEvents(); };
+    box.appendChild(row);
+  }
+}
+let editingEventId = null;
+let evWhen = 'open';
 function fillEventForm(ev) {
+  editingEventId = ev ? ev.id : null;
   $('evName').value = ev?.name || ''; $('evCost').value = ev?.cost || ''; $('evStart').value = ev?.start || ''; $('evDays').value = ev?.days || 1;
   $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
-  $('evEnd').hidden = !ev;
+  const isOpenEvent = !!ev && ev.status === 'open';
+  $('evEnd').hidden = !isOpenEvent;
+  // Editing the open event has nothing to choose — it's already live. A brand-new event
+  // defaults to starting now (the old one-click behavior); a draft being edited defaults to
+  // staying a draft, so re-saving it doesn't accidentally start it.
+  evWhen = ev ? ev.status : (openEvent() ? 'draft' : 'open');
+  $('evWhenSeg').hidden = isOpenEvent;
+  renderEvWhenSeg();
   loadEventFormExtras(ev).catch(() => {});
 }
+function renderEvWhenSeg() {
+  document.querySelectorAll('#evWhenSeg button').forEach(b => b.classList.toggle('on', b.dataset.when === evWhen));
+}
+document.querySelectorAll('#evWhenSeg button').forEach(b => b.onclick = () => { evWhen = b.dataset.when; renderEvWhenSeg(); });
 
 // ---------- Event charity rules + item availability (admin/manager/lead only — same as
 // event management). Both need an eventId to attach to, so — like charity rules already did —
 // neither section is usable until the event has been saved at least once.
 let evCharityRules = [];
 let evItemScope = 'all';
-let evSelectedItemIds = new Set();
+let evSelectedItems = new Map(); // itemId -> qtyBrought (number or null = no limit set)
 let evPickerItems = [];
 let evItemSearch = '';
 async function loadEventFormExtras(ev) {
@@ -1111,7 +1178,7 @@ async function loadEventFormExtras(ev) {
   $('evItemsSection').hidden = !ev;
   $('evCharityAllSales').checked = false; $('evCharityCategory').disabled = false;
   evItemScope = ev?.itemScope || 'all';
-  evSelectedItemIds = new Set(ev?.selectedItemIds || []);
+  evSelectedItems = new Map((ev?.selectedItems || []).map(s => [s.itemId, s.qtyBrought]));
   evItemSearch = ''; $('evItemSearch').value = '';
   if (!ev) {
     evCharityRules = []; $('evCharityList').innerHTML = '';
@@ -1123,8 +1190,9 @@ async function loadEventFormExtras(ev) {
     api('GET', `/api/items/full?test=${ev.test ? 1 : 0}`),
   ]);
   evCharityRules = rules;
-  const cats = [...new Set(fullItems.map(it => (it.category || '').trim()).filter(Boolean))].sort();
+  const cats = [...new Set(fullItems.flatMap(it => it.categories || []))].sort();
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
+  $('evItemCatSelect').innerHTML = '<option value="">Choose a category…</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   renderEvCharityList();
   evPickerItems = fullItems;
   renderEvItemScope();
@@ -1137,25 +1205,50 @@ function renderEvItemScope() {
 function renderEvItemCheckList() {
   const box = $('evItemCheckList');
   const q = evItemSearch.trim().toLowerCase();
-  const list = evPickerItems.filter(it => !q || it.name.toLowerCase().includes(q));
+  const list = evPickerItems.filter(it => !q || it.name.toLowerCase().includes(q) || (it.categories || []).some(c => c.toLowerCase().includes(q)));
   box.innerHTML = '';
   for (const it of list) {
-    const label = document.createElement('label'); label.className = 'chk-field'; label.style.marginTop = '8px';
-    label.innerHTML = `<input type="checkbox"><span></span>`;
-    const chk = label.querySelector('input');
-    chk.checked = evSelectedItemIds.has(it.id);
-    label.querySelector('span').textContent = it.name;
-    chk.onchange = () => { chk.checked ? evSelectedItemIds.add(it.id) : evSelectedItemIds.delete(it.id); updateEvItemPickCount(); };
-    box.appendChild(label);
+    const row = document.createElement('div'); row.className = 'ev-item-row';
+    row.innerHTML = `<label class="chk-field" style="margin-top:0;flex:1"><input type="checkbox"><span></span></label><input type="number" class="in-tiny ev-item-qty" min="0" step="1" placeholder="qty">`;
+    const chk = row.querySelector('input[type="checkbox"]');
+    const qtyIn = row.querySelector('.ev-item-qty');
+    const checked = evSelectedItems.has(it.id);
+    chk.checked = checked;
+    const cats = (it.categories || []).join(', ');
+    row.querySelector('span').textContent = it.name + (cats ? ` · ${cats}` : '');
+    qtyIn.disabled = !checked;
+    qtyIn.value = checked && evSelectedItems.get(it.id) != null ? evSelectedItems.get(it.id) : '';
+    chk.onchange = () => {
+      if (chk.checked) {
+        qtyIn.disabled = false;
+        if (qtyIn.value === '') qtyIn.value = it.stock;
+        evSelectedItems.set(it.id, qtyIn.value === '' ? null : num(qtyIn.value));
+      } else {
+        evSelectedItems.delete(it.id); qtyIn.disabled = true; qtyIn.value = '';
+      }
+      updateEvItemPickCount();
+    };
+    qtyIn.oninput = () => { if (chk.checked) evSelectedItems.set(it.id, qtyIn.value === '' ? null : num(qtyIn.value)); };
+    box.appendChild(row);
   }
   if (!list.length) box.innerHTML = '<div class="hint">No items match.</div>';
   updateEvItemPickCount();
 }
 function updateEvItemPickCount() {
-  $('evItemPickCount').textContent = `${evSelectedItemIds.size} item${evSelectedItemIds.size === 1 ? '' : 's'} selected`;
+  $('evItemPickCount').textContent = `${evSelectedItems.size} item${evSelectedItems.size === 1 ? '' : 's'} selected`;
 }
 document.querySelectorAll('#evItemScopeSeg button').forEach(b => b.onclick = () => { evItemScope = b.dataset.scope; renderEvItemScope(); });
 $('evItemSearch').addEventListener('input', () => { evItemSearch = $('evItemSearch').value; renderEvItemCheckList(); });
+$('evItemCatAdd').onclick = () => {
+  const cat = $('evItemCatSelect').value;
+  if (!cat) { toast('Pick a category first'); return; }
+  let added = 0;
+  for (const it of evPickerItems) {
+    if ((it.categories || []).includes(cat) && !evSelectedItems.has(it.id)) { evSelectedItems.set(it.id, it.stock); added++; }
+  }
+  renderEvItemCheckList();
+  toast(added ? `Added ${added} item${added === 1 ? '' : 's'} from “${cat}”` : `All items in “${cat}” were already selected`);
+};
 function renderEvCharityList() {
   const box = $('evCharityList');
   if (!evCharityRules.length) { box.innerHTML = '<div class="hint">No charity rules yet for this event.</div>'; return; }
@@ -1197,23 +1290,28 @@ $('eventGear').onclick = () => { fillEventForm(openEvent()); $('eventForm').hidd
 $('evClose').onclick = () => { $('eventForm').hidden = true; };
 $('evSave').onclick = async () => {
   if (!$('evStart').value || num($('evDays').value) < 1 || num($('evCost').value) <= 0) { toast('Add a start date, number of days, and space cost'); return; }
-  const ev = openEvent();
-  const saved = await api('POST', '/api/events', {
-    id: ev?.id, name: $('evName').value.trim(), cost: $('evCost').value, start: $('evStart').value, days: $('evDays').value,
-    taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
-    status: 'open', test: testMode, itemScope: ev ? evItemScope : 'all',
-  });
-  if (ev && evItemScope === 'selected') {
-    await api('POST', `/api/events/${saved.id}/items`, { itemIds: [...evSelectedItemIds] });
+  const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
+  const status = (existing && existing.status === 'open') ? 'open' : evWhen;
+  let saved;
+  try {
+    saved = await api('POST', '/api/events', {
+      id: existing?.id, name: $('evName').value.trim(), cost: $('evCost').value, start: $('evStart').value, days: $('evDays').value,
+      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
+      status, test: testMode, itemScope: existing ? evItemScope : 'all',
+    });
+  } catch (e) { toast(e.message || 'Could not save event'); return; }
+  if (existing && evItemScope === 'selected') {
+    await api('POST', `/api/events/${saved.id}/items`, { items: [...evSelectedItems].map(([itemId, qtyBrought]) => ({ itemId, qtyBrought })) });
   }
-  $('eventForm').hidden = true; toast('Event saved');
+  $('eventForm').hidden = true; toast(status === 'draft' ? 'Saved as draft' : 'Event saved');
   await loadEvents();
   renderPosItems();
 };
 $('evEnd').onclick = async () => {
-  const ev = openEvent(); if (!ev) return;
-  if (!await askConfirm(`End “${ev.name || 'this event'}”? It'll move to Past events.`, 'End event')) return;
-  await api('POST', '/api/events', { ...ev, status: 'ended', endedAt: Date.now() });
+  const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
+  if (!existing) return;
+  if (!await askConfirm(`End “${existing.name || 'this event'}”? It'll move to Past events.`, 'End event')) return;
+  await api('POST', '/api/events', { ...existing, status: 'ended', endedAt: Date.now() });
   $('eventForm').hidden = true; toast('Event ended');
   await loadEvents();
   renderPosItems();
@@ -1228,7 +1326,7 @@ function setTestMode(on) {
   testMode = on;
   try { localStorage.setItem('workshopPos.testMode', on ? '1' : '0'); } catch {}
   $('testOffRow').hidden = on; $('testBanner').hidden = !on; $('testModeBadge').hidden = !on; $('eventForm').hidden = true;
-  renderEventWidget(); renderEventHistory(); renderSales();
+  renderEventWidget(); renderEventHistory(); renderEventUpcoming(); renderSales();
   // Items and materials are split into real/test catalogs too — switch every tab over to
   // whichever side matches now. Guarded by `me` since this also runs once at boot, before
   // login, when these endpoints would just 401.

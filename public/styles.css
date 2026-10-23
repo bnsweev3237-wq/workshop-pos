@@ -225,6 +225,9 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .chk-field { display: flex; align-items: flex-start; gap: 9px; font-size: 14px; color: var(--ink); cursor: pointer; user-select: none; margin-top: 12px; }
 .chk-field input { width: 17px; height: 17px; flex-shrink: 0; margin: 2px 0 0; accent-color: var(--accent); cursor: pointer; }
 
+.ev-item-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.ev-item-row .ev-item-qty { width: 64px !important; flex-shrink: 0; }
+
 .event-link { background: none; border: none; color: var(--muted); font-size: 13px; text-decoration: underline; cursor: pointer; padding: 0; margin-bottom: 16px; }
 .event-link:hover { color: var(--ink); }
 .test-row { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }

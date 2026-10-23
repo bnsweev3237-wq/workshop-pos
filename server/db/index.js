@@ -71,6 +71,7 @@ ensureColumn('sales', 'charity_due', 'REAL NOT NULL DEFAULT 0');
 ensureColumn('sales', 'client_sale_id', 'TEXT');
 ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('events', 'item_scope', "TEXT NOT NULL DEFAULT 'all'");
+ensureColumn('event_items', 'qty_brought', 'REAL');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before
@@ -106,6 +107,21 @@ if (untagged.length) {
     if (!src) { src = { id: uid() }; insertSource.run(src.id, name, Date.now()); }
     updateMaterial.run(src.id, row.id);
   }
+}
+
+// One-time per-row migration: an item's old single `category` column becomes its first entry
+// in item_categories, the new multi-category table. Only touches items with no
+// item_categories rows yet, so it naturally runs at most once per item — re-categorizing an
+// item afterward (including removing its only category) never gets silently undone by this
+// running again.
+const uncategorized = db.prepare(`
+  SELECT id, category FROM items
+  WHERE category IS NOT NULL AND category != ''
+    AND id NOT IN (SELECT item_id FROM item_categories)
+`).all();
+if (uncategorized.length) {
+  const insertCategory = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');
+  for (const row of uncategorized) insertCategory.run(row.id, row.category.trim());
 }
 
 module.exports = db;

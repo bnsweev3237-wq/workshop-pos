@@ -68,7 +68,7 @@
           <label for="itemName">Item name</label><input id="itemName" placeholder="e.g. Wooden keychain">
           <div class="hint" id="itemNoHint" hidden></div>
           <div class="row r2" style="margin-top:12px">
-            <div><label for="itemCategory">Category</label><input id="itemCategory" list="categoryList" placeholder="optional, e.g. Military"></div>
+            <div><label for="itemCategory">Categories</label><input id="itemCategory" list="categoryList" placeholder="optional, comma-separated, e.g. Military, Holiday"></div>
             <div></div>
           </div>
           <datalist id="categoryList"></datalist>
@@ -243,6 +243,16 @@
         <div><label for="evCost">Space / booth cost ($)</label><input id="evCost" type="number" min="0" step="0.01"></div>
       </div>
       <div class="row r2" style="margin-top:12px">
+        <div>
+          <label>When</label>
+          <div class="seg" id="evWhenSeg" style="max-width:320px">
+            <button data-when="open">Start now</button>
+            <button data-when="draft">Save for later (draft)</button>
+          </div>
+        </div>
+        <div></div>
+      </div>
+      <div class="row r2" style="margin-top:12px">
         <div><label for="evStart">Start date</label><input id="evStart" type="date"></div>
         <div><label for="evDays">Number of days</label><input id="evDays" type="number" min="1" step="1" value="1"></div>
       </div>
@@ -277,6 +287,11 @@
         </div>
         <div id="evItemPicker" hidden style="margin-top:10px">
           <input id="evItemSearch" placeholder="Search items…" style="margin-bottom:10px">
+          <div class="row r3" style="margin-bottom:10px">
+            <div><label for="evItemCatSelect">Select by category</label><select id="evItemCatSelect"><option value="">Choose a category…</option></select></div>
+            <div style="display:flex;align-items:flex-end"><button class="btn sm" id="evItemCatAdd" style="width:100%">+ Check all in category</button></div>
+            <div></div>
+          </div>
           <div id="evItemCheckList" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
           <div class="hint" id="evItemPickCount" style="margin-top:6px"></div>
         </div>
@@ -307,6 +322,11 @@
           <h2 id="salesHeading">Recent sales</h2>
           <div id="salesList"></div>
           <div class="empty" id="salesEmpty">No sales yet.</div>
+        </div>
+
+        <div class="card" id="eventUpcomingCard" hidden>
+          <h2>Upcoming events</h2>
+          <div id="eventUpcomingList"></div>
         </div>
 
         <div class="card" id="eventHistoryCard" hidden>

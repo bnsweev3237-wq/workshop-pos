@@ -3,6 +3,16 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.19.0',
+    date: '2026-10-23',
+    notes: [
+      'Events can now be set up in advance as drafts — create as many as you want, ready to go, then hit "Start event" on the one you\'re running right now. Only one event can be open at a time; starting another while one is still open is blocked until you end it.',
+      'Items available at an event can now have a "bringing X of these" quantity set per item — handy when you\'re not taking your whole inventory. Selling one at that event counts against both that quantity and your overall stock, and voiding a sale corrects it automatically.',
+      'The event\'s item picker can now check off an entire category at once, instead of only one item at a time.',
+      'Items can now belong to more than one category (e.g. both "Jewelry" and "Holiday") instead of just one.',
+    ],
+  },
+  {
     version: '0.18.0',
     date: '2026-10-22',
     notes: [

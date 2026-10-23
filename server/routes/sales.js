@@ -129,9 +129,13 @@ router.post('/', requireLogin, (req, res) => {
         // sold item itself belongs to. That's what lets a test sale actually exercise stock
         // changes, the whole point of a test item having its own stock in the first place.
         stockChanges.push({ id: l.itemId, qty: Number(l.qty) || 0 });
-        const cat = (item.category || '').trim();
+        // An item can belong to several categories now — the first one (alphabetically, via
+        // the ORDER BY below) that has a matching rule wins. Same "first match" simplicity as
+        // before, just checking a list instead of one string.
+        const itemCats = db.prepare('SELECT category FROM item_categories WHERE item_id = ? ORDER BY category').all(l.itemId).map((r) => r.category);
+        const matchedCat = itemCats.find((c) => categoryRuleMap.has(c));
         let effectivePct = null;
-        if (cat && categoryRuleMap.has(cat)) { effectivePct = categoryRuleMap.get(cat); charityRule = cat; }
+        if (matchedCat) { effectivePct = categoryRuleMap.get(matchedCat); charityRule = matchedCat; }
         else if (allSalesPct != null) { effectivePct = allSalesPct; charityRule = ''; }
         if (effectivePct) {
           charityPct = effectivePct;

@@ -5,14 +5,30 @@ const { requireManageItems, requireReports, requireLogin } = require('../middlew
 
 const router = express.Router();
 
+// A single item can belong to several categories (item_categories, a join table — see
+// schema.sql; the old single `items.category` column is deprecated and no longer written).
+// Bulk-fetched once per list call rather than per row, to avoid an N+1 query.
+function categoriesByItem(itemIds) {
+  const map = new Map();
+  if (!itemIds.length) return map;
+  const placeholders = itemIds.map(() => '?').join(',');
+  const rows = db.prepare(`SELECT item_id, category FROM item_categories WHERE item_id IN (${placeholders}) ORDER BY category`).all(...itemIds);
+  for (const r of rows) {
+    if (!map.has(r.item_id)) map.set(r.item_id, []);
+    map.get(r.item_id).push(r.category);
+  }
+  return map;
+}
+const categoriesFor = (itemId) => db.prepare('SELECT category FROM item_categories WHERE item_id = ? ORDER BY category').all(itemId).map((r) => r.category);
+
 // What a cashier on the Sell page is allowed to see: enough to ring something up, nothing
 // about what it costs to make or what it's priced to earn — that's the whole reason this
 // split exists now that there's a real server to enforce it (the artifact version couldn't).
-// category is included even though it's "extra" — it's not cost/profit data.
-const toPublicItem = (r) => ({ id: r.id, name: r.name, itemNo: r.item_no, category: r.category || '', price: r.price, stock: r.stock, low: r.low, test: !!r.test });
+// categories is included even though it's "extra" — it's not cost/profit data.
+const toPublicItem = (r, categories) => ({ id: r.id, name: r.name, itemNo: r.item_no, categories: categories || [], price: r.price, stock: r.stock, low: r.low, test: !!r.test });
 
-const toFullItem = (r) => ({
-  id: r.id, name: r.name, itemNo: r.item_no, itemType: r.item_type, category: r.category || '', materials: JSON.parse(r.materials_json),
+const toFullItem = (r, categories) => ({
+  id: r.id, name: r.name, itemNo: r.item_no, itemType: r.item_type, categories: categories || [], materials: JSON.parse(r.materials_json),
   costMode: r.cost_mode, minutes: r.minutes, rate: r.rate, overhead: r.overhead,
   mode: r.mode, pct: r.pct, round: r.round, override: r.override,
   stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, test: !!r.test,
@@ -27,7 +43,8 @@ const testFlag = (req) => (req.query.test === '1' ? 1 : 0);
 // no pricing formula — that split is enforced here regardless of who's asking.
 router.get('/', requireLogin, (req, res) => {
   const rows = db.prepare('SELECT * FROM items WHERE test = ? ORDER BY saved_at DESC').all(testFlag(req));
-  res.json(rows.map(toPublicItem));
+  const cats = categoriesByItem(rows.map((r) => r.id));
+  res.json(rows.map((r) => toPublicItem(r, cats.get(r.id))));
 });
 
 // Calculator / Items (admin + manager, who can edit) and Reports (+ lead, read-only there)
@@ -36,7 +53,8 @@ router.get('/', requireLogin, (req, res) => {
 // real sale can only ever reference a real (non-test) item.
 router.get('/full', requireReports, (req, res) => {
   const rows = db.prepare('SELECT * FROM items WHERE test = ? ORDER BY saved_at DESC').all(testFlag(req));
-  res.json(rows.map(toFullItem));
+  const cats = categoriesByItem(rows.map((r) => r.id));
+  res.json(rows.map((r) => toFullItem(r, cats.get(r.id))));
 });
 
 router.post('/', requireManageItems, (req, res) => {
@@ -50,7 +68,6 @@ router.post('/', requireManageItems, (req, res) => {
     name: b.name || '',
     item_no: itemNo,
     item_type: b.itemType === 'resale' ? 'resale' : 'made',
-    category: b.category ? String(b.category).trim() || null : null,
     materials_json: JSON.stringify(b.materials || []),
     cost_mode: b.costMode || 'none',
     minutes: Number(b.minutes) || 0,
@@ -67,18 +84,36 @@ router.post('/', requireManageItems, (req, res) => {
     saved_at: Date.now(),
     test: b.test ? 1 : 0,
   };
-  db.prepare(`
-    INSERT INTO items (id, name, item_no, item_type, category, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, test)
-    VALUES (@id, @name, @item_no, @item_type, @category, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @test)
-    ON CONFLICT(id) DO UPDATE SET name=@name, item_type=@item_type, category=@category, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
-      rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
-      price=@price, cost=@cost, saved_at=@saved_at, test=@test
-  `).run(row);
-  res.json(toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(row.id)));
+  // Categories are a flat array of strings from the client — deduped, trimmed, empties
+  // dropped. Replaces the full set for this item, same delete-then-insert pattern as
+  // event_items' picker, so removing every category is just as easy as adding one.
+  const categories = [...new Set((Array.isArray(b.categories) ? b.categories : []).map((c) => String(c).trim()).filter(Boolean))];
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, test)
+      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @test)
+      ON CONFLICT(id) DO UPDATE SET name=@name, item_type=@item_type, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
+        rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
+        price=@price, cost=@cost, saved_at=@saved_at, test=@test
+    `).run(row);
+    db.prepare('DELETE FROM item_categories WHERE item_id = ?').run(row.id);
+    const insertCat = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');
+    for (const c of categories) insertCat.run(row.id, c);
+  });
+  tx();
+  res.json(toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(row.id), categories));
 });
 
+// Clears item_categories and event_items for this item first — both reference items(id) with
+// foreign keys enforced, so deleting an item that's still categorized or picked for an
+// event's "selected items" would otherwise fail outright.
 router.delete('/:id', requireManageItems, (req, res) => {
-  db.prepare('DELETE FROM items WHERE id = ?').run(req.params.id);
+  const tx = db.transaction(() => {
+    db.prepare('DELETE FROM item_categories WHERE item_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM event_items WHERE item_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM items WHERE id = ?').run(req.params.id);
+  });
+  tx();
   res.json({ ok: true });
 });
 
@@ -103,7 +138,7 @@ router.post('/:id/make', requireManageItems, (req, res) => {
     db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qty, item.id);
   });
   tx();
-  res.json({ ok: true, short, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id)) });
+  res.json({ ok: true, short, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id), categoriesFor(item.id)) });
 });
 
 router.post('/:id/sell', requireManageItems, (req, res) => {
@@ -112,7 +147,7 @@ router.post('/:id/sell', requireManageItems, (req, res) => {
   if (!item) return res.status(404).json({ error: 'not_found' });
   const have = Math.max(0, item.stock);
   db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(qty, item.id);
-  res.json({ ok: true, had: have, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id)) });
+  res.json({ ok: true, had: have, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id), categoriesFor(item.id)) });
 });
 
 module.exports = router;

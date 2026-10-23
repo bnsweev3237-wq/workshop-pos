@@ -61,8 +61,9 @@ CREATE TABLE IF NOT EXISTS materials (
 -- the ported frontend's computeItem() logic needs no changes to read it. Only meaningful
 -- when item_type = 'made'; a 'resale' item skips the materials/labor/pricing formula
 -- entirely and just stores the cost/price the user typed in directly.
--- `category` is free text (e.g. "Military", "Education") — used to target charity rules
--- set up on an event (see event_charity_rules below), nothing else reads it.
+-- `category` is deprecated and unused as of item_categories below (a single item can now
+-- belong to several categories) — left in place rather than dropped so existing rows aren't
+-- disturbed by a migration, same reasoning as `charity_pct` just below it.
 -- `charity_pct` is unused — charity giving moved to event-level rules keyed by category.
 -- Left in place rather than dropped so existing rows aren't disturbed by a migration.
 CREATE TABLE IF NOT EXISTS items (
@@ -89,12 +90,26 @@ CREATE TABLE IF NOT EXISTS items (
   test INTEGER NOT NULL DEFAULT 0
 );
 
+-- A single item can belong to several categories (e.g. both "Jewelry" and "Military") —
+-- replaces the old single `items.category` column above, which is left in place but no
+-- longer written to going forward. Category names are free text, same as before; there's no
+-- separate "categories" table, just whatever distinct strings show up here.
+CREATE TABLE IF NOT EXISTS item_categories (
+  item_id TEXT NOT NULL REFERENCES items(id),
+  category TEXT NOT NULL,
+  PRIMARY KEY (item_id, category)
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
   start TEXT NOT NULL,
   days INTEGER NOT NULL DEFAULT 1,
   cost REAL NOT NULL DEFAULT 0,
+  -- 'draft': set up in advance, not yet running — doesn't show as the active event anywhere,
+  -- just sits in the "Upcoming events" list until "Start event" flips it to 'open'. 'open':
+  -- the one currently active event for this test/real side (at most one at a time, enforced
+  -- in server/routes/events.js, not by a constraint here). 'ended': in Past events.
   status TEXT NOT NULL DEFAULT 'open',
   tax_rate REAL,
   cash_tax_rate REAL,
@@ -113,6 +128,12 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE TABLE IF NOT EXISTS event_items (
   event_id TEXT NOT NULL REFERENCES events(id),
   item_id TEXT NOT NULL REFERENCES items(id),
+  -- How many of this item are being brought to this event — separate from (and never changes)
+  -- the item's overall stock. NULL means no specific number was set (any amount, bounded only
+  -- by overall stock, same as before this column existed). "Remaining at this event" is never
+  -- stored — it's always computed as qty_brought minus however much of this item has sold at
+  -- this event so far, so voiding a sale naturally corrects it with no extra bookkeeping.
+  qty_brought REAL,
   PRIMARY KEY (event_id, item_id)
 );
 

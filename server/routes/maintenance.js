@@ -93,6 +93,10 @@ router.post('/copy-to-test', (req, res) => {
         overhead: it.overhead, mode: it.mode, pct: it.pct, round: it.round, override: it.override,
         stock: it.stock, low: it.low, price: it.price, cost: it.cost, saved_at: Date.now(),
       });
+      const insertItemCategory = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');
+      for (const row of db.prepare('SELECT category FROM item_categories WHERE item_id = ?').all(it.id)) {
+        insertItemCategory.run(newId, row.category);
+      }
     }
 
     const eventIdMap = new Map();
@@ -115,9 +119,9 @@ router.post('/copy-to-test', (req, res) => {
       // Remap through itemIdMap, same as a sale's line items above — a selected-items event
       // must point at the new test-side item copies, never the real ones.
       if (ev.item_scope === 'selected') {
-        const insertEventItem = db.prepare('INSERT OR IGNORE INTO event_items (event_id, item_id) VALUES (?, ?)');
-        for (const row of db.prepare('SELECT item_id FROM event_items WHERE event_id = ?').all(ev.id)) {
-          if (itemIdMap.has(row.item_id)) insertEventItem.run(newId, itemIdMap.get(row.item_id));
+        const insertEventItem = db.prepare('INSERT OR IGNORE INTO event_items (event_id, item_id, qty_brought) VALUES (?, ?, ?)');
+        for (const row of db.prepare('SELECT item_id, qty_brought FROM event_items WHERE event_id = ?').all(ev.id)) {
+          if (itemIdMap.has(row.item_id)) insertEventItem.run(newId, itemIdMap.get(row.item_id), row.qty_brought);
         }
       }
     }
@@ -151,6 +155,7 @@ router.post('/purge', (req, res) => {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM event_charity_rules').run();
     db.prepare('DELETE FROM event_items').run();
+    db.prepare('DELETE FROM item_categories').run();
     db.prepare('DELETE FROM sales').run();
     db.prepare('DELETE FROM events').run();
     db.prepare('DELETE FROM items').run();

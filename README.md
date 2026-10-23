@@ -18,7 +18,8 @@ Working end to end, tested:
   review (see "Checking material prices" below)
 - Items (make/sell stock tracking) — either priced from materials/labor/overhead ("made"),
   or entered directly as a cost and sale price ("resale", for things bought ready-made and
-  resold as-is). Items can be tagged with a category, used to target charity rules (below).
+  resold as-is). An item can belong to more than one category (comma-separated), used to
+  target charity rules (below) and to bulk-select items for an event.
 - Sell / point of sale — requires signing in; every role can reach it, but the base cashier
   role is restricted there (see roles below)
 - Four account roles — add/remove, reset passwords, change role, all from Settings
@@ -37,6 +38,9 @@ Working end to end, tested:
   Sell page): a % of profit for a specific item category, and/or a checkbox to apply a % to
   every sale at the event. Reports calculates and shows what's owed, overall, per event, and
   broken out by category in each event's wrap-up.
+- Events can be set up ahead of time as drafts and started later with one click ("Upcoming
+  events" on the Sell page), with a per-event item selection — down to a "bringing X of
+  these" quantity per item — that can also be bulk-set by category.
 - Test mode — a full, independent sandbox (items, materials, events, and sales each have
   their own test-side copy) for practicing or training without touching real data.
 - Database maintenance (Settings, admin-only) — copy real data into the test sandbox, or
@@ -148,10 +152,11 @@ Charity giving for this event). Each rule is either:
 - a % of profit from **every** sale at the event (the "apply to all sales" checkbox).
 
 An event can have several rules — e.g. 5% for the "Military" category and 2% for
-"Education" — added one at a time with the "+ Add rule" button. If an item's category
-matches a rule, that rule applies; otherwise the event's "all sales" rule (if any) applies
-instead. Custom (off-catalog) ticket items never generate a charity figure, since there's no
-known cost for them to take a percentage of profit from.
+"Education" — added one at a time with the "+ Add rule" button. Since an item can now belong
+to more than one category, if more than one of an item's categories has a rule, the first
+match alphabetically wins; otherwise the event's "all sales" rule (if any) applies instead.
+Custom (off-catalog) ticket items never generate a charity figure, since there's no known
+cost for them to take a percentage of profit from.
 
 Each sale snapshots the matched rule, percentage, and dollar amount *at the time*, per line,
 so a later change to an item's category or an event's rules never rewrites history. Reports
@@ -169,11 +174,34 @@ figures only appear in the admin/manager/lead Reports endpoints.
 By default every item in the catalog can be sold at any event — the same as before this
 existed. An event can instead be scoped to just a chosen few (Sell page → the event's gear
 icon → Items available at this event → "Selected items", then check off which ones): useful
-for a smaller pop-up or a themed table where you're only bringing part of your catalog. While
-that's set, the Sell page's item grid only offers the chosen items; everything else stays in
-the catalog untouched, just not sellable at that particular event. Switching back to "All
-items" reverts immediately. Materials and Items are also now searchable from their own tabs,
-and the item picker here has its own search too.
+for a smaller pop-up or a themed table where you're only bringing part of your catalog. A
+whole category can be checked off at once instead of one item at a time — a one-time
+convenience that checks whatever currently matches, not a live rule, so items added to that
+category later aren't automatically included. While a selection is set, the Sell page's item
+grid only offers the chosen items; everything else stays in the catalog untouched, just not
+sellable at that particular event. Switching back to "All items" reverts immediately.
+Materials and Items are also now searchable from their own tabs, and the item picker here has
+its own search too.
+
+Each selected item can also have a quantity set — how many you're bringing to this
+particular event, separate from (and never changing) its overall stock. The Sell page then
+shows that as "remaining" for the item at this event, counting down as it sells; selling one
+there reduces both that count and the item's overall stock. There's no hard stop at zero —
+same as running low on overall stock, it's shown but doesn't block the sale. The remaining
+count is never stored on its own; it's always the quantity you set minus however much has
+sold there so far, so voiding a sale corrects it automatically with nothing extra to fix.
+Leaving the quantity blank for an item means no limit — it's available up to whatever the
+overall stock allows, same as before this existed.
+
+## Draft (upcoming) events
+
+An event doesn't have to be set up the moment it starts. Saving one as a draft instead of
+starting it right away (the "When" choice on the event form) puts it in an "Upcoming events"
+list on the Sell page, where it just sits — ready to go, including whatever items/quantities
+and charity rules you've already set on it — until you hit "Start event". As many drafts can
+exist at once as you want; only one event can be *open* (the live, active one) at a time per
+test/real side, so starting a draft while another is already open is refused until that one
+is ended first.
 
 ## Reports
 
