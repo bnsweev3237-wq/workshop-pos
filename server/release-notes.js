@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.19.1',
+    date: '2026-10-24',
+    notes: [
+      'Fixed: saving a newly created event used to close its setup form right away, before "Items available at this event" or "Charity giving" ever had a chance to show up (they only appear once an event has been saved at least once). Saving now keeps the form open so you can pick items or add a charity rule in the same sitting.',
+    ],
+  },
+  {
     version: '0.19.0',
     date: '2026-10-23',
     notes: [

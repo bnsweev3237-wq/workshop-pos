@@ -1303,8 +1303,15 @@ $('evSave').onclick = async () => {
   if (existing && evItemScope === 'selected') {
     await api('POST', `/api/events/${saved.id}/items`, { items: [...evSelectedItems].map(([itemId, qtyBrought]) => ({ itemId, qtyBrought })) });
   }
-  $('eventForm').hidden = true; toast(status === 'draft' ? 'Saved as draft' : 'Event saved');
+  toast(status === 'draft' ? 'Saved as draft' : 'Event saved');
   await loadEvents();
+  // Keep the form open, now pointed at the saved event, instead of closing it — a brand-new
+  // event's item picker and charity rules only become usable once it has an id (same reason
+  // charity rules always needed this), so closing here would hide the very thing someone
+  // creating an event for the first time is looking for right after. "Close" dismisses it
+  // once they're done.
+  fillEventForm(events.find(e => e.id === saved.id) || saved);
+  $('eventForm').hidden = false;
   renderPosItems();
 };
 $('evEnd').onclick = async () => {
