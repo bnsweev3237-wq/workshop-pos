@@ -440,6 +440,7 @@ $('save').onclick = async () => {
   // item wouldn't show up there until the next 20s poll tick.
   await Promise.all([loadItems(), loadPosItems()]);
   if (added.length) renderLib();
+  showTab('items');
 };
 
 // ---------- Material library ----------

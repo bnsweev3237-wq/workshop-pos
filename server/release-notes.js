@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.19.2',
+    date: '2026-10-25',
+    notes: [
+      'Saving an item on the Calculator now takes you back to the Items tab, instead of leaving you on the Calculator.',
+    ],
+  },
+  {
     version: '0.19.1',
     date: '2026-10-24',
     notes: [
