@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.20.0',
+    date: '2026-10-25',
+    notes: [
+      'Materials and Items can now be sorted by name (A–Z or Z–A) or by date added (newest or oldest first), next to the search box on each tab. Your choice is remembered.',
+    ],
+  },
+  {
     version: '0.19.2',
     date: '2026-10-25',
     notes: [

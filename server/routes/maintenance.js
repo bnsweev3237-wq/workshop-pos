@@ -85,13 +85,13 @@ router.post('/copy-to-test', (req, res) => {
         r.libId && materialIdMap.has(r.libId) ? { ...r, libId: materialIdMap.get(r.libId) } : r
       ));
       db.prepare(`
-        INSERT INTO items (id, name, item_no, item_type, category, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, test)
-        VALUES (@id, @name, @item_no, @item_type, @category, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, 1)
+        INSERT INTO items (id, name, item_no, item_type, category, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, created_at, test)
+        VALUES (@id, @name, @item_no, @item_type, @category, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @created_at, 1)
       `).run({
         id: newId, name: it.name, item_no: genItemNo(db), item_type: it.item_type, category: it.category,
         materials_json: JSON.stringify(materials), cost_mode: it.cost_mode, minutes: it.minutes, rate: it.rate,
         overhead: it.overhead, mode: it.mode, pct: it.pct, round: it.round, override: it.override,
-        stock: it.stock, low: it.low, price: it.price, cost: it.cost, saved_at: Date.now(),
+        stock: it.stock, low: it.low, price: it.price, cost: it.cost, saved_at: Date.now(), created_at: Date.now(),
       });
       const insertItemCategory = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');
       for (const row of db.prepare('SELECT category FROM item_categories WHERE item_id = ?').all(it.id)) {

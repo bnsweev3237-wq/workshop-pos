@@ -87,7 +87,12 @@ CREATE TABLE IF NOT EXISTS items (
   cost REAL NOT NULL DEFAULT 0,
   charity_pct REAL,
   saved_at INTEGER NOT NULL,
-  test INTEGER NOT NULL DEFAULT 0
+  test INTEGER NOT NULL DEFAULT 0,
+  -- Set once, at creation, and never touched again — unlike saved_at above, which updates on
+  -- every edit. Lets "date added" and "last edited" sort by different things. Backfilled from
+  -- saved_at for rows that existed before this column did (see db/index.js), since that's the
+  -- closest approximation available for them.
+  created_at INTEGER
 );
 
 -- A single item can belong to several categories (e.g. both "Jewelry" and "Military") —

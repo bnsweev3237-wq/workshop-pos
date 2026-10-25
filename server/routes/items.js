@@ -31,7 +31,7 @@ const toFullItem = (r, categories) => ({
   id: r.id, name: r.name, itemNo: r.item_no, itemType: r.item_type, categories: categories || [], materials: JSON.parse(r.materials_json),
   costMode: r.cost_mode, minutes: r.minutes, rate: r.rate, overhead: r.overhead,
   mode: r.mode, pct: r.pct, round: r.round, override: r.override,
-  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, test: !!r.test,
+  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, createdAt: r.created_at, test: !!r.test,
 });
 
 // Items are split into two fully independent catalogs by `test` — see schema.sql. Every
@@ -82,6 +82,7 @@ router.post('/', requireManageItems, (req, res) => {
     price: Number(b.price) || 0,
     cost: Number(b.cost) || 0,
     saved_at: Date.now(),
+    created_at: Date.now(),
     test: b.test ? 1 : 0,
   };
   // Categories are a flat array of strings from the client — deduped, trimmed, empties
@@ -90,8 +91,8 @@ router.post('/', requireManageItems, (req, res) => {
   const categories = [...new Set((Array.isArray(b.categories) ? b.categories : []).map((c) => String(c).trim()).filter(Boolean))];
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, test)
-      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @test)
+      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, created_at, test)
+      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @created_at, @test)
       ON CONFLICT(id) DO UPDATE SET name=@name, item_type=@item_type, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
         rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
         price=@price, cost=@cost, saved_at=@saved_at, test=@test

@@ -5,6 +5,23 @@ const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random());
 
+// Shared by the Items and Materials tabs' sort dropdowns. Remembered per browser (not synced
+// server-side) since it's a personal viewing preference, not shop data.
+function loadSortPref(key) {
+  try { return localStorage.getItem('workshopPos.' + key) || 'added-desc'; } catch { return 'added-desc'; }
+}
+function saveSortPref(key, value) {
+  try { localStorage.setItem('workshopPos.' + key, value); } catch {}
+}
+function sortByPref(list, pref, getAdded) {
+  const sorted = [...list];
+  if (pref === 'name-asc') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  else if (pref === 'name-desc') sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
+  else if (pref === 'added-asc') sorted.sort((a, b) => num(getAdded(a)) - num(getAdded(b)));
+  else sorted.sort((a, b) => num(getAdded(b)) - num(getAdded(a))); // added-desc, and the default
+  return sorted;
+}
+
 // Caches the app shell so it can open at all with no connection (installable as a PWA too —
 // see manifest.json). Has nothing to do with the Sell page's actual offline sale handling,
 // which lives below and in offline.js.
@@ -464,11 +481,13 @@ function priceCheckErrorMessage(code) {
   }
 }
 let libSearch = '';
+let libSort = loadSortPref('libSort');
+$('libSort').value = libSort;
 function renderLib() {
   $('libList').innerHTML = lib.map(m => `<option value="${esc(m.name)}">`).join('');
   $('libCount').textContent = lib.length || '';
   const q = libSearch.trim().toLowerCase();
-  const visible = lib.filter(m => !q || m.name.toLowerCase().includes(q));
+  const visible = sortByPref(lib.filter(m => !q || m.name.toLowerCase().includes(q)), libSort, (m) => m.created);
   $('libEmpty').hidden = visible.length > 0;
   $('libEmpty').textContent = lib.length === 0 ? 'No materials yet.' : 'No materials match your search.';
   $('libTable').hidden = visible.length === 0;
@@ -577,9 +596,12 @@ async function deleteLib(m) {
 $('addLib').onclick = async () => {
   const m = await api('POST', '/api/materials', { name: '', price: '', yield: 1, stock: 0, test: testMode });
   lib.push(m); renderLib();
-  const names = $('libRows').querySelectorAll('.in-name'); names[names.length - 1].focus();
+  // Find it by id rather than assuming it's the last row — a sort other than "Date added
+  // (newest)" won't put a brand-new, blank-named row last.
+  $('libRows').querySelector(`tr[data-id="${m.id}"] .in-name`)?.focus();
 };
 $('libSearch').addEventListener('input', () => { libSearch = $('libSearch').value; renderLib(); });
+$('libSort').addEventListener('change', () => { libSort = $('libSort').value; saveSortPref('libSort', libSort); renderLib(); });
 
 // ---------- Items ----------
 function freshCopy(it) {
@@ -615,15 +637,17 @@ async function sellItem(it, qty) {
   await Promise.all([loadItems(), loadPosItems()]);
 }
 let itemsSearch = '';
+let itemsSort = loadSortPref('itemsSort');
+$('itemsSort').value = itemsSort;
 function renderItems() {
-  const tb = $('itemRows'); tb.innerHTML = ''; let changed = 0, visibleCount = 0;
+  const tb = $('itemRows'); tb.innerHTML = ''; let changed = 0;
   const q = itemsSearch.trim().toLowerCase();
   const matchesSearch = (it) => !q || it.name.toLowerCase().includes(q) || (it.itemNo || '').includes(q) || (it.categories || []).some(c => c.toLowerCase().includes(q));
-  for (const it of items) {
+  for (const it of items) if (itemStatus(it).moved) changed++;
+  const visible = sortByPref(items.filter(matchesSearch), itemsSort, (it) => it.createdAt ?? it.savedAt);
+  const visibleCount = visible.length;
+  for (const it of visible) {
     const { c, diff, costDiff, priceMoved, moved } = itemStatus(it);
-    if (moved) changed++;
-    if (!matchesSearch(it)) continue;
-    visibleCount++;
     const low = isLow(it.stock, it.low);
     const typeLabel = it.itemType === 'resale' ? 'Resale item' : `${it.materials.length} material${it.materials.length === 1 ? '' : 's'}`;
     const catBadge = (it.categories || []).map(c => ` · <span class="cat-badge">${esc(c)}</span>`).join('');
@@ -690,6 +714,7 @@ $('acceptAll').onclick = async () => {
   await Promise.all([loadItems(), loadPosItems()]);
 };
 $('itemsSearch').addEventListener('input', () => { itemsSearch = $('itemsSearch').value; renderItems(); });
+$('itemsSort').addEventListener('change', () => { itemsSort = $('itemsSort').value; saveSortPref('itemsSort', itemsSort); renderItems(); });
 
 // ---------- Offline mode (Sell page only — see README) ----------
 // A checked-out sale that failed to reach the server because the connection is actually

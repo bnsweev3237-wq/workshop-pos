@@ -72,6 +72,7 @@ ensureColumn('sales', 'client_sale_id', 'TEXT');
 ensureColumn('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('events', 'item_scope', "TEXT NOT NULL DEFAULT 'all'");
 ensureColumn('event_items', 'qty_brought', 'REAL');
+ensureColumn('items', 'created_at', 'INTEGER');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before
@@ -123,5 +124,10 @@ if (uncategorized.length) {
   const insertCategory = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');
   for (const row of uncategorized) insertCategory.run(row.id, row.category.trim());
 }
+
+// Backfill created_at for items that existed before that column did — saved_at (last edited)
+// is the closest stand-in available for them. Idempotent: only rows still missing it are
+// touched, so this is a no-op once every row has one.
+db.prepare('UPDATE items SET created_at = saved_at WHERE created_at IS NULL').run();
 
 module.exports = db;

@@ -186,7 +186,15 @@
         update it here and every item recalculates. Keep <b>In stock</b> up to date to get low-stock warnings.
       </div>
       <div class="banner" id="lowMatBanner" hidden><span id="lowMatText"></span></div>
-      <input id="libSearch" placeholder="Search materials…" style="margin-bottom:12px">
+      <div class="row" style="grid-template-columns:1fr auto;gap:12px;margin-bottom:12px;align-items:center">
+        <input id="libSearch" placeholder="Search materials…">
+        <select id="libSort">
+          <option value="added-desc">Date added (newest)</option>
+          <option value="added-asc">Date added (oldest)</option>
+          <option value="name-asc">Name (A–Z)</option>
+          <option value="name-desc">Name (Z–A)</option>
+        </select>
+      </div>
       <table class="erow-table" id="libTable">
         <thead><tr><th>Material</th><th>Price paid</th><th>Makes / pack of</th><th class="r">Per piece</th><th class="r">In stock</th><th class="r">Low at</th><th>Source</th><th class="r">Used in</th><th></th></tr></thead>
         <tbody id="libRows"></tbody>
@@ -205,7 +213,15 @@
         <button class="btn sm" id="acceptAll">Accept all new prices</button>
       </div>
       <div class="banner" id="lowItemBanner" hidden><span id="lowItemText"></span></div>
-      <input id="itemsSearch" placeholder="Search items…" style="margin-bottom:12px">
+      <div class="row" style="grid-template-columns:1fr auto;gap:12px;margin-bottom:12px;align-items:center">
+        <input id="itemsSearch" placeholder="Search items…">
+        <select id="itemsSort">
+          <option value="added-desc">Date added (newest)</option>
+          <option value="added-asc">Date added (oldest)</option>
+          <option value="name-asc">Name (A–Z)</option>
+          <option value="name-desc">Name (Z–A)</option>
+        </select>
+      </div>
       <div class="scroll">
         <table class="items-table">
           <thead><tr><th>Item</th><th class="r">Cost now</th><th class="r">Sales price</th><th class="r">Stock</th><th></th></tr></thead>

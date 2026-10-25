@@ -181,7 +181,8 @@ category later aren't automatically included. While a selection is set, the Sell
 grid only offers the chosen items; everything else stays in the catalog untouched, just not
 sellable at that particular event. Switching back to "All items" reverts immediately.
 Materials and Items are also now searchable from their own tabs, and the item picker here has
-its own search too.
+its own search too. Both tabs also have a sort dropdown next to the search box — name (A–Z or
+Z–A) or date added (newest or oldest first) — remembered per browser.
 
 Each selected item can also have a quantity set — how many you're bringing to this
 particular event, separate from (and never changing) its overall stock. The Sell page then
