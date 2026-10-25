@@ -194,6 +194,14 @@ sold there so far, so voiding a sale corrects it automatically with nothing extr
 Leaving the quantity blank for an item means no limit — it's available up to whatever the
 overall stock allows, same as before this existed.
 
+An item can also be marked "Custom — don't bring to shows" on the Calculator (a checkbox
+under its stock fields). That's a stronger, item-level version of the above: a marked item is
+left off the Sell page's item grid at *any* event, regardless of that event's own item
+selection — including one scoped to "All items" — so a one-off or made-to-order item never
+needs to be remembered and excluded per event. It's still fully usable everywhere else: normal
+pricing/stock tracking on the Calculator and Items tab, and sellable as usual on the Sell page
+whenever no event is open.
+
 ## Draft (upcoming) events
 
 An event doesn't have to be set up the moment it starts. Saving one as a draft instead of

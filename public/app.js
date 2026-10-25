@@ -345,6 +345,7 @@ function readForm() {
     itemType,
     name: $('itemName').value.trim(),
     categories: [...new Set($('itemCategory').value.split(',').map(c => c.trim()).filter(Boolean))],
+    notForShows: $('itemNotForShows').checked,
     stock: $('stock').value, low: $('itemLow').value,
     materials: [...$('mats').children].map(tr => {
       const [n, p, y, u] = tr.querySelectorAll('input');
@@ -406,6 +407,7 @@ function restore(s) {
   setItemType(s.itemType || 'made');
   $('itemName').value = s.name;
   $('itemCategory').value = (s.categories || []).join(', ');
+  $('itemNotForShows').checked = !!s.notForShows;
   $('itemNoHint').hidden = !s.itemNo;
   $('itemNoHint').textContent = s.itemNo ? `Item #${s.itemNo}` : '';
   $('stock').value = s.stock ?? 0; $('itemLow').value = s.low ?? '';
@@ -651,9 +653,10 @@ function renderItems() {
     const low = isLow(it.stock, it.low);
     const typeLabel = it.itemType === 'resale' ? 'Resale item' : `${it.materials.length} material${it.materials.length === 1 ? '' : 's'}`;
     const catBadge = (it.categories || []).map(c => ` · <span class="cat-badge">${esc(c)}</span>`).join('');
+    const notForShowsBadge = it.notForShows ? ' · <span class="cat-badge warn-badge">Custom — not for shows</span>' : '';
     const tr = document.createElement('tr'); tr.dataset.id = it.id;
     tr.innerHTML = `
-      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}</div></td>
+      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}${notForShowsBadge}</div></td>
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
@@ -850,7 +853,11 @@ function renderPosItems() {
   const restrictedMap = ev && ev.itemScope === 'selected'
     ? new Map((ev.selectedItems || []).map(s => [s.itemId, s.qtyBrought]))
     : null;
-  const eventFiltered = restrictedMap ? posItemsList.filter(it => restrictedMap.has(it.id)) : posItemsList;
+  // A "custom — not for shows" item is left off the grid at ANY event, regardless of that
+  // event's item_scope — it never needs managing per event. Outside of an event it's sellable
+  // like anything else.
+  let eventFiltered = ev ? posItemsList.filter((it) => !it.notForShows) : posItemsList;
+  if (restrictedMap) eventFiltered = eventFiltered.filter((it) => restrictedMap.has(it.id));
   let soldAtEvent = null;
   if (restrictedMap) {
     soldAtEvent = new Map();
@@ -1220,7 +1227,10 @@ async function loadEventFormExtras(ev) {
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
   $('evItemCatSelect').innerHTML = '<option value="">Choose a category…</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   renderEvCharityList();
-  evPickerItems = fullItems;
+  // Excludes "custom — not for shows" items — they're always left off the Sell page at any
+  // event regardless of what's picked here, so listing them (as if picking them did
+  // something) would just be misleading.
+  evPickerItems = fullItems.filter((it) => !it.notForShows);
   renderEvItemScope();
 }
 function renderEvItemScope() {

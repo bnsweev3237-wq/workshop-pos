@@ -92,7 +92,11 @@ CREATE TABLE IF NOT EXISTS items (
   -- every edit. Lets "date added" and "last edited" sort by different things. Backfilled from
   -- saved_at for rows that existed before this column did (see db/index.js), since that's the
   -- closest approximation available for them.
-  created_at INTEGER
+  created_at INTEGER,
+  -- A custom/one-off item that shouldn't be brought to shows — when set, this item is left off
+  -- the Sell page's item grid at any event, regardless of that event's item_scope, without
+  -- having to manage it per event. Still sellable normally when no event is open.
+  not_for_shows INTEGER NOT NULL DEFAULT 0
 );
 
 -- A single item can belong to several categories (e.g. both "Jewelry" and "Military") —

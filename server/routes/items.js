@@ -25,13 +25,15 @@ const categoriesFor = (itemId) => db.prepare('SELECT category FROM item_categori
 // about what it costs to make or what it's priced to earn — that's the whole reason this
 // split exists now that there's a real server to enforce it (the artifact version couldn't).
 // categories is included even though it's "extra" — it's not cost/profit data.
-const toPublicItem = (r, categories) => ({ id: r.id, name: r.name, itemNo: r.item_no, categories: categories || [], price: r.price, stock: r.stock, low: r.low, test: !!r.test });
+// notForShows travels with the public shape too — it's what lets the Sell page leave this
+// item off the grid at any event, which a cashier's own item list has to be able to do.
+const toPublicItem = (r, categories) => ({ id: r.id, name: r.name, itemNo: r.item_no, categories: categories || [], price: r.price, stock: r.stock, low: r.low, notForShows: !!r.not_for_shows, test: !!r.test });
 
 const toFullItem = (r, categories) => ({
   id: r.id, name: r.name, itemNo: r.item_no, itemType: r.item_type, categories: categories || [], materials: JSON.parse(r.materials_json),
   costMode: r.cost_mode, minutes: r.minutes, rate: r.rate, overhead: r.overhead,
   mode: r.mode, pct: r.pct, round: r.round, override: r.override,
-  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, createdAt: r.created_at, test: !!r.test,
+  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, createdAt: r.created_at, notForShows: !!r.not_for_shows, test: !!r.test,
 });
 
 // Items are split into two fully independent catalogs by `test` — see schema.sql. Every
@@ -83,6 +85,7 @@ router.post('/', requireManageItems, (req, res) => {
     cost: Number(b.cost) || 0,
     saved_at: Date.now(),
     created_at: Date.now(),
+    not_for_shows: b.notForShows ? 1 : 0,
     test: b.test ? 1 : 0,
   };
   // Categories are a flat array of strings from the client — deduped, trimmed, empties
@@ -91,11 +94,11 @@ router.post('/', requireManageItems, (req, res) => {
   const categories = [...new Set((Array.isArray(b.categories) ? b.categories : []).map((c) => String(c).trim()).filter(Boolean))];
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, created_at, test)
-      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @created_at, @test)
+      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, created_at, not_for_shows, test)
+      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @created_at, @not_for_shows, @test)
       ON CONFLICT(id) DO UPDATE SET name=@name, item_type=@item_type, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
         rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
-        price=@price, cost=@cost, saved_at=@saved_at, test=@test
+        price=@price, cost=@cost, saved_at=@saved_at, not_for_shows=@not_for_shows, test=@test
     `).run(row);
     db.prepare('DELETE FROM item_categories WHERE item_id = ?').run(row.id);
     const insertCat = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');

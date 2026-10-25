@@ -76,6 +76,10 @@
             <div><label for="stock">Current stock (finished items on hand)</label><input id="stock" type="number" min="0" step="1" value="0"></div>
             <div><label for="itemLow">Low stock alert at</label><input id="itemLow" type="number" min="0" step="1" placeholder="optional"></div>
           </div>
+          <label class="chk-field">
+            <input type="checkbox" id="itemNotForShows">
+            <span>Custom item — don't bring to shows <small style="color:var(--muted);font-weight:400">(left off the Sell page at any event; still sellable normally otherwise)</small></span>
+          </label>
         </div>
 
         <div class="card" id="resaleCard" hidden>

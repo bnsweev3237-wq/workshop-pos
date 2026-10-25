@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.21.0',
+    date: '2026-10-25',
+    notes: [
+      'Items can now be marked "Custom — don\'t bring to shows" on the Calculator. A marked item is automatically left off the Sell page whenever an event is open — no need to manage it per event — but still sells normally the rest of the time.',
+    ],
+  },
+  {
     version: '0.20.1',
     date: '2026-10-25',
     notes: [
