@@ -8,17 +8,17 @@ const cid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + 
 // Shared by the Items and Materials tabs' sort dropdowns. Remembered per browser (not synced
 // server-side) since it's a personal viewing preference, not shop data.
 function loadSortPref(key) {
-  try { return localStorage.getItem('workshopPos.' + key) || 'added-desc'; } catch { return 'added-desc'; }
+  try { return localStorage.getItem('workshopPos.' + key) || 'name-asc'; } catch { return 'name-asc'; }
 }
 function saveSortPref(key, value) {
   try { localStorage.setItem('workshopPos.' + key, value); } catch {}
 }
 function sortByPref(list, pref, getAdded) {
   const sorted = [...list];
-  if (pref === 'name-asc') sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  if (pref === 'added-asc') sorted.sort((a, b) => num(getAdded(a)) - num(getAdded(b)));
+  else if (pref === 'added-desc') sorted.sort((a, b) => num(getAdded(b)) - num(getAdded(a)));
   else if (pref === 'name-desc') sorted.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
-  else if (pref === 'added-asc') sorted.sort((a, b) => num(getAdded(a)) - num(getAdded(b)));
-  else sorted.sort((a, b) => num(getAdded(b)) - num(getAdded(a))); // added-desc, and the default
+  else sorted.sort((a, b) => (a.name || '').localeCompare(b.name || '')); // name-asc, and the default
   return sorted;
 }
 

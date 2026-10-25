@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '0.20.1',
+    date: '2026-10-25',
+    notes: [
+      'The Materials and Items sort dropdowns now default to alphabetical (A–Z) instead of date added.',
+    ],
+  },
+  {
     version: '0.20.0',
     date: '2026-10-25',
     notes: [
