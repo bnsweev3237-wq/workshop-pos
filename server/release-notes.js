@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.6.1',
+    date: '2026-10-26',
+    notes: [
+      'Fixed: the in-app "Update now" button (Settings → Software updates) could fail with a git error — npm leaves package-lock.json locally modified after every install, which then blocked the next update\'s git pull if that update\'s own commit also touched the lockfile. It now discards that one file\'s local changes (never anything else) right before pulling, the same workaround the manual VPS update command already used.',
+    ],
+  },
+  {
     version: '1.6.0',
     date: '2026-10-26',
     notes: [
