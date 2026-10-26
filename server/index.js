@@ -43,7 +43,9 @@ function createApp() {
     // harmless belt-and-suspenders — browsers ignore it entirely over a plain-HTTP connection,
     // so it doesn't affect a LAN-only, no-TLS install.
   }));
-  app.use(express.json());
+  // Raised from Express's 100kb default so a branding logo upload (a data URL, capped at ~2MB
+  // in server/routes/branding.js) fits in the request body.
+  app.use(express.json({ limit: '3mb' }));
 
   app.use(session({
     store: new SqliteStore({ client: db, expired: { clear: true, intervalMs: 15 * 60 * 1000 } }),
@@ -64,6 +66,7 @@ function createApp() {
   app.use('/api/meta', require('./routes/meta'));
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/settings', require('./routes/settings'));
+  app.use('/api/branding', require('./routes/branding'));
   app.use('/api/materials', require('./routes/materials'));
   app.use('/api/sources', require('./routes/sources'));
   app.use('/api/tax-presets', require('./routes/taxPresets'));

@@ -49,6 +49,9 @@ Working end to end, tested:
   its own catalog-linked items, totals/payment tracking, and printable packing list and
   purchase order.
 - A free-text notes field on items, for your own reference — never shown on the Sell page.
+- Custom branding (Settings, admin-only) — a business name and logo that show up in the app
+  header, the sign-in screen, and at the top of printed packing lists/purchase orders, plus
+  an accent color that re-skins the app. See "Branding" below.
 - Test mode — a full, independent sandbox (items, materials, events, sales, and custom
   orders each have their own test-side copy) for practicing or training without touching
   real data.
@@ -236,6 +239,23 @@ the item's own item number. Both use the browser's print dialog (no bundled PDF 
 as Reports' PDF export), and a USB barcode scanner, which types out a barcode's digits like a
 keyboard, reads those tags straight into the Sell page's search box: scan one there and it's
 added to the ticket directly, instead of just filtering the grid the way typing normally does.
+
+## Branding
+
+Settings → Branding (admin-only) holds your business name, a logo, and an accent color:
+- **Business name** replaces "Craftium" in the app header and on the sign-in screen, and
+  heads up printed packing lists and purchase orders alongside the logo.
+- **Logo** is uploaded as an image file (PNG/JPEG/WebP/SVG, under 1.5MB) and stored as a data
+  URL in the database itself — no separate upload folder to back up, it travels with the
+  rest of your data in the same SQLite file/backups.
+- **Accent color** re-skins the app's buttons, highlights, and links — pick one of the warm
+  presets or any custom color. It's the one thing a shop can make its own; everything else
+  in the palette (background, text, borders) stays fixed to keep contrast and readability
+  consistent regardless of what color is picked.
+
+All three are public, even logged out, since the sign-in screen itself shows them — none of
+it is sensitive information (the same name/logo a customer already sees on a receipt).
+Changing it only takes effect after "Save branding"; nothing is applied live as you type.
 
 ## Discounts
 

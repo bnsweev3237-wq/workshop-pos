@@ -217,7 +217,7 @@ function showTab(t) {
   if (t === 'items') loadItems();
   if (t === 'orders') loadCustomOrders();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); fillBrandingForm(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -2262,6 +2262,80 @@ document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => 
 
 // ---------- Settings: sales tracking ----------
 let appSettings = { trackSaleAttribution: true };
+// ---------- Branding (logo, business name, accent color) ----------
+// Public (no login needed) since the login screen itself shows it — see server/routes/branding.
+let branding = { name: '', accentColor: '', logo: '' };
+const DEFAULT_ACCENT = '#c1623d';
+const BRAND_SWATCHES = ['#c1623d', '#b5651d', '#6b7a3d', '#2f7d5b', '#3d6a73', '#7a4a6b'];
+async function loadBranding() {
+  try { branding = await api('GET', '/api/branding'); } catch { /* offline/unreachable — keep defaults, don't block boot */ }
+  applyBranding();
+}
+function fillLetterhead(wrapId, imgId, nameId) {
+  const has = !!(branding.name || branding.logo);
+  $(wrapId).hidden = !has;
+  $(imgId).hidden = !branding.logo;
+  if (branding.logo) $(imgId).src = branding.logo;
+  $(nameId).textContent = branding.name || '';
+}
+function applyBranding() {
+  const root = document.documentElement.style;
+  if (branding.accentColor) root.setProperty('--accent', branding.accentColor);
+  else root.removeProperty('--accent');
+  const name = branding.name || 'Craftium';
+  $('brandName').textContent = name;
+  document.title = name;
+  $('brandLogo').hidden = !branding.logo;
+  if (branding.logo) $('brandLogo').src = branding.logo;
+  $('loginBrandRow').hidden = !branding.logo;
+  if (branding.logo) $('loginBrandLogo').src = branding.logo;
+  fillLetterhead('packingLetterhead', 'packingLetterheadLogo', 'packingLetterheadName');
+  fillLetterhead('poLetterhead', 'poLetterheadLogo', 'poLetterheadName');
+}
+function renderBrandSwatches() {
+  const cur = ($('brandAccentInput').value || '').toLowerCase();
+  $('brandSwatches').innerHTML = BRAND_SWATCHES.map(c =>
+    `<button type="button" class="swatch${c.toLowerCase() === cur ? ' on' : ''}" style="background:${c}" data-c="${c}" title="${c}"></button>`).join('');
+  $('brandSwatches').querySelectorAll('.swatch').forEach(b => b.onclick = () => {
+    $('brandAccentInput').value = b.dataset.c; $('brandAccentHex').textContent = b.dataset.c; renderBrandSwatches();
+  });
+}
+function fillBrandingForm() {
+  $('brandNameInput').value = branding.name || '';
+  const accent = branding.accentColor || DEFAULT_ACCENT;
+  $('brandAccentInput').value = accent; $('brandAccentHex').textContent = accent;
+  renderBrandSwatches();
+  const preview = $('brandLogoPreview');
+  preview.innerHTML = branding.logo ? `<img src="${branding.logo}">` : '<span class="ph">No logo</span>';
+  $('brandLogoRemoveBtn').hidden = !branding.logo;
+}
+$('brandAccentInput').oninput = () => { $('brandAccentHex').textContent = $('brandAccentInput').value; renderBrandSwatches(); };
+$('brandLogoPickBtn').onclick = () => $('brandLogoFile').click();
+$('brandLogoFile').onchange = () => {
+  const file = $('brandLogoFile').files[0];
+  $('brandLogoFile').value = '';
+  if (!file) return;
+  if (file.size > 1_500_000) { toast('That logo is too large — please use an image under 1.5MB'); return; }
+  const reader = new FileReader();
+  reader.onload = () => {
+    branding = { ...branding, logo: reader.result };
+    fillBrandingForm();
+    toast('Logo ready — click "Save branding" to keep it');
+  };
+  reader.onerror = () => toast('Could not read that image file');
+  reader.readAsDataURL(file);
+};
+$('brandLogoRemoveBtn').onclick = () => { branding = { ...branding, logo: '' }; fillBrandingForm(); };
+$('brandResetBtn').onclick = () => { $('brandAccentInput').value = DEFAULT_ACCENT; $('brandAccentHex').textContent = DEFAULT_ACCENT; renderBrandSwatches(); };
+$('brandSaveBtn').onclick = async () => {
+  const accentColor = $('brandAccentInput').value === DEFAULT_ACCENT ? '' : $('brandAccentInput').value;
+  try {
+    branding = await api('POST', '/api/branding', { name: $('brandNameInput').value, accentColor, logo: branding.logo || '' });
+    applyBranding(); fillBrandingForm();
+    toast('Branding saved');
+  } catch (e) { toast(e.message || 'Could not save branding'); }
+};
+
 async function loadSettings() {
   appSettings = await api('GET', '/api/settings');
   $('trackAttributionChk').checked = appSettings.trackSaleAttribution;
@@ -2583,6 +2657,7 @@ $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('rele
   addMaterial(); setItemType('made'); setMode('markup'); setTender('cash'); setTestMode(testMode);
   $('footYear').textContent = new Date().getFullYear();
   loadVersionInfo().catch(() => {});
+  await loadBranding();
   try {
     const s = await refreshAuthStatus();
     $('app').hidden = false;

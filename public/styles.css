@@ -1,22 +1,36 @@
 :root {
-  --bg: #f4f1ec; --card: #ffffff; --ink: #1f2430; --muted: #6b7180; --line: #e6e1d8;
-  --accent: #2f7d5b; --accent-soft: #e3f1ea; --warn: #a8641a; --warn-soft: #fbefdc; --danger: #c0473b; --danger-soft: #fbe9e6;
-  --shadow: 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(31,36,48,.06); --overlay: rgba(31,36,48,.45);
+  /* Warm artisan palette — terracotta accent over cream/linen neutrals, instead of the cooler
+     slate/green scheme this started with. --accent is also the one thing a shop can override
+     for itself (Settings → Branding); --accent-soft/--warn-soft/--danger-soft derive from it and
+     the current background with color-mix() so a custom accent always gets a sensible tint
+     without needing its own stored value, in both themes. */
+  --bg: #f7f1e6; --card: #fffcf6; --ink: #2b2219; --muted: #7d6f5e; --line: #e7dac2;
+  --accent: #c1623d; --warn: #a8641a; --danger: #b8463a;
+  --accent-soft: color-mix(in srgb, var(--accent) 15%, var(--bg));
+  --warn-soft: color-mix(in srgb, var(--warn) 15%, var(--bg));
+  --danger-soft: color-mix(in srgb, var(--danger) 13%, var(--bg));
+  --shadow: 0 1px 2px rgba(43,30,15,.05), 0 8px 24px rgba(43,30,15,.08); --overlay: rgba(38,26,14,.5);
+  --font-display: 'Fraunces', Georgia, serif;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #15171c; --card: #1e2128; --ink: #eceef2; --muted: #9aa0ad; --line: #2d313a;
-    --accent: #5cc195; --accent-soft: #1f3a2e; --warn: #e8a85c; --warn-soft: #3a2c1a; --danger: #e5776b; --danger-soft: #3a1f1d;
-    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.25); --overlay: rgba(0,0,0,.6);
+    --bg: #1b1611; --card: #251f17; --ink: #f1e8da; --muted: #a99b87; --line: #3b3122;
+    --accent: #e08a5f; --warn: #e8a85c; --danger: #e5776b;
+    --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--bg));
+    --warn-soft: color-mix(in srgb, var(--warn) 20%, var(--bg));
+    --danger-soft: color-mix(in srgb, var(--danger) 18%, var(--bg));
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.3); --overlay: rgba(0,0,0,.6);
     color-scheme: dark;
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font-family: Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.45; }
+body { margin: 0; background: radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 7%, var(--bg)), var(--bg) 55%); color: var(--ink); font-family: Inter, system-ui, sans-serif; font-size: 15px; line-height: 1.45; }
 [hidden] { display: none !important; }
 .wrap { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
 header { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; }
-header h1 { margin: 0 0 4px; font-size: 28px; letter-spacing: -.02em; }
+header .brand-row { display: flex; align-items: center; gap: 12px; }
+.brand-logo { height: 42px; width: auto; max-width: 160px; border-radius: 8px; object-fit: contain; }
+header h1 { margin: 0 0 4px; font-size: 30px; letter-spacing: -.01em; font-family: var(--font-display); font-weight: 600; }
 header p { margin: 0; color: var(--muted); }
 
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 24px; overflow-x: auto; scrollbar-width: none; }
@@ -340,12 +354,19 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 
 @media print {
   :root, :root:not([data-theme="light"]) {
-    --bg: #fff; --card: #fff; --ink: #000; --muted: #444; --line: #ccc; --accent-soft: #eef6f1; --shadow: none;
+    --bg: #fff; --card: #fff; --ink: #000; --muted: #444; --line: #ccc; --shadow: none;
+    --accent-soft: color-mix(in srgb, var(--accent) 10%, #fff);
   }
+  body { background: #fff; }
   header, .tabs, .app-footer, #rptExportPdf, .toast, .modal, .seg#rptRangeSeg, .rpt-bar-tip { display: none !important; }
   .wrap { padding: 0; max-width: none; }
   .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
 }
+/* Logo + business name printed at the top of a document, when branding is set (Settings →
+   Branding) — otherwise the card just starts at its own title, no empty bar. */
+.print-letterhead { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 2px solid var(--line); }
+.print-letterhead img { height: 48px; width: auto; max-width: 180px; object-fit: contain; }
+.print-letterhead .biz-name { font-family: var(--font-display); font-weight: 600; font-size: 21px; }
 /* Packing lists and price tags each get their own printable card, sitting outside any tab so
    they print regardless of which tab happens to be open — shown only while actively printing,
    with everything else on the page hidden for that moment (toggled in app.js, restored right
@@ -371,7 +392,9 @@ body.printing-purchase-order > :not(#purchaseOrderCard) {
 /* ---- login / first-run setup ---- */
 .login-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; }
 .login-card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 28px; max-width: 380px; width: 100%; box-shadow: var(--shadow); }
-.login-card h1 { font-size: 22px; margin: 0 0 4px; }
+.login-card h1 { font-size: 24px; margin: 0 0 4px; font-family: var(--font-display); font-weight: 600; }
+.login-card .brand-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.login-card .brand-logo { height: 36px; max-width: 140px; }
 .login-card label { margin-top: 0; }
 .login-error { background: var(--danger); color: #fff; border-radius: 8px; padding: 9px 12px; font-size: 13px; margin: 12px 0; }
 
@@ -398,3 +421,14 @@ body.printing-purchase-order > :not(#purchaseOrderCard) {
 .rn-entry ul { margin: 0; padding-left: 20px; font-size: 14px; }
 .rn-entry li { margin-bottom: 4px; }
 #appVersion { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* ---- branding (Settings → Branding) ---- */
+.logo-pick { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.logo-preview { width: 72px; height: 72px; border-radius: 10px; border: 1px dashed var(--line); background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+.logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.logo-preview .ph { font-size: 11px; color: var(--muted); text-align: center; padding: 4px; }
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0 2px; }
+.swatch { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--card); box-shadow: 0 0 0 1px var(--line); cursor: pointer; padding: 0; }
+.swatch.on { box-shadow: 0 0 0 2px var(--ink); }
+.color-field { display: flex; align-items: center; gap: 10px; }
+.color-field input[type="color"] { width: 44px; height: 38px; padding: 2px; flex-shrink: 0; cursor: pointer; }

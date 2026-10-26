@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.2.0',
+    date: '2026-10-26',
+    notes: [
+      'A warmer, more distinctive look throughout the app — new color palette and a display font for headings, in both light and dark mode.',
+      'Custom branding: set your business name and upload a logo in Settings → Branding. They show up in the app header, on the sign-in screen, and at the top of printed packing lists and purchase orders.',
+      'Pick an accent color (a few warm presets, or any color you like) that re-skins buttons, highlights, and links throughout the app.',
+    ],
+  },
+  {
     version: '1.1.0',
     date: '2026-10-26',
     notes: [

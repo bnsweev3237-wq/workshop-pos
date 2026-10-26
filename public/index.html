@@ -7,9 +7,9 @@
 <link rel="icon" href="/favicon.png" type="image/png">
 <link rel="apple-touch-icon" href="/icons/icon-192.png">
 <link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#2f7d5b">
+<meta name="theme-color" content="#c1623d">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -17,7 +17,10 @@
 <div class="wrap" id="app" hidden>
   <header>
     <div>
-      <h1>Craftium</h1>
+      <div class="brand-row">
+        <img class="brand-logo" id="brandLogo" alt="" hidden>
+        <h1 id="brandName">Craftium</h1>
+      </div>
       <p>Work out what each item costs you and what to sell it for.</p>
     </div>
     <div class="head-side">
@@ -627,6 +630,31 @@
   <!-- ===== Settings ===== -->
   <section id="tab-settings" hidden>
     <div class="card">
+      <h2>Branding</h2>
+      <div class="hint" style="margin-top:-8px;margin-bottom:14px">Your business name and logo show up in the app header, on the sign-in screen, and at the top of printed packing lists and purchase orders. Your accent color re-skins the whole app.</div>
+      <label for="brandNameInput">Business name</label>
+      <input id="brandNameInput" placeholder="Craftium">
+      <label style="margin-top:14px">Logo</label>
+      <div class="logo-pick">
+        <div class="logo-preview" id="brandLogoPreview"><span class="ph">No logo</span></div>
+        <div class="btn-row" style="margin-top:0">
+          <button class="btn sm" id="brandLogoPickBtn">Upload logo</button>
+          <button class="btn sm" id="brandLogoRemoveBtn" hidden>Remove</button>
+        </div>
+        <input type="file" id="brandLogoFile" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden>
+      </div>
+      <label style="margin-top:14px">Accent color</label>
+      <div class="swatches" id="brandSwatches"></div>
+      <div class="color-field">
+        <input type="color" id="brandAccentInput" value="#c1623d">
+        <span class="hint" style="margin:0" id="brandAccentHex">#c1623d</span>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary" id="brandSaveBtn">Save branding</button>
+        <button class="btn sm" id="brandResetBtn">Reset color to default</button>
+      </div>
+    </div>
+    <div class="card">
       <h2>Sales tracking</h2>
       <label class="chk-field" style="margin-top:0">
         <input type="checkbox" id="trackAttributionChk">
@@ -765,6 +793,7 @@
 <!-- ===== Login / first-run setup ===== -->
 <div class="login-screen" id="loginScreen" hidden>
   <div class="login-card">
+    <div class="brand-row" id="loginBrandRow" hidden><img class="brand-logo" id="loginBrandLogo" alt=""></div>
     <h1 id="loginTitle">Sign in</h1>
     <p class="hint" id="loginSub">Admin sign-in — cashiers don't need this to use the Sell page.</p>
     <div id="loginError" class="login-error" hidden></div>
@@ -792,6 +821,7 @@
 </div>
 
 <div class="card packing-list-print" id="packingListCard" hidden>
+  <div class="print-letterhead" id="packingLetterhead" hidden><img id="packingLetterheadLogo" alt="" hidden><div class="biz-name" id="packingLetterheadName"></div></div>
   <h2 id="packingListTitle"></h2>
   <div class="hint" id="packingListSub" style="margin-top:-6px;margin-bottom:10px"></div>
   <table class="items-table">
@@ -805,6 +835,7 @@
 </div>
 
 <div class="card purchase-order-print" id="purchaseOrderCard" hidden>
+  <div class="print-letterhead" id="poLetterhead" hidden><img id="poLetterheadLogo" alt="" hidden><div class="biz-name" id="poLetterheadName"></div></div>
   <h2 id="poTitle"></h2>
   <div class="hint" id="poSub" style="margin-top:-6px;margin-bottom:10px"></div>
   <table class="items-table">
