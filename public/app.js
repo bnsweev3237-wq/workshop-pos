@@ -2360,11 +2360,13 @@ function renderUsers() {
       <td><span class="role-badge ${a.role}"></span></td>
       <td>${new Date(a.createdAt).toLocaleDateString()}</td>
       <td class="acts">
-        <select class="roleSelect"${isLastAdmin ? ' disabled title="Can’t change the last admin’s role"' : ''}>
-          ${ROLE_ORDER.map(r => `<option value="${r}"${r === a.role ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
-        </select>
-        <button class="btn sm resetPw">Reset password</button>
-        <button class="icon-btn del" title="Remove account"${isLastAdmin ? ' disabled title="Can’t remove the last admin"' : ''}>×</button>
+        <div class="user-acts">
+          <select class="roleSelect"${isLastAdmin ? ' disabled title="Can’t change the last admin’s role"' : ''}>
+            ${ROLE_ORDER.map(r => `<option value="${r}"${r === a.role ? ' selected' : ''}>${ROLE_LABEL[r]}</option>`).join('')}
+          </select>
+          <button class="btn sm resetPw">Reset password</button>
+          <button class="icon-btn del" title="Remove account"${isLastAdmin ? ' disabled title="Can’t remove the last admin"' : ''}>×</button>
+        </div>
       </td>`;
     tr.querySelector('.role-badge').textContent = ROLE_LABEL[a.role] || a.role;
     tr.querySelector('.roleSelect').onchange = async (e) => {

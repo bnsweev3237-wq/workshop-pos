@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.2.1',
+    date: '2026-10-26',
+    notes: [
+      'Fixed: in Settings → Users, a row\'s role dropdown and buttons could run off the edge of the card instead of wrapping, especially on narrower screens.',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-10-26',
     notes: [
