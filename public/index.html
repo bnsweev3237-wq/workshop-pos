@@ -81,6 +81,8 @@
             <input type="checkbox" id="itemNotForShows">
             <span>Custom item — don't bring to shows <small style="color:var(--muted);font-weight:400">(left off the Sell page at any event; still sellable normally otherwise)</small></span>
           </label>
+          <label for="itemNotes" style="margin-top:12px">Notes <small style="color:var(--muted);font-weight:400">(for your own reference — never shown on the Sell page)</small></label>
+          <textarea id="itemNotes" rows="2" style="width:100%;resize:vertical;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)"></textarea>
         </div>
 
         <div class="card" id="resaleCard" hidden>
@@ -254,7 +256,7 @@
       </div>
       <div class="scroll">
         <table class="items-table">
-          <thead><tr><th>Item</th><th>Customer</th><th>Due</th><th>Fulfillment</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Items</th><th>Customer</th><th>Due</th><th>Fulfillment</th><th>Status</th><th></th></tr></thead>
           <tbody id="ordersRows"></tbody>
         </table>
       </div>
@@ -264,15 +266,36 @@
     <div class="card">
       <h2 id="orderFormTitle">New custom order</h2>
       <div class="row r2">
-        <div><label for="orderItemName">Item / description</label><input id="orderItemName" list="itemNameList" placeholder="e.g. Engraved oak sign"></div>
-        <div><label for="orderDue">Due date</label><input id="orderDue" type="date"></div>
-      </div>
-      <datalist id="itemNameList"></datalist>
-      <div class="row r2" style="margin-top:12px">
         <div><label for="orderCustomerName">Customer name</label><input id="orderCustomerName"></div>
         <div><label for="orderCustomerContact">Customer contact</label><input id="orderCustomerContact" placeholder="phone or email"></div>
       </div>
-      <label class="chk-field" style="margin-top:12px">
+      <div class="row r2" style="margin-top:12px">
+        <div><label for="orderDue">Due date</label><input id="orderDue" type="date"></div>
+        <div></div>
+      </div>
+      <div id="orderItemsSection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+        <label style="margin-bottom:6px">Items in this order</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Picked from your catalog — picking one fills in its current price, which you can still override per order.</div>
+        <div class="row r4">
+          <div><label for="orderAddItemName">Add item</label><input id="orderAddItemName" list="itemNameList" placeholder="Start typing an item name…"></div>
+          <div><label for="orderAddItemQty">Qty</label><input id="orderAddItemQty" type="number" min="1" step="1" value="1"></div>
+          <div><label for="orderAddItemPrice">Price ($)</label><input id="orderAddItemPrice" type="number" min="0" step="0.01" placeholder="auto"></div>
+          <div style="display:flex;align-items:flex-end"><button class="btn sm" id="orderAddItemBtn" style="width:100%">+ Add</button></div>
+        </div>
+        <datalist id="itemNameList"></datalist>
+        <div id="orderItemLines" style="margin-top:10px"></div>
+        <div class="hint" id="orderItemLinesEmpty">No items added yet.</div>
+        <div class="row r2" style="margin-top:12px;max-width:620px">
+          <div><label for="orderAmountPaid">Amount paid ($)</label><input id="orderAmountPaid" type="number" min="0" step="0.01" placeholder="0.00"></div>
+          <div></div>
+        </div>
+        <div id="orderTotals" style="margin-top:10px;font-weight:600"></div>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn sm" id="orderPrintPacking">Print packing list</button>
+          <button class="btn sm" id="orderPrintPO">Print purchase order</button>
+        </div>
+      </div>
+      <label class="chk-field" style="margin-top:16px">
         <input type="checkbox" id="orderShips">
         <span>This order ships <small style="color:var(--muted);font-weight:400">(instead of being picked up in person)</small></span>
       </label>
@@ -772,13 +795,23 @@
   <h2 id="packingListTitle"></h2>
   <div class="hint" id="packingListSub" style="margin-top:-6px;margin-bottom:10px"></div>
   <table class="items-table">
-    <thead><tr><th>Item</th><th class="r">Qty to bring</th></tr></thead>
+    <thead><tr><th>Item</th><th class="r" id="packingListQtyHeader">Qty to bring</th></tr></thead>
     <tbody id="packingListRows"></tbody>
   </table>
 </div>
 
 <div class="price-tags-print" id="priceTagsCard" hidden>
   <div class="tag-grid" id="priceTagsGrid"></div>
+</div>
+
+<div class="card purchase-order-print" id="purchaseOrderCard" hidden>
+  <h2 id="poTitle"></h2>
+  <div class="hint" id="poSub" style="margin-top:-6px;margin-bottom:10px"></div>
+  <table class="items-table">
+    <thead><tr><th>Item</th><th class="r">Qty</th><th class="r">Price</th><th class="r">Line total</th></tr></thead>
+    <tbody id="poRows"></tbody>
+  </table>
+  <div id="poTotals" style="margin-top:12px"></div>
 </div>
 
 <div class="toast" id="toast" role="status"></div>

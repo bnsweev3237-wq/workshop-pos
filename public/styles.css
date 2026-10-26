@@ -350,13 +350,15 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
    they print regardless of which tab happens to be open — shown only while actively printing,
    with everything else on the page hidden for that moment (toggled in app.js, restored right
    after via the 'afterprint' event). */
-.packing-list-print, .price-tags-print { display: none; }
+.packing-list-print, .price-tags-print, .purchase-order-print { display: none; }
 body.printing-packing-list #packingListCard,
-body.printing-price-tags #priceTagsCard {
+body.printing-price-tags #priceTagsCard,
+body.printing-purchase-order #purchaseOrderCard {
   display: block !important;
 }
 body.printing-packing-list > :not(#packingListCard),
-body.printing-price-tags > :not(#priceTagsCard) {
+body.printing-price-tags > :not(#priceTagsCard),
+body.printing-purchase-order > :not(#purchaseOrderCard) {
   display: none !important;
 }
 .tag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.4in, 1fr)); gap: 0.15in; }

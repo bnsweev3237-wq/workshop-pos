@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.1.0',
+    date: '2026-10-26',
+    notes: [
+      'Custom Orders can now hold actual items picked from your catalog (with a per-order price override), instead of just a single free-text description. The order totals its items, shipping, amount paid, and balance due.',
+      'An order with items can print a packing list (what to pack) and a purchase order (an itemized, customer-facing order summary with pricing and totals).',
+      'Items can now have a free-text notes field, for your own reference — never shown on the Sell page.',
+    ],
+  },
+  {
     version: '1.0.2',
     date: '2026-10-26',
     notes: [

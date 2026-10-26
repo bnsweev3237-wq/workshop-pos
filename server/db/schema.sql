@@ -96,7 +96,10 @@ CREATE TABLE IF NOT EXISTS items (
   -- A custom/one-off item that shouldn't be brought to shows — when set, this item is left off
   -- the Sell page's item grid at any event, regardless of that event's item_scope, without
   -- having to manage it per event. Still sellable normally when no event is open.
-  not_for_shows INTEGER NOT NULL DEFAULT 0
+  not_for_shows INTEGER NOT NULL DEFAULT 0,
+  -- Free-text, for your own reference (care instructions, a supplier quirk, whatever) —
+  -- never shown on the Sell page, same visibility as cost/materials.
+  notes TEXT
 );
 
 -- A single item can belong to several categories (e.g. both "Jewelry" and "Military") —
@@ -253,6 +256,10 @@ CREATE TABLE IF NOT EXISTS settings (
 -- Sell page ticket; this table only tracks the request itself.
 CREATE TABLE IF NOT EXISTS custom_orders (
   id TEXT PRIMARY KEY,
+  -- Deprecated — a single free-text item/description, from before an order could hold
+  -- several actual catalog items (see custom_order_items below). Left in place, unwritten by
+  -- new orders, so an order saved before that change still shows something if it has no
+  -- items of its own.
   item_name TEXT NOT NULL DEFAULT '',
   customer_name TEXT NOT NULL DEFAULT '',
   customer_contact TEXT,
@@ -270,8 +277,29 @@ CREATE TABLE IF NOT EXISTS custom_orders (
   shipping_address TEXT,
   shipping_cost REAL,
   tracking_number TEXT,
+  -- Tracked as data on the order itself, nothing more — ringing up the actual sale (and
+  -- having it count in Reports' revenue/tax/profit) still happens separately on the Sell
+  -- page, same as before this column existed. Order total (items + shipping) minus this is
+  -- the balance due, computed on the fly, never stored.
+  amount_paid REAL,
   test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_custom_orders_status ON custom_orders(status);
+
+-- What's actually in a custom order — one row per line, each optionally tied to a catalog
+-- item. name/price are snapshotted at the moment a line is added/saved (same reasoning as a
+-- sale's line items: a later price change or deletion of the catalog item should never
+-- silently rewrite an order that already references it). item_id is set NULL rather than the
+-- row deleted when its catalog item is removed, so the line survives with its snapshot intact.
+CREATE TABLE IF NOT EXISTS custom_order_items (
+  id TEXT PRIMARY KEY,
+  order_id TEXT NOT NULL REFERENCES custom_orders(id),
+  item_id TEXT REFERENCES items(id),
+  item_name TEXT NOT NULL,
+  price REAL NOT NULL DEFAULT 0,
+  qty REAL NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_custom_order_items_order ON custom_order_items(order_id);

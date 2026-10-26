@@ -45,7 +45,10 @@ Working end to end, tested:
   per-event item selection.
 - Line discounts (% or $, admin/manager/lead only), tax rate presets by state, and an
   item-number lookup on the Sell page that doubles as a barcode-scanner input.
-- A Custom Orders tab for tracking made-to-order/custom pieces from request to pickup.
+- A Custom Orders tab for tracking made-to-order/custom pieces from request to pickup, with
+  its own catalog-linked items, totals/payment tracking, and printable packing list and
+  purchase order.
+- A free-text notes field on items, for your own reference — never shown on the Sell page.
 - Test mode — a full, independent sandbox (items, materials, events, sales, and custom
   orders each have their own test-side copy) for practicing or training without touching
   real data.
@@ -254,12 +257,25 @@ a single per-state number could cover, so this is only ever what you've entered 
 ## Custom Orders
 
 A separate tab (admin/manager/lead) for tracking made-to-order or custom pieces from request
-to pickup — item/description, customer name and contact, due date, status, and notes. It's
-deliberately separate from the item catalog: most custom orders are one-offs that never get
-added as a catalog item at all, and the item/description here is always free text, never a
-link to one, so a later catalog edit or deletion can never orphan or silently change an order
-referencing it. Ringing up the actual sale when it's picked up still happens on the Sell page
-as usual — this tab only tracks the request itself.
+to pickup — customer name and contact, due date, status, notes, and the items actually in the
+order. It's deliberately separate from the regular Sell-page flow: an order is set up and
+tracked here, the way you'd work through it in the shop, and ringing up the actual sale when
+it's picked up still happens as its own step on the Sell page as usual.
+
+An order's items are picked from your catalog — picking one fills in its current price, which
+you can still override just for that order (a custom order doesn't always charge catalog
+price). Each line is a snapshot: a later price change, or even deleting the catalog item,
+never rewrites or orphans a line that already references it. Like an event's item picker, the
+items section only becomes usable once the order has been saved once (fill in at least a
+customer name first); saving keeps the form open afterward so you're not stuck re-opening it.
+The order totals its lines, adds shipping if it's a shipping order, and shows amount paid and
+balance due — tracked as data on the order itself, not a real transaction; it still doesn't
+total or process payment, same as before this existed.
+
+From an order with items, "Print packing list" gives a plain qty list of what's in it (reusing
+the same printable format as an event's packing list), and "Print purchase order" gives an
+itemized, customer-facing summary — item, quantity, price, line total, shipping, and the
+running total/paid/balance — to hand over or send with the order.
 
 An order defaults to in-person pickup, with a status of New → In progress → Ready for pickup
 → Picked up (changeable inline from the list). Checking "This order ships" instead brings up
@@ -268,7 +284,7 @@ it's gone out) — the same statuses relabel themselves to Ready to ship / Shipp
 order, so the queue reads correctly either way. A shipping order with a charge set gets an
 "Add shipping to ticket" button in the list, which switches to the Sell page and drops that
 charge onto the current ticket as its own custom line, instead of retyping the amount there
-by hand — this tab still never totals or processes payment itself, it just saves that one step.
+by hand.
 
 ## Reports
 

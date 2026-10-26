@@ -60,19 +60,12 @@ router.post('/copy-to-test', (req, res) => {
     // events.id).
     db.prepare('DELETE FROM event_charity_rules WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
     db.prepare('DELETE FROM event_items WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
+    db.prepare('DELETE FROM custom_order_items WHERE order_id IN (SELECT id FROM custom_orders WHERE test = 1)').run();
     db.prepare('DELETE FROM sales WHERE test = 1').run();
     db.prepare('DELETE FROM events WHERE test = 1').run();
     db.prepare('DELETE FROM items WHERE test = 1').run();
     db.prepare('DELETE FROM materials WHERE test = 1').run();
     db.prepare('DELETE FROM custom_orders WHERE test = 1').run();
-
-    // No id remapping needed — item_name is free text, not a foreign key to items(id).
-    for (const o of db.prepare('SELECT * FROM custom_orders WHERE test = 0').all()) {
-      db.prepare(`
-        INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, fulfillment, shipping_address, shipping_cost, tracking_number, test, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(uid(), o.item_name, o.customer_name, o.customer_contact, o.due_date, o.status, o.notes, o.fulfillment, o.shipping_address, o.shipping_cost, o.tracking_number, o.created_at, o.updated_at);
-    }
 
     // source_id isn't remapped — `sources` (the vendor tag list) isn't split by test/main,
     // it's shared, so the copy just keeps pointing at the same row the original did.
@@ -151,6 +144,22 @@ router.post('/copy-to-test', (req, res) => {
         profit: s.profit, charityDue: s.charity_due, userId: s.user_id, userName: s.user_name, createdAt: s.created_at,
       });
     }
+
+    // Copied last — a line's item_id needs itemIdMap, built above.
+    for (const o of db.prepare('SELECT * FROM custom_orders WHERE test = 0').all()) {
+      const newOrderId = uid();
+      db.prepare(`
+        INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, fulfillment, shipping_address, shipping_cost, tracking_number, amount_paid, test, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(newOrderId, o.item_name, o.customer_name, o.customer_contact, o.due_date, o.status, o.notes, o.fulfillment, o.shipping_address, o.shipping_cost, o.tracking_number, o.amount_paid, o.created_at, o.updated_at);
+      for (const li of db.prepare('SELECT * FROM custom_order_items WHERE order_id = ?').all(o.id)) {
+        const newItemId = li.item_id && itemIdMap.has(li.item_id) ? itemIdMap.get(li.item_id) : null;
+        db.prepare(`
+          INSERT INTO custom_order_items (id, order_id, item_id, item_name, price, qty, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(uid(), newOrderId, newItemId, li.item_name, li.price, li.qty, li.created_at);
+      }
+    }
   });
   tx();
   res.json({ ok: true });
@@ -166,6 +175,7 @@ router.post('/purge', (req, res) => {
     db.prepare('DELETE FROM event_charity_rules').run();
     db.prepare('DELETE FROM event_items').run();
     db.prepare('DELETE FROM item_categories').run();
+    db.prepare('DELETE FROM custom_order_items').run();
     db.prepare('DELETE FROM sales').run();
     db.prepare('DELETE FROM events').run();
     db.prepare('DELETE FROM items').run();

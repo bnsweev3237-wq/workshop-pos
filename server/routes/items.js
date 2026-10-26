@@ -33,7 +33,8 @@ const toFullItem = (r, categories) => ({
   id: r.id, name: r.name, itemNo: r.item_no, itemType: r.item_type, categories: categories || [], materials: JSON.parse(r.materials_json),
   costMode: r.cost_mode, minutes: r.minutes, rate: r.rate, overhead: r.overhead,
   mode: r.mode, pct: r.pct, round: r.round, override: r.override,
-  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, createdAt: r.created_at, notForShows: !!r.not_for_shows, test: !!r.test,
+  stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, createdAt: r.created_at, notForShows: !!r.not_for_shows,
+  notes: r.notes || '', test: !!r.test,
 });
 
 // Items are split into two fully independent catalogs by `test` — see schema.sql. Every
@@ -86,6 +87,7 @@ router.post('/', requireManageItems, (req, res) => {
     saved_at: Date.now(),
     created_at: Date.now(),
     not_for_shows: b.notForShows ? 1 : 0,
+    notes: String(b.notes || '').trim() || null,
     test: b.test ? 1 : 0,
   };
   // Categories are a flat array of strings from the client — deduped, trimmed, empties
@@ -94,11 +96,11 @@ router.post('/', requireManageItems, (req, res) => {
   const categories = [...new Set((Array.isArray(b.categories) ? b.categories : []).map((c) => String(c).trim()).filter(Boolean))];
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, created_at, not_for_shows, test)
-      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @created_at, @not_for_shows, @test)
+      INSERT INTO items (id, name, item_no, item_type, materials_json, cost_mode, minutes, rate, overhead, mode, pct, round, override, stock, low, price, cost, saved_at, created_at, not_for_shows, notes, test)
+      VALUES (@id, @name, @item_no, @item_type, @materials_json, @cost_mode, @minutes, @rate, @overhead, @mode, @pct, @round, @override, @stock, @low, @price, @cost, @saved_at, @created_at, @not_for_shows, @notes, @test)
       ON CONFLICT(id) DO UPDATE SET name=@name, item_type=@item_type, materials_json=@materials_json, cost_mode=@cost_mode, minutes=@minutes,
         rate=@rate, overhead=@overhead, mode=@mode, pct=@pct, round=@round, override=@override, stock=@stock, low=@low,
-        price=@price, cost=@cost, saved_at=@saved_at, not_for_shows=@not_for_shows, test=@test
+        price=@price, cost=@cost, saved_at=@saved_at, not_for_shows=@not_for_shows, notes=@notes, test=@test
     `).run(row);
     db.prepare('DELETE FROM item_categories WHERE item_id = ?').run(row.id);
     const insertCat = db.prepare('INSERT OR IGNORE INTO item_categories (item_id, category) VALUES (?, ?)');
@@ -110,11 +112,14 @@ router.post('/', requireManageItems, (req, res) => {
 
 // Clears item_categories and event_items for this item first — both reference items(id) with
 // foreign keys enforced, so deleting an item that's still categorized or picked for an
-// event's "selected items" would otherwise fail outright.
+// event's "selected items" would otherwise fail outright. custom_order_items also references
+// items(id), but a custom order line keeps its own name/price snapshot, so that line is
+// detached (item_id set NULL) rather than deleted along with the item.
 router.delete('/:id', requireManageItems, (req, res) => {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM item_categories WHERE item_id = ?').run(req.params.id);
     db.prepare('DELETE FROM event_items WHERE item_id = ?').run(req.params.id);
+    db.prepare('UPDATE custom_order_items SET item_id = NULL WHERE item_id = ?').run(req.params.id);
     db.prepare('DELETE FROM items WHERE id = ?').run(req.params.id);
   });
   tx();

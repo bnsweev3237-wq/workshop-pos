@@ -79,6 +79,8 @@ ensureColumn('custom_orders', 'fulfillment', "TEXT NOT NULL DEFAULT 'pickup'");
 ensureColumn('custom_orders', 'shipping_address', 'TEXT');
 ensureColumn('custom_orders', 'shipping_cost', 'REAL');
 ensureColumn('custom_orders', 'tracking_number', 'TEXT');
+ensureColumn('custom_orders', 'amount_paid', 'REAL');
+ensureColumn('items', 'notes', 'TEXT');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before

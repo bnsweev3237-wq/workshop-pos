@@ -347,6 +347,7 @@ function readForm() {
     name: $('itemName').value.trim(),
     categories: [...new Set($('itemCategory').value.split(',').map(c => c.trim()).filter(Boolean))],
     notForShows: $('itemNotForShows').checked,
+    notes: $('itemNotes').value.trim(),
     stock: $('stock').value, low: $('itemLow').value,
     materials: [...$('mats').children].map(tr => {
       const [n, p, y, u] = tr.querySelectorAll('input');
@@ -409,6 +410,7 @@ function restore(s) {
   $('itemName').value = s.name;
   $('itemCategory').value = (s.categories || []).join(', ');
   $('itemNotForShows').checked = !!s.notForShows;
+  $('itemNotes').value = s.notes || '';
   $('itemNoHint').hidden = !s.itemNo;
   $('itemNoHint').textContent = s.itemNo ? `Item #${s.itemNo}` : '';
   $('stock').value = s.stock ?? 0; $('itemLow').value = s.low ?? '';
@@ -655,9 +657,10 @@ function renderItems() {
     const typeLabel = it.itemType === 'resale' ? 'Resale item' : `${it.materials.length} material${it.materials.length === 1 ? '' : 's'}`;
     const catBadge = (it.categories || []).map(c => ` · <span class="cat-badge">${esc(c)}</span>`).join('');
     const notForShowsBadge = it.notForShows ? ' · <span class="cat-badge warn-badge">Custom — not for shows</span>' : '';
+    const notesBadge = it.notes ? ` · <span class="cat-badge" title="${esc(it.notes)}">📝 note</span>` : '';
     const tr = document.createElement('tr'); tr.dataset.id = it.id;
     tr.innerHTML = `
-      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}${notForShowsBadge}</div></td>
+      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}${notForShowsBadge}${notesBadge}</div></td>
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
@@ -732,7 +735,19 @@ const ORDER_STATUS_LABEL = {
 let customOrders = [];
 let ordersSearch = '', ordersStatusFilter = '';
 let editingOrderId = null;
+// Staged locally while the form is open, same as the event item picker's evSelectedItems —
+// only persisted (via /api/custom-orders/:id/items) when "Save order" is clicked.
+let orderLineItems = [];
+// A short label for the order when there's no one obvious name for it — the orders list,
+// the ticket line "Add shipping to ticket" creates, and both printed documents' titles.
+function orderItemsSummary(o) {
+  if (o.items && o.items.length) return o.items.map((li) => `${li.itemName}${li.qty > 1 ? ` ×${li.qty}` : ''}`).join(', ');
+  return o.itemName || '(no items yet)';
+}
 async function loadCustomOrders() {
+  // Needed for the item-add picker below — loaded here too, not just on Items tab visits,
+  // since a lead account can reach Custom Orders but never the Items tab at all.
+  await loadItems().catch(() => {});
   customOrders = await api('GET', `/api/custom-orders?test=${testMode ? 1 : 0}`);
   $('itemNameList').innerHTML = [...new Set(items.map(it => it.name).filter(Boolean))].map(n => `<option value="${esc(n)}">`).join('');
   renderCustomOrders();
@@ -743,7 +758,7 @@ function renderCustomOrders() {
   const visible = customOrders.filter((o) => {
     if (ordersStatusFilter && o.status !== ordersStatusFilter) return false;
     if (!q) return true;
-    return o.itemName.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q);
+    return orderItemsSummary(o).toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q);
   });
   for (const o of visible) {
     const tr = document.createElement('tr'); tr.dataset.id = o.id;
@@ -757,7 +772,7 @@ function renderCustomOrders() {
         ${o.fulfillment === 'ship' && num(o.shippingCost) > 0 ? '<button class="btn sm shipToTicket">Add shipping to ticket</button>' : ''}
         <button class="btn sm edit">Edit</button><button class="icon-btn del" title="Delete">×</button>
       </td>`;
-    tr.querySelector('.iname').textContent = o.itemName;
+    tr.querySelector('.iname').textContent = orderItemsSummary(o);
     if (o.notes) tr.querySelector('.itemMeta').textContent = o.notes;
     tr.querySelector('.custName').textContent = o.customerName || '—';
     tr.querySelector('.custMeta').textContent = o.customerContact || '';
@@ -782,7 +797,7 @@ function renderCustomOrders() {
     if (shipBtn) shipBtn.onclick = () => addShippingToTicket(o);
     tr.querySelector('.edit').onclick = () => fillOrderForm(o);
     tr.querySelector('.del').onclick = async () => {
-      if (!await askConfirm(`Delete the custom order for “${o.itemName}”?`, 'Delete order')) return;
+      if (!await askConfirm(`Delete this custom order for “${o.customerName || 'this customer'}”?`, 'Delete order')) return;
       await api('DELETE', '/api/custom-orders/' + o.id);
       toast('Order deleted');
       await loadCustomOrders();
@@ -795,39 +810,97 @@ function renderCustomOrders() {
 }
 function fillOrderForm(o) {
   editingOrderId = o ? o.id : null;
-  $('orderFormTitle').textContent = o ? `Editing order — ${o.itemName}` : 'New custom order';
-  $('orderItemName').value = o?.itemName || '';
+  $('orderFormTitle').textContent = o ? `Editing order — ${orderItemsSummary(o)}` : 'New custom order';
   $('orderDue').value = o?.dueDate || '';
   $('orderCustomerName').value = o?.customerName || '';
   $('orderCustomerContact').value = o?.customerContact || '';
   $('orderNotes').value = o?.notes || '';
+  $('orderAmountPaid').value = o?.amountPaid ?? '';
   $('orderShips').checked = o?.fulfillment === 'ship';
   $('orderShipFields').hidden = o?.fulfillment !== 'ship';
   $('orderShipAddress').value = o?.shippingAddress || '';
   $('orderShipCost').value = o?.shippingCost ?? '';
   $('orderTracking').value = o?.trackingNumber || '';
   $('orderCancel').hidden = !o;
-  if (o) $('orderItemName').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  // The item picker only becomes usable once the order has an id, same reason as an event's
+  // item picker and charity rules — there's nowhere to attach a line to yet otherwise.
+  $('orderItemsSection').hidden = !o;
+  orderLineItems = (o?.items || []).map((li) => ({ itemId: li.itemId, itemName: li.itemName, price: li.price, qty: li.qty }));
+  renderOrderItemLines();
+  if (o) $('orderCustomerName').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
-$('orderShips').addEventListener('change', () => { $('orderShipFields').hidden = !$('orderShips').checked; });
+function orderTotals() {
+  const subtotal = orderLineItems.reduce((s, l) => s + num(l.price) * num(l.qty), 0);
+  const shipping = $('orderShips').checked ? num($('orderShipCost').value) : 0;
+  const total = subtotal + shipping;
+  const paid = num($('orderAmountPaid').value);
+  return { subtotal, shipping, total, paid, balance: total - paid };
+}
+function renderOrderItemLines() {
+  const box = $('orderItemLines'); box.innerHTML = '';
+  for (const l of orderLineItems) {
+    const row = document.createElement('div'); row.className = 'tline';
+    row.innerHTML = `<div class="nm"></div>
+      <input type="number" class="in-tiny lineQty" min="1" step="1" title="Quantity">
+      <input type="number" class="in-tiny linePrice" min="0" step="0.01" title="Price each">
+      <div class="amt"></div><button class="icon-btn del" title="Remove">×</button>`;
+    row.querySelector('.nm').textContent = l.itemName;
+    const qtyIn = row.querySelector('.lineQty'), priceIn = row.querySelector('.linePrice');
+    qtyIn.value = l.qty; priceIn.value = l.price;
+    const updateAmt = () => { row.querySelector('.amt').textContent = money(num(qtyIn.value) * num(priceIn.value)); };
+    updateAmt();
+    qtyIn.addEventListener('input', () => { l.qty = Math.max(0, num(qtyIn.value)) || 1; updateAmt(); renderOrderTotalsDisplay(); });
+    priceIn.addEventListener('input', () => { l.price = Math.max(0, num(priceIn.value)); updateAmt(); renderOrderTotalsDisplay(); });
+    row.querySelector('.del').onclick = () => { orderLineItems = orderLineItems.filter((x) => x !== l); renderOrderItemLines(); };
+    box.appendChild(row);
+  }
+  $('orderItemLinesEmpty').hidden = orderLineItems.length > 0;
+  renderOrderTotalsDisplay();
+}
+function renderOrderTotalsDisplay() {
+  const t = orderTotals();
+  $('orderTotals').innerHTML = `Subtotal ${money(t.subtotal)}` +
+    ($('orderShips').checked ? ` + shipping ${money(t.shipping)}` : '') +
+    ` = total ${money(t.total)} · paid ${money(t.paid)} · <span class="${t.balance > 0 ? 'neg' : ''}">balance due ${money(t.balance)}</span>`;
+}
+$('orderAddItemBtn').onclick = () => {
+  const name = $('orderAddItemName').value.trim();
+  const match = items.find((it) => it.name === name);
+  if (!match) { $('orderAddItemName').focus(); toast('Pick an item from the list first'); return; }
+  const qty = Math.max(1, Math.round(num($('orderAddItemQty').value)) || 1);
+  const priceInput = $('orderAddItemPrice').value;
+  const price = priceInput === '' ? num(match.price) : Math.max(0, num(priceInput));
+  orderLineItems.push({ itemId: match.id, itemName: match.name, price, qty });
+  renderOrderItemLines();
+  $('orderAddItemName').value = ''; $('orderAddItemQty').value = '1'; $('orderAddItemPrice').value = ''; $('orderAddItemName').focus();
+};
+$('orderShips').addEventListener('change', () => { $('orderShipFields').hidden = !$('orderShips').checked; renderOrderTotalsDisplay(); });
+$('orderShipCost').addEventListener('input', renderOrderTotalsDisplay);
+$('orderAmountPaid').addEventListener('input', renderOrderTotalsDisplay);
 $('orderCancel').onclick = () => fillOrderForm(null);
 $('orderSave').onclick = async () => {
-  const itemName = $('orderItemName').value.trim();
-  if (!itemName) { $('orderItemName').focus(); toast('Give the order an item or description first'); return; }
+  const customerName = $('orderCustomerName').value.trim();
+  if (!customerName) { $('orderCustomerName').focus(); toast('Give the order a customer name first'); return; }
   const existing = editingOrderId ? customOrders.find((o) => o.id === editingOrderId) : null;
+  let saved;
   try {
-    await api('POST', '/api/custom-orders', {
-      id: existing?.id, itemName, dueDate: $('orderDue').value, customerName: $('orderCustomerName').value.trim(),
+    saved = await api('POST', '/api/custom-orders', {
+      id: existing?.id, dueDate: $('orderDue').value, customerName,
       customerContact: $('orderCustomerContact').value.trim(), notes: $('orderNotes').value.trim(),
       fulfillment: $('orderShips').checked ? 'ship' : 'pickup',
       shippingAddress: $('orderShipAddress').value.trim(), shippingCost: $('orderShipCost').value,
-      trackingNumber: $('orderTracking').value.trim(),
+      trackingNumber: $('orderTracking').value.trim(), amountPaid: $('orderAmountPaid').value,
       status: existing?.status, test: testMode,
     });
-    toast(existing ? 'Order updated' : 'Order saved');
-    fillOrderForm(null);
-    await loadCustomOrders();
-  } catch (e) { toast(e.message || 'Could not save order'); }
+  } catch (e) { toast(e.message || 'Could not save order'); return; }
+  if (existing) {
+    await api('POST', `/api/custom-orders/${saved.id}/items`, { items: orderLineItems.map((l) => ({ itemId: l.itemId, qty: l.qty, price: l.price })) });
+  }
+  toast(existing ? 'Order updated' : 'Order saved');
+  await loadCustomOrders();
+  // Keep the form open, pointed at the saved order — a brand-new order's item picker only
+  // becomes usable once it has an id, same reasoning as the event form.
+  fillOrderForm(customOrders.find((o) => o.id === saved.id) || saved);
 };
 $('ordersSearch').addEventListener('input', () => { ordersSearch = $('ordersSearch').value; renderCustomOrders(); });
 $('ordersStatusFilter').addEventListener('change', () => { ordersStatusFilter = $('ordersStatusFilter').value; renderCustomOrders(); });
@@ -839,13 +912,43 @@ $('ordersStatusFilter').addEventListener('change', () => { ordersStatusFilter = 
 function addShippingToTicket(o) {
   showTab('pos');
   ticket.push({
-    id: cid(), itemId: null, name: `Shipping & handling — ${o.itemName}`, price: num(o.shippingCost), qty: 1,
+    id: cid(), itemId: null, name: `Shipping & handling — ${orderItemsSummary(o)}`, price: num(o.shippingCost), qty: 1,
     taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null,
   });
   renderTicket();
   setMobileCartOpen(true);
   toast(`Added shipping (${money(num(o.shippingCost))}) to the ticket`);
 }
+// What to pack for this order — the same "qty × name" list as an event's packing list,
+// reusing the same printable card. Uses the currently staged line items, not just what's
+// saved, same reasoning as the event version.
+$('orderPrintPacking').onclick = () => {
+  if (!orderLineItems.length) { toast('No items in this order yet'); return; }
+  const existing = editingOrderId ? customOrders.find((o) => o.id === editingOrderId) : null;
+  printFromCard('printing-packing-list', 'packingListCard', () => {
+    $('packingListTitle').textContent = `Packing list — ${existing?.customerName || $('orderCustomerName').value.trim() || 'Custom order'}`;
+    $('packingListSub').textContent = $('orderDue').value ? `Due ${new Date($('orderDue').value + 'T00:00:00').toLocaleDateString()}` : '';
+    $('packingListQtyHeader').textContent = 'Qty';
+    $('packingListRows').innerHTML = [...orderLineItems].sort((a, b) => a.itemName.localeCompare(b.itemName))
+      .map((l) => `<tr><td>${esc(l.itemName)}</td><td class="r">${num(l.qty)}</td></tr>`).join('');
+  });
+};
+// A customer-facing itemized order summary: what was ordered, at what price, plus shipping
+// and the running total/balance — printable to hand or send with the order.
+$('orderPrintPO').onclick = () => {
+  if (!orderLineItems.length) { toast('No items in this order yet'); return; }
+  const existing = editingOrderId ? customOrders.find((o) => o.id === editingOrderId) : null;
+  const t = orderTotals();
+  printFromCard('printing-purchase-order', 'purchaseOrderCard', () => {
+    $('poTitle').textContent = `Purchase order — ${existing?.customerName || $('orderCustomerName').value.trim() || 'Custom order'}`;
+    const ref = existing ? `Order ref: ${existing.id.slice(0, 8).toUpperCase()} · ` : '';
+    $('poSub').textContent = `${ref}${new Date().toLocaleDateString()}${$('orderCustomerContact').value.trim() ? ' · ' + $('orderCustomerContact').value.trim() : ''}`;
+    $('poRows').innerHTML = orderLineItems.map((l) => `<tr><td>${esc(l.itemName)}</td><td class="r">${num(l.qty)}</td><td class="r">${money(num(l.price))}</td><td class="r">${money(num(l.qty) * num(l.price))}</td></tr>`).join('');
+    $('poTotals').innerHTML = `<div>Subtotal: ${money(t.subtotal)}</div>` +
+      ($('orderShips').checked ? `<div>Shipping &amp; handling: ${money(t.shipping)}</div>` : '') +
+      `<div><b>Total: ${money(t.total)}</b></div><div>Paid: ${money(t.paid)}</div><div><b>Balance due: ${money(t.balance)}</b></div>`;
+  });
+};
 
 // ---------- Offline mode (Sell page only — see README) ----------
 // A checked-out sale that failed to reach the server because the connection is actually
