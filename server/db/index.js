@@ -81,6 +81,10 @@ ensureColumn('custom_orders', 'shipping_cost', 'REAL');
 ensureColumn('custom_orders', 'tracking_number', 'TEXT');
 ensureColumn('custom_orders', 'amount_paid', 'REAL');
 ensureColumn('items', 'notes', 'TEXT');
+ensureColumn('sales', 'card_processor', 'TEXT');
+ensureColumn('sales', 'card_fee', 'REAL NOT NULL DEFAULT 0');
+ensureColumn('voided_sales', 'card_processor', 'TEXT');
+ensureColumn('voided_sales', 'card_fee', 'REAL NOT NULL DEFAULT 0');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before
@@ -96,6 +100,25 @@ if (db.prepare('SELECT COUNT(*) AS n FROM sources').get().n === 0) {
   const insertSource = db.prepare('INSERT INTO sources (id, name, created_at) VALUES (?, ?, ?)');
   const now = Date.now();
   for (const name of DEFAULT_SOURCES) insertSource.run(uid(), name, now);
+}
+
+// Same one-time seeding as sources above, for card_processors — common processors with
+// approximate in-person transaction fees, so the list (and the "true profit minus fees" math
+// in Reports) is useful immediately instead of empty. These are starting points, not quotes:
+// actual rates vary by account and change over time, so Settings → Card processors says to
+// check them against your own processor agreement. After this, ordinary admin-editable data.
+const DEFAULT_CARD_PROCESSORS = [
+  { name: 'Square', feePct: 2.6, feeFixed: 0.10 },
+  { name: 'Venmo', feePct: 1.9, feeFixed: 0.10 },
+  { name: 'PayPal', feePct: 2.99, feeFixed: 0 },
+  { name: 'Cash App', feePct: 2.75, feeFixed: 0 },
+  { name: 'Stripe', feePct: 2.7, feeFixed: 0.05 },
+  { name: 'Clover', feePct: 2.6, feeFixed: 0.10 },
+];
+if (db.prepare('SELECT COUNT(*) AS n FROM card_processors').get().n === 0) {
+  const insertProcessor = db.prepare('INSERT INTO card_processors (id, name, fee_pct, fee_fixed, created_at) VALUES (?, ?, ?, ?, ?)');
+  const now = Date.now();
+  for (const p of DEFAULT_CARD_PROCESSORS) insertProcessor.run(uid(), p.name, p.feePct, p.feeFixed, now);
 }
 
 // One-time per-row migration: materials tagged under the old fixed source slug (temu/

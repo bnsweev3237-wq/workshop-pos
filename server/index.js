@@ -70,6 +70,7 @@ function createApp() {
   app.use('/api/materials', require('./routes/materials'));
   app.use('/api/sources', require('./routes/sources'));
   app.use('/api/tax-presets', require('./routes/taxPresets'));
+  app.use('/api/card-processors', require('./routes/cardProcessors'));
   app.use('/api/custom-orders', require('./routes/customOrders'));
   app.use('/api/items', require('./routes/items'));
   app.use('/api/events', require('./routes/events'));

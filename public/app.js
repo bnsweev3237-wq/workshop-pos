@@ -198,7 +198,7 @@ async function logout() {
 // every one of these endpoints now requires being signed in.
 let pollTimer = null;
 async function afterLogin() {
-  await Promise.all([loadPosItems(), loadSales(), loadEvents()]);
+  await Promise.all([loadPosItems(), loadSales(), loadEvents(), loadCardProcessors()]);
   trySyncQueuedSales(); // picks up anything still queued from a prior offline session, if we're online now
   if (!pollTimer) {
     pollTimer = setInterval(() => { if (!document.hidden && me) Promise.all([loadPosItems(), loadSales(), loadEvents()]).catch(() => {}); }, 20000);
@@ -217,7 +217,7 @@ function showTab(t) {
   if (t === 'items') loadItems();
   if (t === 'orders') loadCustomOrders();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); fillBrandingForm(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); fillBrandingForm(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -1057,6 +1057,16 @@ async function trySyncQueuedSales() {
 let ticket = [];
 let tender = 'cash';
 let posSearch = '';
+let cardProcessors = [];
+async function loadCardProcessors() {
+  cardProcessors = await api('GET', '/api/card-processors');
+  const sel = $('cardProcessor');
+  const prev = sel.value;
+  sel.innerHTML = '<option value="">Other / unlisted (no fee)</option>' +
+    cardProcessors.map(p => `<option value="${p.id}">${esc(p.name)} (${p.feePct}%${p.feeFixed > 0 ? ` + ${money(p.feeFixed)}` : ''})</option>`).join('');
+  if (cardProcessors.some(p => p.id === prev)) sel.value = prev;
+  renderCardProcessorRows();
+}
 
 async function loadPosItems() {
   const key = `posItems:${testMode ? 1 : 0}`;
@@ -1230,6 +1240,7 @@ function setTender(t) {
   tender = t;
   document.querySelectorAll('#tenderSeg button').forEach(b => b.classList.toggle('on', b.dataset.tender === t));
   $('cashRow').hidden = t !== 'cash';
+  $('cardProcessorRow').hidden = t === 'cash' || cardProcessors.length === 0;
   const def = defaultLineTaxRate(t);
   ticket.forEach(l => { if (!l.taxOverridden) l.taxRate = def; });
   renderTicket();
@@ -1275,6 +1286,7 @@ $('checkout').onclick = async () => {
     eventId: ev?.id || null, test: testMode, taxIncluded: eventTaxIncluded(ev, tender),
     lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate), discountType: l.discountType || null, discountValue: l.discountValue || null })),
     tender, received,
+    cardProcessorId: tender !== 'cash' ? ($('cardProcessor').value || null) : null,
   };
   try {
     const sale = await api('POST', '/api/sales', payload);
@@ -1315,7 +1327,7 @@ function buildSaleReceipt(sale) {
     <div class="rline subtot"><span>Subtotal</span><span>${money(sale.subtotal)}</span></div>
     <div class="rline subtot"><span>Tax${included ? ' (included in price)' : ''}</span><span>${money(sale.tax)}</span></div>
     <div class="rline grand"><span>Total</span><span>${money(sale.total)}</span></div>
-    <div class="rline meta"><span>${sale.tender === 'cash' ? `Cash · received ${money(sale.received)} · change ${money(sale.change)}` : 'Card / Other'}</span></div>`;
+    <div class="rline meta"><span>${sale.tender === 'cash' ? `Cash · received ${money(sale.received)} · change ${money(sale.change)}` : (sale.cardProcessor ? `Card — ${esc(sale.cardProcessor)}` : 'Card / Other')}</span></div>`;
   const voidBtn = document.createElement('button'); voidBtn.className = 'sale-void'; voidBtn.textContent = sale.pendingSync ? 'Remove (unsynced)' : sale.test ? 'Void test sale' : 'Void sale';
   voidBtn.onclick = e => { e.stopPropagation(); voidSale(sale); };
   body.appendChild(voidBtn);
@@ -1833,6 +1845,7 @@ async function renderReports() {
   const profit = inRange.reduce((n, s) => n + num(s.profit), 0);
   const tax = inRange.reduce((n, s) => n + num(s.tax), 0);
   const charityDue = inRange.reduce((n, s) => n + num(s.charityDue), 0);
+  const cardFees = inRange.reduce((n, s) => n + num(s.cardFee), 0);
   const itemsSold = inRange.reduce((n, s) => n + s.lines.reduce((m, l) => m + num(l.qty), 0), 0);
   const avg = inRange.length ? revenue / inRange.length : 0;
   const tiles = [
@@ -1841,6 +1854,7 @@ async function renderReports() {
     { lbl: 'Items sold', val: itemsSold }, { lbl: 'Avg sale', val: money(avg) },
   ];
   if (charityDue > 0) tiles.push({ lbl: 'Owed to charity', val: money(charityDue) });
+  if (cardFees > 0) tiles.push({ lbl: 'Card processing fees', val: money(cardFees) });
   $('rptStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}"><div class="lbl">${t.lbl}</div><div class="val${t.neg ? ' neg' : ''}">${t.val}</div></div>`).join('');
   renderRptChart(inRange, start, end);
   renderRptTop(inRange);
@@ -2006,8 +2020,9 @@ function renderRptEvents() {
     const revenue = evSalesList.reduce((n, s) => n + num(s.total), 0);
     const grossProfit = evSalesList.reduce((n, s) => n + num(s.profit), 0);
     const charityDue = evSalesList.reduce((n, s) => n + num(s.charityDue), 0);
+    const cardFees = evSalesList.reduce((n, s) => n + num(s.cardFee), 0);
     const cost = num(ev.cost);
-    const net = grossProfit - cost;
+    const net = grossProfit - cost - cardFees;
     const row = document.createElement('div'); row.className = 'rpt-ev-row';
     row.innerHTML = `
       <button class="rpt-ev-head" type="button">
@@ -2028,10 +2043,11 @@ function renderRptEvents() {
         <div><span>Revenue</span><b>${money(revenue)}</b></div>
         <div><span>Gross profit</span><b>${money(grossProfit)}</b></div>
         <div><span>Booth / event cost</span><b>−${money(cost)}</b></div>
+        ${cardFees > 0 ? `<div><span>Card processing fees</span><b style="color:var(--danger)">−${money(cardFees)}</b></div>` : ''}
         <div><span>True profit</span><b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>
         ${charityDue > 0 ? `<div><span>Owed to charity</span><b style="color:var(--warn)">${money(charityDue)}</b></div>` : ''}
       </div>
-      <div class="hint">True profit is this event's sales profit minus its booth/space cost — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>
+      <div class="hint">True profit is this event's sales profit minus its booth/space cost${cardFees > 0 ? ' and card processing fees' : ''} — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>
       ${charityRows.length ? `<div style="margin-top:12px"><h3 style="margin:0 0 6px;font-size:13px">Charity wrap-up</h3>${charityRows.map(r => `<div class="ev-charity-row"><span class="ev-charity-name">${esc(r.label)}</span><span class="ev-charity-pct">${money(r.amt)}</span></div>`).join('')}</div>` : ''}`;
     const itemRows = buildItemBreakdown(evSalesList);
     if (itemRows.length) {
@@ -2086,7 +2102,31 @@ function renderRptTender(inRange, revenue) {
   const cash = inRange.filter(s => s.tender === 'cash').reduce((n, s) => n + num(s.total), 0);
   const other = revenue - cash;
   const pct = v => revenue > 0 ? Math.round(v / revenue * 100) + '%' : '—';
-  box.innerHTML = [['Cash', money(cash), pct(cash)], ['Card / Other', money(other), pct(other)]].map(([lbl, val, sub]) => `<div class="stat-tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub} of revenue</div></div>`).join('');
+  const tiles = [['Cash', money(cash), pct(cash)], ['Card / Other', money(other), pct(other)]];
+  box.innerHTML = tiles.map(([lbl, val, sub]) => `<div class="stat-tile"><div class="lbl">${lbl}</div><div class="val">${val}</div><div class="sub">${sub} of revenue</div></div>`).join('');
+
+  // Broken out by which processor actually took each card sale — "Unspecified" covers card
+  // sales rung up with no processor picked (either none were configured yet, or the cashier
+  // left it on "Other / unlisted"). Only shown once there's at least one card sale to report.
+  const cardSales = inRange.filter(s => s.tender !== 'cash');
+  const byProc = $('rptCardProcessors');
+  if (!byProc) return;
+  if (!cardSales.length) { byProc.innerHTML = ''; $('rptCardProcessorsCard').hidden = true; return; }
+  $('rptCardProcessorsCard').hidden = false;
+  const map = new Map();
+  for (const s of cardSales) {
+    const key = s.cardProcessor || 'Unspecified';
+    const entry = map.get(key) || { count: 0, vol: 0, fees: 0 };
+    entry.count += 1; entry.vol += num(s.total); entry.fees += num(s.cardFee);
+    map.set(key, entry);
+  }
+  const rows = [...map.entries()].sort((a, b) => b[1].vol - a[1].vol);
+  byProc.innerHTML = rows.map(([name, e]) => `
+    <div class="stat-tile">
+      <div class="lbl">${esc(name)}</div>
+      <div class="val">${money(e.vol)}</div>
+      <div class="sub">${e.count} sale${e.count === 1 ? '' : 's'}${e.fees > 0 ? ` · ${money(e.fees)} in fees` : ''}</div>
+    </div>`).join('');
 }
 
 // ---------- Inventory report — a point-in-time snapshot (stock on hand right now), not
@@ -2435,6 +2475,36 @@ $('newSourceAdd').onclick = async () => {
 // loadEventFormExtras), not just when Settings happens to have been visited, since a lead
 // account can manage events but can't reach Settings at all.
 let taxPresets = [];
+function renderCardProcessorRows() {
+  const tb = $('cardProcessorRows'); if (!tb) return;
+  tb.innerHTML = '';
+  for (const p of cardProcessors) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td></td><td class="num"></td><td class="num"></td><td class="acts"><button class="icon-btn del" title="Remove processor">×</button></td>`;
+    const [nameCell, pctCell, fixedCell] = tr.querySelectorAll('td');
+    nameCell.textContent = p.name;
+    pctCell.textContent = p.feePct + '%';
+    fixedCell.textContent = money(p.feeFixed);
+    tr.querySelector('.del').onclick = async () => {
+      if (!await askConfirm(`Remove “${p.name}” as a card processor? Past sales keep showing it; it just won't be offered for new ones.`, 'Remove processor')) return;
+      try { await api('DELETE', '/api/card-processors/' + p.id); toast(`Removed “${p.name}”`); await loadCardProcessors(); }
+      catch (e) { toast(e.message || 'Could not remove processor'); }
+    };
+    tb.appendChild(tr);
+  }
+  $('cardProcessorsEmpty').hidden = cardProcessors.length > 0;
+}
+$('newProcessorAdd').onclick = async () => {
+  const name = $('newProcessorName').value.trim();
+  if (!name) { $('newProcessorName').focus(); toast('Give the processor a name first'); return; }
+  try {
+    await api('POST', '/api/card-processors', { name, feePct: $('newProcessorPct').value, feeFixed: $('newProcessorFixed').value });
+    $('newProcessorName').value = ''; $('newProcessorPct').value = ''; $('newProcessorFixed').value = '';
+    toast(`Added “${name}”`);
+    await loadCardProcessors();
+  } catch (e) { toast(e.message || 'Could not add processor'); }
+};
+
 async function loadTaxPresets() { taxPresets = await api('GET', '/api/tax-presets'); renderTaxPresetRows(); }
 function renderTaxPresetRows() {
   const tb = $('taxPresetRows'); if (!tb) return;

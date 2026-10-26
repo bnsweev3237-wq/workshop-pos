@@ -125,6 +125,18 @@ CREATE TABLE IF NOT EXISTS tax_presets (
   created_at INTEGER NOT NULL
 );
 
+-- A shop's own card payment processors (Square, Venmo, etc.) and each one's transaction fee,
+-- so a sale tendered by card can snapshot which processor took it and what that cost — see
+-- sales.card_processor/card_fee below. Prepopulated once with common processors (server/db/
+-- index.js), same pattern as `sources`; after that it's ordinary admin-editable data.
+CREATE TABLE IF NOT EXISTS card_processors (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  fee_pct REAL NOT NULL DEFAULT 0,
+  fee_fixed REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',

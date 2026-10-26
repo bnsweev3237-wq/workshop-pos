@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.3.0',
+    date: '2026-10-26',
+    notes: [
+      'Card processors: Settings now has an editable list of your payment processors (prepopulated with Square, Venmo, PayPal, Cash App, Stripe, and Clover) with each one\'s transaction fee — a % and an optional fixed fee per sale.',
+      'Tendering a sale by card on the Sell page now asks which processor took it. The fee is calculated and recorded automatically; picking "Other / unlisted" (or just not setting up any processors) works exactly as before, with no fee tracked.',
+      'Reports now subtracts card processing fees from an event\'s "true profit", and breaks sales out by processor (volume, count, fees) in a new "By card processor" card.',
+    ],
+  },
+  {
     version: '1.2.1',
     date: '2026-10-26',
     notes: [

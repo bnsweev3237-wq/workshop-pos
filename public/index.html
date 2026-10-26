@@ -466,6 +466,10 @@
             <div><label for="received">Received ($)</label><input id="received" type="number" min="0" step="0.01" inputmode="decimal"></div>
             <div><label for="changeDue">Change due</label><input id="changeDue" readonly></div>
           </div>
+          <div id="cardProcessorRow" hidden style="margin-top:12px">
+            <label for="cardProcessor">Card processor</label>
+            <select id="cardProcessor"></select>
+          </div>
 
           <div class="btn-row">
             <button class="btn primary" id="checkout">Complete sale</button>
@@ -528,6 +532,10 @@
           <div class="card">
             <h2>Payment type</h2>
             <div class="stat-grid" id="rptTender"></div>
+          </div>
+          <div class="card" id="rptCardProcessorsCard" hidden>
+            <h2>By card processor</h2>
+            <div class="stat-grid" id="rptCardProcessors"></div>
           </div>
         </aside>
       </div>
@@ -708,6 +716,21 @@
       </div>
     </div>
 
+    <div class="card">
+      <h2>Card processors</h2>
+      <div class="help">Who you take card payments through, and each one's transaction fee — shown as a pick list on the Sell page when a sale is tendered by card, and subtracted from "true profit" in Reports. Prepopulated with common processors as a starting point; check the rate and fixed fee against your own processor agreement and adjust as needed.</div>
+      <table class="items-table">
+        <thead><tr><th>Processor</th><th class="r">Fee %</th><th class="r">Fixed fee</th><th></th></tr></thead>
+        <tbody id="cardProcessorRows"></tbody>
+      </table>
+      <div class="empty" id="cardProcessorsEmpty" hidden>No card processors yet — the Sell page just offers a plain "Card / Other" with no fee tracked.</div>
+      <div class="row r3" style="margin-top:12px;max-width:520px">
+        <div><label for="newProcessorName">Name</label><input id="newProcessorName" placeholder="e.g. Square"></div>
+        <div><label for="newProcessorPct">Fee %</label><input id="newProcessorPct" type="number" min="0" max="100" step="0.01" placeholder="0"></div>
+        <div><label for="newProcessorFixed">Fixed fee ($)</label><input id="newProcessorFixed" type="number" min="0" step="0.01" placeholder="0.00"></div>
+      </div>
+      <div class="btn-row"><button class="btn primary sm" id="newProcessorAdd">+ Add processor</button></div>
+    </div>
     <div class="card">
       <h2>Tax rate presets</h2>
       <div class="help">Your own saved tax rates by state — fill them in once here, then on an event's form, enter the state and click "Fill from preset" to apply them instead of retyping. A one-time fill, not a live link, so changing a preset later doesn't change events that already used it.</div>

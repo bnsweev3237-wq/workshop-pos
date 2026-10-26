@@ -53,12 +53,16 @@ const toPublicSale = (r) => ({
   id: r.id, eventId: r.event_id, test: !!r.test, taxIncluded: !!r.tax_included,
   lines: JSON.parse(r.lines_json).map(stripLineCharity), subtotal: r.subtotal, tax: r.tax, total: r.total,
   tender: r.tender, received: r.received, change: r.change, soldBy: r.user_name || null,
+  // Which processor took the card payment is receipt-level info, not a profit figure — shown
+  // to every role, same as tender itself. The fee it cost (card_fee) is not: that's profit
+  // data, only in toFullSale below.
+  cardProcessor: r.card_processor || null,
   clientSaleId: r.client_sale_id || null, createdAt: r.created_at,
 });
 const toFullSale = (r) => ({
   ...toPublicSale(r),
   lines: JSON.parse(r.lines_json), // unstripped — Reports' per-item charity breakdown needs these
-  profit: r.profit, charityDue: r.charity_due,
+  profit: r.profit, charityDue: r.charity_due, cardFee: r.card_fee,
 });
 
 // Any logged-in user: the Sell page's recent-sales list and receipts, and Reports' non-profit figures.
@@ -165,6 +169,20 @@ router.post('/', requireLogin, (req, res) => {
   const received = b.tender === 'cash' ? (Number(b.received) || 0) : total;
   const change = b.tender === 'cash' ? Math.max(0, received - total) : 0;
 
+  // The processor and fee rate are looked up server-side from b.cardProcessorId, never trusted
+  // from the client directly — same reasoning as everything else computed here. Charged on the
+  // full total (what actually hits the card), the way a real processor bills it. Picking no
+  // processor (or the id not resolving — e.g. deleted between page load and checkout) just
+  // means no fee is recorded, same as before this feature existed.
+  let cardProcessorName = null, cardFee = 0;
+  if (b.tender !== 'cash' && b.cardProcessorId) {
+    const proc = db.prepare('SELECT * FROM card_processors WHERE id = ?').get(b.cardProcessorId);
+    if (proc) {
+      cardProcessorName = proc.name;
+      cardFee = Math.round((total * (proc.fee_pct / 100) + proc.fee_fixed) * 100) / 100;
+    }
+  }
+
   const trackAttribution = getBool('trackSaleAttribution', true);
   // A synced offline sale carries the time it actually happened at the register, not when the
   // device finally reconnected — only trusted from the client for that specific path, never
@@ -175,6 +193,7 @@ router.post('/', requireLogin, (req, res) => {
     id: uid(), event_id: b.eventId || null, test: test ? 1 : 0, tax_included: included ? 1 : 0,
     lines_json: JSON.stringify(finalLines),
     subtotal, tax, total, tender: b.tender || 'cash', received, change, profit, charity_due: charityDue,
+    card_processor: cardProcessorName, card_fee: cardFee,
     user_id: trackAttribution ? req.user.id : null, user_name: trackAttribution ? req.user.name : null,
     client_sale_id: clientSaleId, created_at: createdAt,
   };
@@ -189,8 +208,8 @@ router.post('/', requireLogin, (req, res) => {
       if (raced) { saleId = raced.id; return; }
     }
     db.prepare(`
-      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, user_id, user_name, client_sale_id, created_at)
-      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @user_id, @user_name, @client_sale_id, @created_at)
+      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, card_processor, card_fee, user_id, user_name, client_sale_id, created_at)
+      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @card_processor, @card_fee, @user_id, @user_name, @client_sale_id, @created_at)
     `).run(row);
     for (const c of stockChanges) {
       db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);
@@ -210,11 +229,12 @@ router.delete('/:id', requireLogin, (req, res) => {
     // Snapshot the sale before it's gone — voiding has always deleted the row outright, which
     // otherwise leaves no trace a void ever happened (see Reports → Voids).
     db.prepare(`
-      INSERT INTO voided_sales (id, original_sale_id, event_id, test, lines_json, subtotal, tax, total, tender, profit, sold_by_user_id, sold_by_user_name, sale_created_at, voided_by_user_id, voided_by_user_name, voided_at)
-      VALUES (@id, @originalSaleId, @eventId, @test, @linesJson, @subtotal, @tax, @total, @tender, @profit, @soldByUserId, @soldByUserName, @saleCreatedAt, @voidedByUserId, @voidedByUserName, @voidedAt)
+      INSERT INTO voided_sales (id, original_sale_id, event_id, test, lines_json, subtotal, tax, total, tender, profit, card_processor, card_fee, sold_by_user_id, sold_by_user_name, sale_created_at, voided_by_user_id, voided_by_user_name, voided_at)
+      VALUES (@id, @originalSaleId, @eventId, @test, @linesJson, @subtotal, @tax, @total, @tender, @profit, @cardProcessor, @cardFee, @soldByUserId, @soldByUserName, @saleCreatedAt, @voidedByUserId, @voidedByUserName, @voidedAt)
     `).run({
       id: uid(), originalSaleId: sale.id, eventId: sale.event_id, test: sale.test, linesJson: sale.lines_json,
       subtotal: sale.subtotal, tax: sale.tax, total: sale.total, tender: sale.tender, profit: sale.profit,
+      cardProcessor: sale.card_processor, cardFee: sale.card_fee,
       soldByUserId: sale.user_id, soldByUserName: sale.user_name, saleCreatedAt: sale.created_at,
       voidedByUserId: req.user.id, voidedByUserName: req.user.name, voidedAt: Date.now(),
     });
@@ -237,7 +257,8 @@ router.get('/voids', requireReports, (req, res) => {
   res.json(rows.map((r) => ({
     id: r.id, originalSaleId: r.original_sale_id, eventId: r.event_id, test: !!r.test,
     lines: JSON.parse(r.lines_json), subtotal: r.subtotal, tax: r.tax, total: r.total, tender: r.tender,
-    profit: r.profit, soldBy: r.sold_by_user_name || null, saleCreatedAt: r.sale_created_at,
+    profit: r.profit, cardProcessor: r.card_processor || null, cardFee: r.card_fee,
+    soldBy: r.sold_by_user_name || null, saleCreatedAt: r.sale_created_at,
     voidedBy: r.voided_by_user_name || null, voidedAt: r.voided_at,
   })));
 });

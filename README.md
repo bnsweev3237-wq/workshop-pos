@@ -45,6 +45,10 @@ Working end to end, tested:
   per-event item selection.
 - Line discounts (% or $, admin/manager/lead only), tax rate presets by state, and an
   item-number lookup on the Sell page that doubles as a barcode-scanner input.
+- Card processors (Settings, admin-only) — an editable list of who you take card payments
+  through and each one's transaction fee, prepopulated with common processors. The Sell page
+  asks which one took a card sale; Reports subtracts the fee from an event's "true profit"
+  and breaks sales out by processor. See "Card processors" below.
 - A Custom Orders tab for tracking made-to-order/custom pieces from request to pickup, with
   its own catalog-linked items, totals/payment tracking, and printable packing list and
   purchase order.
@@ -264,6 +268,25 @@ before tax so tax is only ever charged on what was actually paid. Admin, manager
 accounts can add one from the Sell page ticket; the cashier role can't — the control isn't
 shown to it, and the server rejects a discount on a cashier's ticket even if sent directly,
 so this isn't just a UI restriction.
+
+## Card processors
+
+Settings → Card processors (admin-only) holds a list of who you take card payments through —
+prepopulated with Square, Venmo, PayPal, Cash App, Stripe, and Clover at common approximate
+rates, but these are starting points, not quotes: check the % and fixed fee against your own
+processor agreement and adjust as needed, or delete what you don't use and add your own.
+
+On the Sell page, tendering a sale by card (instead of cash) shows a "Card processor" picker —
+any configured processor, or "Other / unlisted" for a card payment through something not in
+the list (no fee tracked). The fee itself (`total × fee % + fixed fee`) is computed and stored
+server-side at checkout, as a snapshot of that processor's rate at the time — editing or
+deleting a processor later never rewrites a past sale's recorded fee, the same reasoning as
+tax presets. If no processors are configured at all, card sales work exactly as before this
+feature existed: a plain "Card / Other" tender with nothing to pick and no fee recorded.
+
+Reports subtracts total card fees from an event's "true profit" (alongside booth/space cost),
+shows a "Card processing fees" figure in the overview stats when there are any, and breaks
+sales out by processor — volume, sale count, and fees — in its own card next to "Payment type".
 
 ## Tax rate presets
 
