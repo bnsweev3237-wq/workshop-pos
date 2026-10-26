@@ -3,6 +3,7 @@ const db = require('../db');
 const { uid } = require('../lib/ids');
 const { requireManageItems, requireReports } = require('../middleware/auth');
 const { checkPrice } = require('../lib/priceFetch');
+const { toCsv, parseCsvObjects } = require('../lib/csv');
 
 const router = express.Router();
 // Reading the list is open to Reports roles too (admin/manager/lead) — the Inventory report
@@ -18,6 +19,85 @@ router.get('/', requireReports, (req, res) => {
   const testFlag = req.query.test === '1' ? 1 : 0;
   const rows = db.prepare('SELECT * FROM materials WHERE test = ? ORDER BY created_at ASC').all(testFlag);
   res.json(rows.map(toPublic));
+});
+
+const CSV_COLUMNS = ['Name', 'Source', 'Product URL', 'Price', 'Yield', 'Stock', 'Low Stock At'];
+router.get('/export.csv', requireManageItems, (req, res) => {
+  const testFlag = req.query.test === '1' ? 1 : 0;
+  const rows = db.prepare('SELECT * FROM materials WHERE test = ? ORDER BY name COLLATE NOCASE').all(testFlag);
+  const sourceNames = new Map(db.prepare('SELECT id, name FROM sources').all().map((s) => [s.id, s.name]));
+  const data = rows.map((r) => ({
+    Name: r.name, Source: sourceNames.get(r.source_id) || '', 'Product URL': r.product_url || '',
+    Price: r.price, Yield: r.yield, Stock: r.stock, 'Low Stock At': r.low ?? '',
+  }));
+  const csv = toCsv(data, CSV_COLUMNS);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="craftium-materials${testFlag ? '-test' : ''}-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.send(csv);
+});
+
+// Same upsert-by-row behavior as items' CSV import (see server/routes/items.js for the full
+// reasoning) — matched by Name only here, materials having no item-number equivalent. A Source
+// name that doesn't already exist in Settings → Material sources is created rather than
+// rejected or dropped, so a sheet built from scratch doesn't need every source precreated first.
+router.post('/import.csv', requireManageItems, (req, res) => {
+  const text = String(req.body?.csv || '');
+  const test = req.body?.test ? 1 : 0;
+  if (!text.trim()) return res.status(400).json({ error: 'empty_csv' });
+  let csvRows;
+  try { csvRows = parseCsvObjects(text); } catch { return res.status(400).json({ error: 'invalid_csv' }); }
+
+  const existingRows = db.prepare('SELECT * FROM materials WHERE test = ?').all(test);
+  const byName = new Map();
+  for (const r of existingRows) { const k = r.name.trim().toLowerCase(); if (!byName.has(k)) byName.set(k, r); }
+  const claimed = new Set();
+  const sourceIdByName = new Map(db.prepare('SELECT id, name FROM sources').all().map((s) => [s.name.toLowerCase(), s.id]));
+
+  const cell = (row, key) => (row[key] === undefined || row[key] === null ? '' : String(row[key]).trim());
+  const numOr = (v, fallback) => (v === '' ? fallback : (Number(v) || 0));
+
+  let created = 0, updated = 0, skipped = 0;
+  const errors = [];
+  const tx = db.transaction(() => {
+    const insertSource = db.prepare('INSERT INTO sources (id, name, created_at) VALUES (?, ?, ?)');
+    csvRows.forEach((raw, i) => {
+      const name = cell(raw, 'Name');
+      if (!name) { skipped++; errors.push(`Row ${i + 2}: missing Name`); return; }
+      let existing = byName.get(name.toLowerCase()) || null;
+      if (existing && claimed.has(existing.id)) existing = null;
+
+      const sourceCell = cell(raw, 'Source');
+      let sourceId = existing ? existing.source_id : null;
+      if (sourceCell) {
+        const key = sourceCell.toLowerCase();
+        if (!sourceIdByName.has(key)) { const id = uid(); insertSource.run(id, sourceCell, Date.now()); sourceIdByName.set(key, id); }
+        sourceId = sourceIdByName.get(key);
+      }
+      const urlCell = cell(raw, 'Product URL');
+      const priceCell = cell(raw, 'Price'), yieldCell = cell(raw, 'Yield'), stockCell = cell(raw, 'Stock'), lowCell = cell(raw, 'Low Stock At');
+
+      const row = {
+        id: existing ? existing.id : uid(),
+        name,
+        price: numOr(priceCell, existing ? existing.price : 0),
+        yield: yieldCell === '' ? (existing ? existing.yield : 1) : (Number(yieldCell) || 1),
+        stock: numOr(stockCell, existing ? existing.stock : 0),
+        low: lowCell === '' ? (existing ? existing.low : null) : (Number(lowCell) || 0),
+        source_id: sourceId,
+        product_url: urlCell === '' ? (existing ? existing.product_url : null) : urlCell,
+        test,
+        created_at: existing ? existing.created_at : Date.now(),
+      };
+      db.prepare(`
+        INSERT INTO materials (id, name, price, yield, stock, low, source_id, product_url, test, created_at)
+        VALUES (@id, @name, @price, @yield, @stock, @low, @source_id, @product_url, @test, @created_at)
+        ON CONFLICT(id) DO UPDATE SET name=@name, price=@price, yield=@yield, stock=@stock, low=@low, source_id=@source_id, product_url=@product_url
+      `).run(row);
+      if (existing) { claimed.add(existing.id); updated++; } else created++;
+    });
+  });
+  tx();
+  res.json({ ok: true, created, updated, skipped, errors: errors.slice(0, 20) });
 });
 
 router.post('/', requireManageItems, (req, res) => {

@@ -612,6 +612,23 @@ $('addLib').onclick = async () => {
 $('libSearch').addEventListener('input', () => { libSearch = $('libSearch').value; renderLib(); });
 $('libSort').addEventListener('change', () => { libSort = $('libSort').value; saveSortPref('libSort', libSort); renderLib(); });
 
+$('libExportCsv').onclick = () => {
+  const a = document.createElement('a');
+  a.href = `/api/materials/export.csv?test=${testMode ? 1 : 0}`;
+  a.click();
+};
+$('libImportCsv').onclick = () => $('libImportCsvFile').click();
+$('libImportCsvFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let csv;
+  try { csv = await f.text(); } catch { toast('Could not read that file'); return; }
+  try {
+    const r = await api('POST', '/api/materials/import.csv', { csv, test: testMode });
+    toast(`Imported: ${r.created} added, ${r.updated} updated${r.skipped ? `, ${r.skipped} skipped` : ''}${r.errors.length ? ` — ${r.errors[0]}` : ''}`);
+    await loadMaterials();
+  } catch (err) { toast(err.message || 'Import failed'); }
+};
+
 // ---------- Items ----------
 function freshCopy(it) {
   const c = computeItem(it);
@@ -727,6 +744,23 @@ $('acceptAll').onclick = async () => {
 $('itemsSearch').addEventListener('input', () => { itemsSearch = $('itemsSearch').value; renderItems(); });
 $('itemsSort').addEventListener('change', () => { itemsSort = $('itemsSort').value; saveSortPref('itemsSort', itemsSort); renderItems(); });
 
+$('itemsExportCsv').onclick = () => {
+  const a = document.createElement('a');
+  a.href = `/api/items/export.csv?test=${testMode ? 1 : 0}`;
+  a.click();
+};
+$('itemsImportCsv').onclick = () => $('itemsImportCsvFile').click();
+$('itemsImportCsvFile').onchange = async (e) => {
+  const f = e.target.files[0]; e.target.value = ''; if (!f) return;
+  let csv;
+  try { csv = await f.text(); } catch { toast('Could not read that file'); return; }
+  try {
+    const r = await api('POST', '/api/items/import.csv', { csv, test: testMode });
+    toast(`Imported: ${r.created} added, ${r.updated} updated${r.skipped ? `, ${r.skipped} skipped` : ''}${r.errors.length ? ` — ${r.errors[0]}` : ''}`);
+    await loadItems();
+  } catch (err) { toast(err.message || 'Import failed'); }
+};
+
 // ---------- Custom Orders ----------
 // A lightweight tracking queue for made-to-order/custom pieces, separate from the item
 // catalog and event inventory — admin/manager/lead only, same as event management. itemName
@@ -739,6 +773,11 @@ const ORDER_STATUS_LABEL = {
 let customOrders = [];
 let ordersSearch = '', ordersStatusFilter = '';
 let editingOrderId = null;
+// The order's most recently linked sale (total + date), as last loaded — set by fillOrderForm,
+// shown by renderOrderTotalsDisplay. Null for an order that's never been checked out, or whose
+// linked sale was later voided (sales.js clears sale_id/saleInfo then, same as it reverses the
+// amount_paid credit that went with it).
+let editingOrderSaleInfo = null;
 // Staged locally while the form is open, same as the event item picker's evSelectedItems —
 // only persisted (via /api/custom-orders/:id/items) when "Save order" is clicked.
 let orderLineItems = [];
@@ -773,6 +812,7 @@ function renderCustomOrders() {
       <td class="fulfillCell"></td>
       <td><select class="statusSel"></select></td>
       <td class="acts">
+        ${o.items && o.items.length ? '<button class="btn sm primary checkoutOrder">Check out</button>' : ''}
         ${o.fulfillment === 'ship' && num(o.shippingCost) > 0 ? '<button class="btn sm shipToTicket">Add shipping to ticket</button>' : ''}
         <button class="btn sm edit">Edit</button><button class="icon-btn del" title="Delete">×</button>
       </td>`;
@@ -799,6 +839,8 @@ function renderCustomOrders() {
     };
     const shipBtn = tr.querySelector('.shipToTicket');
     if (shipBtn) shipBtn.onclick = () => addShippingToTicket(o);
+    const checkoutBtn = tr.querySelector('.checkoutOrder');
+    if (checkoutBtn) checkoutBtn.onclick = () => checkoutOrder(o);
     tr.querySelector('.edit').onclick = () => fillOrderForm(o);
     tr.querySelector('.del').onclick = async () => {
       if (!await askConfirm(`Delete this custom order for “${o.customerName || 'this customer'}”?`, 'Delete order')) return;
@@ -814,6 +856,7 @@ function renderCustomOrders() {
 }
 function fillOrderForm(o) {
   editingOrderId = o ? o.id : null;
+  editingOrderSaleInfo = o?.saleInfo || null;
   $('orderFormTitle').textContent = o ? `Editing order — ${orderItemsSummary(o)}` : 'New custom order';
   $('orderDue').value = o?.dueDate || '';
   $('orderCustomerName').value = o?.customerName || '';
@@ -865,7 +908,8 @@ function renderOrderTotalsDisplay() {
   const t = orderTotals();
   $('orderTotals').innerHTML = `Subtotal ${money(t.subtotal)}` +
     ($('orderShips').checked ? ` + shipping ${money(t.shipping)}` : '') +
-    ` = total ${money(t.total)} · paid ${money(t.paid)} · <span class="${t.balance > 0 ? 'neg' : ''}">balance due ${money(t.balance)}</span>`;
+    ` = total ${money(t.total)} · paid ${money(t.paid)} · <span class="${t.balance > 0 ? 'neg' : ''}">balance due ${money(t.balance)}</span>` +
+    (editingOrderSaleInfo ? `<div class="hint">✓ ${money(editingOrderSaleInfo.total)} of that was paid via a sale rung up ${new Date(editingOrderSaleInfo.createdAt).toLocaleDateString()}.</div>` : '');
 }
 $('orderAddItemBtn').onclick = () => {
   const name = $('orderAddItemName').value.trim();
@@ -922,6 +966,39 @@ function addShippingToTicket(o) {
   renderTicket();
   setMobileCartOpen(true);
   toast(`Added shipping (${money(num(o.shippingCost))}) to the ticket`);
+}
+// Loads this order's full items (and shipping, if any) onto the Sell page ticket, ready to
+// tender and complete like any other sale — a real sale, counted in Reports same as always.
+// Completing it links back to this order (sales.js) and credits the amount toward amountPaid;
+// see checkoutOrderId below and the checkout handler that reads it.
+async function checkoutOrder(o) {
+  if (!o.items || !o.items.length) { toast('No items in this order yet'); return; }
+  const paid = num(o.amountPaid);
+  const hasShipping = o.fulfillment === 'ship' && num(o.shippingCost) > 0;
+  if (paid > 0) {
+    const ok = await askConfirm(
+      `“${o.customerName || 'This order'}” already has ${money(paid)} recorded as paid. Checking out loads the order's full items${hasShipping ? ' and shipping' : ''} onto the ticket — remove or adjust lines first if this sale is only for the remaining balance.`,
+      'Check out this order',
+    );
+    if (!ok) return;
+  }
+  showTab('pos');
+  for (const l of o.items) {
+    ticket.push({
+      id: cid(), itemId: l.itemId, name: l.itemName, price: num(l.price), qty: num(l.qty),
+      taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null,
+    });
+  }
+  if (hasShipping) {
+    ticket.push({
+      id: cid(), itemId: null, name: `Shipping & handling — ${orderItemsSummary(o)}`, price: num(o.shippingCost), qty: 1,
+      taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null,
+    });
+  }
+  checkoutOrderId = o.id;
+  renderTicket();
+  setMobileCartOpen(true);
+  toast(`Loaded “${o.customerName || 'the order'}” onto the ticket — complete the sale to mark it paid`);
 }
 // What to pack for this order — the same "qty × name" list as an event's packing list,
 // reusing the same printable card. Uses the currently staged line items, not just what's
@@ -1061,6 +1138,11 @@ async function trySyncQueuedSales() {
 let ticket = [];
 let tender = 'cash';
 let posSearch = '';
+// Set by checkoutOrder() (Custom Orders) when the current ticket was loaded from an order's
+// "Check out" button — sent as customOrderId on the next checkout so the server can link the
+// resulting sale back to that order, then cleared (completed or not) so an unrelated later
+// sale never accidentally gets credited to it.
+let checkoutOrderId = null;
 let cardProcessors = [];
 const enabledCardProcessors = () => cardProcessors.filter(p => p.enabled);
 async function loadCardProcessors() {
@@ -1283,7 +1365,7 @@ $('posCustomAdd').onclick = () => {
 $('clearTicket').onclick = async () => {
   if (!ticket.length) return;
   if (!await askConfirm('Clear the current ticket? This can’t be undone.', 'Clear ticket')) return;
-  ticket = []; $('received').value = ''; renderTicket();
+  ticket = []; $('received').value = ''; checkoutOrderId = null; renderTicket();
 };
 $('checkout').onclick = async () => {
   if (!ticket.length) return;
@@ -1295,18 +1377,20 @@ $('checkout').onclick = async () => {
     lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate), discountType: l.discountType || null, discountValue: l.discountValue || null })),
     tender, received,
     cardProcessorId: tender !== 'cash' ? ($('cardProcessor').value || null) : null,
+    customOrderId: checkoutOrderId,
   };
+  const wasOrderCheckout = !!checkoutOrderId;
   try {
     const sale = await api('POST', '/api/sales', payload);
-    ticket = []; $('received').value = ''; renderTicket();
+    ticket = []; $('received').value = ''; checkoutOrderId = null; renderTicket();
     setMobileCartOpen(false);
     setOnlineStatus(true);
-    toast(`${testMode ? 'Test sale' : 'Sale'} complete — ${money(sale.total)}`);
+    toast(wasOrderCheckout ? `Order paid — sale complete, ${money(sale.total)}` : `${testMode ? 'Test sale' : 'Sale'} complete — ${money(sale.total)}`);
     await Promise.all([loadPosItems(), loadSales(), renderEventWidget()]);
   } catch (e) {
     if (isNetworkError(e)) {
       await completeOfflineSale(payload);
-      ticket = []; $('received').value = ''; renderTicket();
+      ticket = []; $('received').value = ''; checkoutOrderId = null; renderTicket();
       setMobileCartOpen(false);
       renderEventWidget();
     } else {

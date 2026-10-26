@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.4.0',
+    date: '2026-10-26',
+    notes: [
+      'Custom Orders got a "Check out" button — it loads the order\'s items (and shipping) onto the Sell page ticket, ready to tender and complete as a real sale. Completing it counts in Reports like any other sale, decrements stock, and automatically credits the amount toward the order\'s amount paid (and reverses it if that sale is later voided).',
+      'Items and Materials tabs now have Export CSV / Import CSV buttons for bulk editing in a spreadsheet — a separate, simpler format from the full JSON backup. Importing matches rows to existing items/materials (by item number or name) and updates them, or creates new ones; a blank cell leaves that field unchanged.',
+    ],
+  },
+  {
     version: '1.3.1',
     date: '2026-10-26',
     notes: [

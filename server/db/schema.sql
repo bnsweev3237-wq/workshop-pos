@@ -293,11 +293,18 @@ CREATE TABLE IF NOT EXISTS custom_orders (
   shipping_address TEXT,
   shipping_cost REAL,
   tracking_number TEXT,
-  -- Tracked as data on the order itself, nothing more — ringing up the actual sale (and
-  -- having it count in Reports' revenue/tax/profit) still happens separately on the Sell
-  -- page, same as before this column existed. Order total (items + shipping) minus this is
-  -- the balance due, computed on the fly, never stored.
+  -- Total collected to date, across however many sales (see sale_id below) were rung up for
+  -- it — not just the latest one. Order total (items + shipping) minus this is the balance
+  -- due, computed on the fly, never stored.
   amount_paid REAL,
+  -- The most recent sale rung up for this order via its "Check out this order" button — a
+  -- real sale (server/routes/sales.js), counted in Reports like any other. Nullable: an order
+  -- can go unpaid, be paid by just typing a number into amount_paid, or (rare) be checked out
+  -- more than once, in which case this points at the latest one and amount_paid is the sum.
+  -- Detached (set NULL), not cascade-deleted, if that sale is later voided — same reasoning as
+  -- every other snapshot/reference in this file; see sales.js's void route for the reversal of
+  -- amount_paid that goes with it.
+  sale_id TEXT REFERENCES sales(id),
   test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

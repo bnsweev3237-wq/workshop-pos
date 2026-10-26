@@ -319,8 +319,19 @@ never rewrites or orphans a line that already references it. Like an event's ite
 items section only becomes usable once the order has been saved once (fill in at least a
 customer name first); saving keeps the form open afterward so you're not stuck re-opening it.
 The order totals its lines, adds shipping if it's a shipping order, and shows amount paid and
-balance due — tracked as data on the order itself, not a real transaction; it still doesn't
-total or process payment, same as before this existed.
+balance due. "Amount paid" can be typed in by hand (e.g. a deposit taken by some other means)
+and/or built up from one or more real sales rung up via "Check out" — see below; whichever way
+it got there, it's a running total, never overwritten by the other.
+
+An order with items gets a "Check out" button in the list — it loads the order's full items
+(and shipping, if any) onto the Sell page ticket, ready to tender and complete exactly like
+any other sale: pick cash or card (with a processor and fee, if you use those), and finish it
+on the Sell page as usual. It's a real sale — counted in Reports, decrementing stock, the works
+— and completing it links back to the order and adds the sale's total to amount paid
+automatically. If the order already has something recorded as paid, checking out asks first,
+since it loads the order's *full* items regardless — remove or adjust ticket lines before
+completing if a sale is only meant to collect the remaining balance. Voiding a sale that paid
+for an order reverses that credit and unlinks it, the same as voiding reverses anything else.
 
 From an order with items, "Print packing list" gives a plain qty list of what's in it (reusing
 the same printable format as an event's packing list), and "Print purchase order" gives an
@@ -478,6 +489,27 @@ engines (the same kind of data behind rich search results) — which means it ca
 outright: the site may block the request, or may only render its price with JavaScript that
 a plain page fetch never runs. A failed check always says so rather than guessing, and a
 successful one is always one click away from being applied, never automatic.
+
+## CSV import/export
+
+The Items and Materials tabs each have **Export CSV** / **Import CSV** buttons (admin/manager)
+— a spreadsheet-friendly way to bulk-edit stock, prices, and the like in Excel/Google Sheets
+and bring the changes back in, separate from the full-fidelity JSON "Export/Import backup" in
+the header (which is for whole-catalog restore/migration, matched by internal id).
+
+Items export covers the inventory-relevant fields only — name, item number, type, category,
+price, cost, stock, low-stock threshold, "not for shows," and notes — not a "made" item's
+materials recipe, labor time, or overhead %, which doesn't fit a flat CSV row. Materials
+export covers name, source, product link, price, yield, stock, and low-stock threshold.
+
+Importing **matches each row to an existing item or material and updates it, or creates a new
+one if nothing matches** — items first by item number (if the column's filled in and it's a
+real one), then by name; materials by name only. A row that matches the same item/material
+another row in the same file already claimed is treated as a new entry instead of overwriting
+that first row's update. **A blank cell leaves that field unchanged** on an existing row (so a
+sheet that's just a stock recount doesn't need every other column filled in too), but becomes
+a zero/empty default when creating something new. For materials, a Source name that doesn't
+already exist in Settings is created automatically rather than rejected.
 
 ## Security model
 

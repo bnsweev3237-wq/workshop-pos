@@ -210,7 +210,13 @@
         <tbody id="libRows"></tbody>
       </table>
       <div class="empty" id="libEmpty">No materials yet.</div>
-      <div class="btn-row"><button class="btn" id="addLib">+ Add material</button></div>
+      <div class="btn-row">
+        <button class="btn" id="addLib">+ Add material</button>
+        <button class="btn sm" id="libExportCsv">⤓ Export CSV</button>
+        <button class="btn sm" id="libImportCsv">⤒ Import CSV</button>
+        <input type="file" id="libImportCsvFile" accept=".csv,text/csv" hidden>
+      </div>
+      <div class="hint">Importing matches a row to an existing material by name; unmatched rows create new materials. A blank cell leaves that field unchanged on an existing one. A Source that doesn't exist yet is added automatically.</div>
     </div>
   </section>
 
@@ -239,6 +245,12 @@
         </table>
       </div>
       <div class="empty" id="itemsEmpty">No items yet.</div>
+      <div class="btn-row">
+        <button class="btn sm" id="itemsExportCsv">⤓ Export CSV</button>
+        <button class="btn sm" id="itemsImportCsv">⤒ Import CSV</button>
+        <input type="file" id="itemsImportCsvFile" accept=".csv,text/csv" hidden>
+      </div>
+      <div class="hint">CSV covers inventory fields only (price, cost, stock, category, notes) — not a "made" item's materials recipe. Importing matches a row to an existing item by item number, then by name; unmatched rows create new items. A blank cell leaves that field unchanged on an existing item.</div>
     </div>
   </section>
 

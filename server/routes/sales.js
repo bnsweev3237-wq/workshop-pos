@@ -93,6 +93,9 @@ router.post('/', requireLogin, (req, res) => {
   // response was lost, e.g. connectivity dropped right after) — return the existing sale
   // as-is rather than recording (and double-decrementing stock for) the same sale twice.
   const clientSaleId = typeof b.clientSaleId === 'string' && b.clientSaleId ? b.clientSaleId : null;
+  // Set when this checkout came from a custom order's "Check out this order" button — see the
+  // transaction below, where the sale is linked back to the order once it's actually recorded.
+  const customOrderId = typeof b.customOrderId === 'string' && b.customOrderId ? b.customOrderId : null;
   if (clientSaleId) {
     const existing = db.prepare('SELECT * FROM sales WHERE client_sale_id = ?').get(clientSaleId);
     if (existing) return res.json(toPublicSale(existing));
@@ -214,6 +217,19 @@ router.post('/', requireLogin, (req, res) => {
     for (const c of stockChanges) {
       db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);
     }
+    // Rung up from a custom order's "Check out this order" button — links the order to the
+    // sale that just paid for it and credits the full amount toward amount_paid, same
+    // transaction as the sale itself so the two can never end up out of sync. Adds rather than
+    // replaces amount_paid: an order can be partly paid by hand (a typed-in deposit) before
+    // ever being checked out, or checked out more than once (a deposit sale, then a balance
+    // sale) — this has to accumulate across however that happened, not overwrite it.
+    if (customOrderId) {
+      const order = db.prepare('SELECT id FROM custom_orders WHERE id = ?').get(customOrderId);
+      if (order) {
+        db.prepare('UPDATE custom_orders SET sale_id = ?, amount_paid = COALESCE(amount_paid, 0) + ?, updated_at = ? WHERE id = ?')
+          .run(row.id, total, Date.now(), order.id);
+      }
+    }
   });
   tx();
 
@@ -244,6 +260,10 @@ router.delete('/:id', requireLogin, (req, res) => {
       if (!l.itemId) continue;
       db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(Number(l.qty) || 0, l.itemId);
     }
+    // Reverse the credit from checking out a custom order through this sale (see the checkout
+    // transaction above) and detach the link — custom_orders.sale_id references sales(id), so
+    // this also has to happen before the DELETE below regardless, or it would fail outright.
+    db.prepare('UPDATE custom_orders SET sale_id = NULL, amount_paid = MAX(0, COALESCE(amount_paid, 0) - ?) WHERE sale_id = ?').run(sale.total, sale.id);
     db.prepare('DELETE FROM sales WHERE id = ?').run(sale.id);
   });
   tx();

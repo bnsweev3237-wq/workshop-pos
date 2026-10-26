@@ -61,6 +61,7 @@ router.post('/copy-to-test', (req, res) => {
     db.prepare('DELETE FROM event_charity_rules WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
     db.prepare('DELETE FROM event_items WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
     db.prepare('DELETE FROM custom_order_items WHERE order_id IN (SELECT id FROM custom_orders WHERE test = 1)').run();
+    db.prepare('UPDATE custom_orders SET sale_id = NULL WHERE test = 1').run();
     db.prepare('DELETE FROM sales WHERE test = 1').run();
     db.prepare('DELETE FROM events WHERE test = 1').run();
     db.prepare('DELETE FROM items WHERE test = 1').run();
@@ -176,6 +177,9 @@ router.post('/purge', (req, res) => {
     db.prepare('DELETE FROM event_items').run();
     db.prepare('DELETE FROM item_categories').run();
     db.prepare('DELETE FROM custom_order_items').run();
+    // custom_orders.sale_id references sales(id) — detach before sales are deleted below, same
+    // reasoning as every other foreign key cleared ahead of its parent in this transaction.
+    db.prepare('UPDATE custom_orders SET sale_id = NULL').run();
     db.prepare('DELETE FROM sales').run();
     db.prepare('DELETE FROM events').run();
     db.prepare('DELETE FROM items').run();

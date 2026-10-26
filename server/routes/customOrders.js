@@ -25,12 +25,23 @@ function itemsByOrder(orderIds) {
 }
 const orderItemsFor = (orderId) => db.prepare('SELECT * FROM custom_order_items WHERE order_id = ? ORDER BY created_at').all(orderId).map(toPublicOrderItem);
 
+// The linked sale's own total/date, embedded for display (e.g. "Paid via sale on …") without
+// a separate round-trip — cheap enough per row at the scale a custom orders list runs at. Only
+// looked up when sale_id is actually set, and silently comes back null if that sale was voided
+// (sale_id would already have been detached then — see sales.js's void route — but this stays
+// defensive against any other path that might leave it dangling).
+function saleInfoFor(saleId) {
+  if (!saleId) return null;
+  const s = db.prepare('SELECT total, created_at FROM sales WHERE id = ?').get(saleId);
+  return s ? { total: s.total, createdAt: s.created_at } : null;
+}
+
 const toPublic = (r, items) => ({
   id: r.id, itemName: r.item_name, customerName: r.customer_name, customerContact: r.customer_contact || '',
   dueDate: r.due_date || '', status: r.status, notes: r.notes || '', test: !!r.test,
   fulfillment: r.fulfillment || 'pickup', shippingAddress: r.shipping_address || '',
   shippingCost: r.shipping_cost, trackingNumber: r.tracking_number || '',
-  amountPaid: r.amount_paid, items: items || [],
+  amountPaid: r.amount_paid, saleId: r.sale_id || null, saleInfo: saleInfoFor(r.sale_id), items: items || [],
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
