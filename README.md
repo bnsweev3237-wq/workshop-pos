@@ -276,13 +276,20 @@ prepopulated with Square, Venmo, PayPal, Cash App, Stripe, and Clover at common 
 rates, but these are starting points, not quotes: check the % and fixed fee against your own
 processor agreement and adjust as needed, or delete what you don't use and add your own.
 
+Each processor has an **Available** checkbox — uncheck it to keep its history and fee rate
+without offering it on the Sell page for new sales (it isn't deleted, just not offered). You
+can also pick a **default processor**, preselected on the Sell page's picker instead of
+"Other / unlisted" — handy if you mostly take one. A disabled processor is never used as the
+default even if it's still set as one; the picker just falls back to "Other / unlisted."
+
 On the Sell page, tendering a sale by card (instead of cash) shows a "Card processor" picker —
-any configured processor, or "Other / unlisted" for a card payment through something not in
-the list (no fee tracked). The fee itself (`total × fee % + fixed fee`) is computed and stored
-server-side at checkout, as a snapshot of that processor's rate at the time — editing or
-deleting a processor later never rewrites a past sale's recorded fee, the same reasoning as
-tax presets. If no processors are configured at all, card sales work exactly as before this
-feature existed: a plain "Card / Other" tender with nothing to pick and no fee recorded.
+any available (checked) processor, or "Other / unlisted" for a card payment through something
+not in the list (no fee tracked). The fee itself (`total × fee % + fixed fee`) is computed and
+stored server-side at checkout, as a snapshot of that processor's rate at the time — editing,
+disabling, or deleting a processor later never rewrites a past sale's recorded fee, the same
+reasoning as tax presets. If no processors are available at all, card sales work exactly as
+before this feature existed: a plain "Card / Other" tender with nothing to pick and no fee
+recorded.
 
 Reports subtracts total card fees from an event's "true profit" (alongside booth/space cost),
 shows a "Card processing fees" figure in the overview stats when there are any, and breaks

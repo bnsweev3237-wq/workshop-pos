@@ -198,7 +198,11 @@ async function logout() {
 // every one of these endpoints now requires being signed in.
 let pollTimer = null;
 async function afterLogin() {
-  await Promise.all([loadPosItems(), loadSales(), loadEvents(), loadCardProcessors()]);
+  // loadSettings before loadCardProcessors, not in the same Promise.all — the latter preselects
+  // the Sell page's default processor from appSettings.defaultCardProcessorId, which only the
+  // former populates (it starts out as '' at boot, before either has run).
+  await Promise.all([loadPosItems(), loadSales(), loadEvents(), loadSettings()]);
+  await loadCardProcessors();
   trySyncQueuedSales(); // picks up anything still queued from a prior offline session, if we're online now
   if (!pollTimer) {
     pollTimer = setInterval(() => { if (!document.hidden && me) Promise.all([loadPosItems(), loadSales(), loadEvents()]).catch(() => {}); }, 20000);
@@ -1058,14 +1062,18 @@ let ticket = [];
 let tender = 'cash';
 let posSearch = '';
 let cardProcessors = [];
+const enabledCardProcessors = () => cardProcessors.filter(p => p.enabled);
 async function loadCardProcessors() {
   cardProcessors = await api('GET', '/api/card-processors');
+  const enabled = enabledCardProcessors();
   const sel = $('cardProcessor');
   const prev = sel.value;
   sel.innerHTML = '<option value="">Other / unlisted (no fee)</option>' +
-    cardProcessors.map(p => `<option value="${p.id}">${esc(p.name)} (${p.feePct}%${p.feeFixed > 0 ? ` + ${money(p.feeFixed)}` : ''})</option>`).join('');
-  if (cardProcessors.some(p => p.id === prev)) sel.value = prev;
+    enabled.map(p => `<option value="${p.id}">${esc(p.name)} (${p.feePct}%${p.feeFixed > 0 ? ` + ${money(p.feeFixed)}` : ''})</option>`).join('');
+  if (enabled.some(p => p.id === prev)) sel.value = prev;
+  else if (appSettings.defaultCardProcessorId && enabled.some(p => p.id === appSettings.defaultCardProcessorId)) sel.value = appSettings.defaultCardProcessorId;
   renderCardProcessorRows();
+  renderDefaultProcessorSelect();
 }
 
 async function loadPosItems() {
@@ -1240,7 +1248,7 @@ function setTender(t) {
   tender = t;
   document.querySelectorAll('#tenderSeg button').forEach(b => b.classList.toggle('on', b.dataset.tender === t));
   $('cashRow').hidden = t !== 'cash';
-  $('cardProcessorRow').hidden = t === 'cash' || cardProcessors.length === 0;
+  $('cardProcessorRow').hidden = t === 'cash' || enabledCardProcessors().length === 0;
   const def = defaultLineTaxRate(t);
   ticket.forEach(l => { if (!l.taxOverridden) l.taxRate = def; });
   renderTicket();
@@ -2301,7 +2309,7 @@ function renderRptVoids(start, end) {
 document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => { rptRange = b.dataset.range; document.querySelectorAll('#rptRangeSeg button').forEach(x => x.classList.toggle('on', x === b)); renderReports(); });
 
 // ---------- Settings: sales tracking ----------
-let appSettings = { trackSaleAttribution: true };
+let appSettings = { trackSaleAttribution: true, defaultCardProcessorId: '' };
 // ---------- Branding (logo, business name, accent color) ----------
 // Public (no login needed) since the login screen itself shows it — see server/routes/branding.
 let branding = { name: '', accentColor: '', logo: '' };
@@ -2379,6 +2387,7 @@ $('brandSaveBtn').onclick = async () => {
 async function loadSettings() {
   appSettings = await api('GET', '/api/settings');
   $('trackAttributionChk').checked = appSettings.trackSaleAttribution;
+  renderDefaultProcessorSelect();
 }
 $('trackAttributionChk').onchange = async () => {
   const checked = $('trackAttributionChk').checked;
@@ -2480,11 +2489,18 @@ function renderCardProcessorRows() {
   tb.innerHTML = '';
   for (const p of cardProcessors) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td></td><td class="num"></td><td class="num"></td><td class="acts"><button class="icon-btn del" title="Remove processor">×</button></td>`;
+    tr.innerHTML = `<td></td><td class="num"></td><td class="num"></td><td><label class="lib-chk-wrap"><input type="checkbox" class="enabledChk"></label></td><td class="acts"><button class="icon-btn del" title="Remove processor">×</button></td>`;
     const [nameCell, pctCell, fixedCell] = tr.querySelectorAll('td');
     nameCell.textContent = p.name;
     pctCell.textContent = p.feePct + '%';
     fixedCell.textContent = money(p.feeFixed);
+    const chk = tr.querySelector('.enabledChk');
+    chk.checked = p.enabled;
+    chk.onchange = async () => {
+      const next = chk.checked;
+      try { await api('POST', `/api/card-processors/${p.id}/enabled`, { enabled: next }); await loadCardProcessors(); }
+      catch (e) { chk.checked = !next; toast(e.message || 'Could not update processor'); }
+    };
     tr.querySelector('.del').onclick = async () => {
       if (!await askConfirm(`Remove “${p.name}” as a card processor? Past sales keep showing it; it just won't be offered for new ones.`, 'Remove processor')) return;
       try { await api('DELETE', '/api/card-processors/' + p.id); toast(`Removed “${p.name}”`); await loadCardProcessors(); }
@@ -2494,6 +2510,18 @@ function renderCardProcessorRows() {
   }
   $('cardProcessorsEmpty').hidden = cardProcessors.length > 0;
 }
+function renderDefaultProcessorSelect() {
+  const sel = $('defaultProcessorSelect'); if (!sel) return;
+  const enabled = enabledCardProcessors();
+  sel.innerHTML = '<option value="">None — starts on "Other / unlisted"</option>' +
+    enabled.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
+  sel.value = enabled.some(p => p.id === appSettings.defaultCardProcessorId) ? appSettings.defaultCardProcessorId : '';
+}
+$('defaultProcessorSelect').onchange = async () => {
+  const id = $('defaultProcessorSelect').value;
+  try { appSettings = await api('POST', '/api/settings', { defaultCardProcessorId: id }); toast(id ? 'Default processor set' : 'Default processor cleared'); }
+  catch (e) { toast(e.message || 'Could not update default processor'); renderDefaultProcessorSelect(); }
+};
 $('newProcessorAdd').onclick = async () => {
   const name = $('newProcessorName').value.trim();
   if (!name) { $('newProcessorName').focus(); toast('Give the processor a name first'); return; }

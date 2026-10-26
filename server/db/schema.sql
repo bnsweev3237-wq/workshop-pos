@@ -134,6 +134,10 @@ CREATE TABLE IF NOT EXISTS card_processors (
   name TEXT NOT NULL,
   fee_pct REAL NOT NULL DEFAULT 0,
   fee_fixed REAL NOT NULL DEFAULT 0,
+  -- Whether this processor is offered on the Sell page's card-processor picker. A disabled
+  -- processor stays fully intact (fee rate, history on past sales) — it just isn't offered for
+  -- new ones, same idea as removing an item without deleting it.
+  enabled INTEGER NOT NULL DEFAULT 1,
   created_at INTEGER NOT NULL
 );
 

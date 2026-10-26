@@ -718,9 +718,9 @@
 
     <div class="card">
       <h2>Card processors</h2>
-      <div class="help">Who you take card payments through, and each one's transaction fee — shown as a pick list on the Sell page when a sale is tendered by card, and subtracted from "true profit" in Reports. Prepopulated with common processors as a starting point; check the rate and fixed fee against your own processor agreement and adjust as needed.</div>
+      <div class="help">Who you take card payments through, and each one's transaction fee — shown as a pick list on the Sell page when a sale is tendered by card, and subtracted from "true profit" in Reports. Prepopulated with common processors as a starting point; check the rate and fixed fee against your own processor agreement and adjust as needed. Uncheck "Available" to keep a processor's history and fee rate without offering it for new sales.</div>
       <table class="items-table">
-        <thead><tr><th>Processor</th><th class="r">Fee %</th><th class="r">Fixed fee</th><th></th></tr></thead>
+        <thead><tr><th>Processor</th><th class="r">Fee %</th><th class="r">Fixed fee</th><th>Available</th><th></th></tr></thead>
         <tbody id="cardProcessorRows"></tbody>
       </table>
       <div class="empty" id="cardProcessorsEmpty" hidden>No card processors yet — the Sell page just offers a plain "Card / Other" with no fee tracked.</div>
@@ -730,6 +730,10 @@
         <div><label for="newProcessorFixed">Fixed fee ($)</label><input id="newProcessorFixed" type="number" min="0" step="0.01" placeholder="0.00"></div>
       </div>
       <div class="btn-row"><button class="btn primary sm" id="newProcessorAdd">+ Add processor</button></div>
+      <div style="margin-top:16px;max-width:320px">
+        <label for="defaultProcessorSelect">Default processor on Sell page</label>
+        <select id="defaultProcessorSelect"><option value="">None — starts on "Other / unlisted"</option></select>
+      </div>
     </div>
     <div class="card">
       <h2>Tax rate presets</h2>

@@ -3,6 +3,14 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.3.1',
+    date: '2026-10-26',
+    notes: [
+      'Each card processor now has an "Available" checkbox in Settings — uncheck one to stop offering it on the Sell page without losing its fee rate or history on past sales.',
+      'You can set a default card processor, preselected on the Sell page\'s picker instead of "Other / unlisted."',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-10-26',
     notes: [

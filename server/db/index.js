@@ -85,6 +85,10 @@ ensureColumn('sales', 'card_processor', 'TEXT');
 ensureColumn('sales', 'card_fee', 'REAL NOT NULL DEFAULT 0');
 ensureColumn('voided_sales', 'card_processor', 'TEXT');
 ensureColumn('voided_sales', 'card_fee', 'REAL NOT NULL DEFAULT 0');
+// Defaults to enabled (1) so every existing processor stays offered on the Sell page exactly
+// as before this column existed — "available" is something an admin opts a processor out of,
+// not into.
+ensureColumn('card_processors', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before
