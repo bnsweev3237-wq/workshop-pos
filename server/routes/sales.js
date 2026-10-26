@@ -6,6 +6,8 @@ const { getBool } = require('../lib/settings');
 
 const router = express.Router();
 
+function num(v) { const n = Number(v); return isFinite(n) ? n : 0; }
+
 // Mirrors the client's applyDiscount() — a line's discount is taken off its pre-tax extended
 // total (price × qty) before tax is split out, so tax is only ever charged on what was
 // actually paid. Capped so a discount can never make a line negative.
@@ -270,6 +272,83 @@ router.delete('/:id', requireLogin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Already-returned quantity per line of a sale — any logged-in role (no profit data here,
+// just quantities), used to cap how much of a line is still returnable before it's even sent.
+// The POST below re-derives and re-validates this itself regardless; this is only for the UI.
+router.get('/:id/returns', requireLogin, (req, res) => {
+  const rows = db.prepare('SELECT lines_json FROM returns WHERE sale_id = ?').all(req.params.id);
+  const byLine = new Map();
+  for (const r of rows) {
+    for (const l of JSON.parse(r.lines_json)) {
+      byLine.set(l.lineIndex, (byLine.get(l.lineIndex) || 0) + num(l.qty));
+    }
+  }
+  res.json([...byLine.entries()].map(([lineIndex, qtyReturned]) => ({ lineIndex, qtyReturned })));
+});
+
+// Process a return against a past sale — distinct from voiding (DELETE above): the sale stays
+// exactly as recorded, this is a separate, later transaction against it. Each requested line is
+// revalidated against the sale's own lines and whatever's already been returned against them
+// (never trusting the client's idea of what's left), and its refund is computed from that
+// line's own effective per-unit price (its original price net of any discount, spread evenly
+// across its original quantity) so a partial-quantity return of a discounted line is prorated
+// correctly rather than either losing or double-counting the discount.
+router.post('/:id/return', requireLogin, (req, res) => {
+  const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(req.params.id);
+  if (!sale) return res.status(404).json({ error: 'not_found' });
+  const saleLines = JSON.parse(sale.lines_json);
+  const requested = Array.isArray(req.body?.lines) ? req.body.lines : [];
+  if (!requested.length) return res.status(400).json({ error: 'empty_return' });
+
+  const already = new Map();
+  for (const r of db.prepare('SELECT lines_json FROM returns WHERE sale_id = ?').all(sale.id)) {
+    for (const l of JSON.parse(r.lines_json)) already.set(l.lineIndex, (already.get(l.lineIndex) || 0) + num(l.qty));
+  }
+
+  let subtotal = 0, tax = 0, profit = 0;
+  const stockChanges = [];
+  const finalLines = [];
+  for (const entry of requested) {
+    const lineIndex = Number(entry?.lineIndex);
+    const qty = num(entry?.qty);
+    const original = saleLines[lineIndex];
+    if (!original || qty <= 0) return res.status(400).json({ error: 'invalid_line' });
+    const maxReturnable = num(original.qty) - (already.get(lineIndex) || 0);
+    if (qty > maxReturnable + 1e-9) {
+      return res.status(400).json({ error: 'too_many', message: `Only ${maxReturnable} of “${original.name}” left to return.` });
+    }
+    const rawAmt = num(original.price) * num(original.qty);
+    const discAmt = applyDiscount(original, rawAmt);
+    const perUnit = num(original.qty) > 0 ? (rawAmt - discAmt) / num(original.qty) : 0;
+    const synthetic = { price: perUnit, qty, taxRate: num(original.taxRate) };
+    const { sub, tax: lineTax } = lineTaxSplit(synthetic, !!sale.tax_included);
+    subtotal += sub; tax += lineTax;
+    if (original.itemId) {
+      const item = db.prepare('SELECT cost FROM items WHERE id = ?').get(original.itemId);
+      profit += sub - (item ? num(item.cost) : 0) * qty;
+      stockChanges.push({ id: original.itemId, qty });
+    }
+    finalLines.push({ lineIndex, itemId: original.itemId || null, name: original.name, price: perUnit, qty, taxRate: num(original.taxRate) });
+  }
+  const total = subtotal + tax;
+  const tender = req.body?.tender === 'cash' ? 'cash' : 'other';
+  const row = {
+    id: uid(), sale_id: sale.id, event_id: sale.event_id, test: sale.test, tax_included: sale.tax_included,
+    lines_json: JSON.stringify(finalLines), subtotal, tax, total, profit,
+    reason: String(req.body?.reason || '').trim() || null, tender,
+    user_id: req.user.id, user_name: req.user.name, created_at: Date.now(),
+  };
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO returns (id, sale_id, event_id, test, tax_included, lines_json, subtotal, tax, total, profit, reason, tender, user_id, user_name, created_at)
+      VALUES (@id, @sale_id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @profit, @reason, @tender, @user_id, @user_name, @created_at)
+    `).run(row);
+    for (const c of stockChanges) db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(c.qty, c.id);
+  });
+  tx();
+  res.json({ ok: true, total });
+});
+
 // Void history for Reports — profit-bearing (same role level as /full), so it's never exposed
 // to a cashier who can void their own sales but shouldn't see margin figures.
 router.get('/voids', requireReports, (req, res) => {
@@ -281,6 +360,27 @@ router.get('/voids', requireReports, (req, res) => {
     soldBy: r.sold_by_user_name || null, saleCreatedAt: r.sale_created_at,
     voidedBy: r.voided_by_user_name || null, voidedAt: r.voided_at,
   })));
+});
+
+// Shaped exactly like toFullSale's output but negated (negative qty on every line, negative
+// subtotal/tax/total/profit) — Reports concatenates this straight into the same sales array it
+// already has, and every existing revenue/profit/by-item/by-event computation there (none of
+// which get touched for this) nets the return out correctly for free, the same arithmetic it'd
+// use for a sale with a negative quantity on it. charityDue/cardFee are always 0: a return
+// doesn't claw back a charity pledge or a processor's fee — see schema.sql's comment on this
+// table for why those aren't modeled here.
+const toReturnAsSale = (r) => ({
+  id: r.id, eventId: r.event_id, test: !!r.test, taxIncluded: !!r.tax_included,
+  lines: JSON.parse(r.lines_json).map((l) => ({ ...l, qty: -l.qty })),
+  subtotal: -r.subtotal, tax: -r.tax, total: -r.total,
+  tender: r.tender, received: -r.total, change: 0, soldBy: r.user_name || null,
+  cardProcessor: null, clientSaleId: null, createdAt: r.created_at,
+  profit: -r.profit, charityDue: 0, cardFee: 0,
+  isReturn: true, originalSaleId: r.sale_id, reason: r.reason || '',
+});
+router.get('/returns', requireReports, (req, res) => {
+  const rows = db.prepare('SELECT * FROM returns ORDER BY created_at DESC').all();
+  res.json(rows.map(toReturnAsSale));
 });
 
 module.exports = router;

@@ -22,6 +22,10 @@ router.post('/purge', (req, res) => {
     db.prepare('DELETE FROM custom_order_items WHERE order_id IN (SELECT id FROM custom_orders WHERE test = 1)').run();
     db.prepare('UPDATE custom_orders SET sale_id = NULL WHERE test = 1').run();
     counts.sales = db.prepare('DELETE FROM sales WHERE test = 1').run().changes;
+    // Same detach-before-delete as events.js's own DELETE /:id — voided_sales/returns both
+    // reference events(id) and are kept regardless of test/real (an audit trail, never purged).
+    db.prepare('UPDATE voided_sales SET event_id = NULL WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
+    db.prepare('UPDATE returns SET event_id = NULL WHERE event_id IN (SELECT id FROM events WHERE test = 1)').run();
     counts.events = db.prepare('DELETE FROM events WHERE test = 1').run().changes;
     counts.items = db.prepare('DELETE FROM items WHERE test = 1').run().changes;
     counts.materials = db.prepare('DELETE FROM materials WHERE test = 1').run().changes;

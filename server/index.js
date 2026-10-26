@@ -6,6 +6,7 @@ const SqliteStore = require('better-sqlite3-session-store')(session);
 const db = require('./db');
 const { getSessionSecret } = require('./lib/secret');
 const { scheduleDailyBackups } = require('./lib/backup');
+const { scheduleDailyLowStockCheck } = require('./lib/lowStockAlert');
 
 function createApp() {
   const app = express();
@@ -79,6 +80,7 @@ function createApp() {
   app.use('/api/maintenance', require('./routes/maintenance'));
   app.use('/api/test-data', require('./routes/testData'));
   app.use('/api/update', require('./routes/update'));
+  app.use('/api/email-settings', require('./routes/email'));
 
   app.use(express.static(path.join(__dirname, '..', 'public')));
   app.get('*', (req, res) => {
@@ -96,7 +98,7 @@ function startServer(port) {
   return new Promise((resolve, reject) => {
     const app = createApp();
     const server = app.listen(port);
-    server.once('listening', () => { scheduleDailyBackups(); resolve({ server, port: server.address().port }); });
+    server.once('listening', () => { scheduleDailyBackups(); scheduleDailyLowStockCheck(); resolve({ server, port: server.address().port }); });
     server.once('error', reject);
   });
 }

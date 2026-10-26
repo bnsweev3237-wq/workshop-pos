@@ -220,7 +220,7 @@ function showTab(t) {
   if (t === 'items') loadItems();
   if (t === 'orders') loadCustomOrders();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); fillBrandingForm(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); loadMailSettings(); fillBrandingForm(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -1423,8 +1423,81 @@ function buildSaleReceipt(sale) {
   const voidBtn = document.createElement('button'); voidBtn.className = 'sale-void'; voidBtn.textContent = sale.pendingSync ? 'Remove (unsynced)' : sale.test ? 'Void test sale' : 'Void sale';
   voidBtn.onclick = e => { e.stopPropagation(); voidSale(sale); };
   body.appendChild(voidBtn);
+  // A not-yet-synced sale isn't a real server record yet (its id is only a client-side
+  // placeholder) — nothing to return against until it syncs, same reasoning as why it can only
+  // be "removed," not voided, above.
+  if (!sale.pendingSync) {
+    const returnBtn = document.createElement('button'); returnBtn.className = 'sale-void'; returnBtn.textContent = 'Return…';
+    returnBtn.onclick = async (e) => {
+      e.stopPropagation();
+      const existing = body.querySelector('.return-form');
+      if (existing) { existing.remove(); return; }
+      body.appendChild(await buildReturnForm(sale));
+    };
+    body.appendChild(returnBtn);
+  }
   head.onclick = () => { body.hidden = !body.hidden; };
   wrap.appendChild(head); wrap.appendChild(body);
+  return wrap;
+}
+// A customer bringing something back against a past sale — each line gets its own qty-to-
+// return input (capped by whatever's already been returned against it, fetched fresh each time
+// this opens), a reason, and how the refund went back out. Submitting re-renders this sale's
+// whole receipt in place, so the qty caps reflect the new total immediately if it's reopened.
+async function buildReturnForm(sale) {
+  const wrap = document.createElement('div'); wrap.className = 'return-form';
+  let already = [];
+  try { already = await api('GET', `/api/sales/${sale.id}/returns`); } catch { /* treat as nothing returned yet */ }
+  const returnedByLine = new Map(already.map((r) => [r.lineIndex, num(r.qtyReturned)]));
+  const rows = sale.lines.map((l, i) => {
+    const left = Math.max(0, num(l.qty) - (returnedByLine.get(i) || 0));
+    return { index: i, line: l, left };
+  }).filter((r) => r.left > 0);
+  if (!rows.length) {
+    wrap.innerHTML = `<div class="hint">Everything on this sale has already been returned.</div>`;
+    return wrap;
+  }
+  wrap.innerHTML = `
+    ${rows.map((r) => `
+      <div class="return-row" data-index="${r.index}">
+        <span class="return-row-name">${esc(r.line.name)}</span>
+        <span class="return-row-left">${r.left} left</span>
+        <input type="number" class="in-tiny returnQty" min="0" max="${r.left}" step="1" value="0">
+      </div>`).join('')}
+    <div class="row r2" style="margin-top:10px">
+      <div><label>Refund via</label><select class="returnTender"><option value="cash"${sale.tender === 'cash' ? ' selected' : ''}>Cash</option><option value="other"${sale.tender !== 'cash' ? ' selected' : ''}>Card / Other</option></select></div>
+      <div><label>Reason (optional)</label><input class="returnReason" placeholder="e.g. wrong size"></div>
+    </div>
+    <div class="hint returnTotal" style="margin-top:8px">Refund total: $0.00</div>
+    <div class="btn-row"><button class="btn sm primary returnSubmit">Process return</button></div>`;
+  const qtyInputs = [...wrap.querySelectorAll('.returnQty')];
+  const updateTotal = () => {
+    let total = 0;
+    rows.forEach((r, i) => {
+      const qty = num(qtyInputs[i].value);
+      const rawAmt = num(r.line.price) * num(r.line.qty);
+      const discAmt = applyDiscount(r.line, rawAmt);
+      const perUnit = num(r.line.qty) > 0 ? (rawAmt - discAmt) / num(r.line.qty) : 0;
+      const { sub, tax } = lineTaxSplit({ price: perUnit, qty, taxRate: r.line.taxRate }, !!sale.taxIncluded);
+      total += sub + tax;
+    });
+    wrap.querySelector('.returnTotal').textContent = `Refund total: ${money(total)}`;
+  };
+  qtyInputs.forEach((inp) => inp.addEventListener('input', updateTotal));
+  updateTotal();
+  wrap.querySelector('.returnSubmit').onclick = async (e) => {
+    e.stopPropagation();
+    const lines = rows.map((r, i) => ({ lineIndex: r.index, qty: num(qtyInputs[i].value) })).filter((l) => l.qty > 0);
+    if (!lines.length) { toast('Enter a quantity to return first'); return; }
+    const tender = wrap.querySelector('.returnTender').value;
+    const reason = wrap.querySelector('.returnReason').value.trim();
+    if (!await askConfirm(`Process this return?`, 'Return')) return;
+    try {
+      const r = await api('POST', `/api/sales/${sale.id}/return`, { lines, tender, reason });
+      toast(`Return processed — ${money(r.total)} refunded`);
+      await Promise.all([loadPosItems(), loadSales()]);
+    } catch (err) { toast(err.message || 'Could not process return'); }
+  };
   return wrap;
 }
 async function loadSales() {
@@ -1922,8 +1995,13 @@ function rptWindow(key) {
   return { start: dayStart(earliest), end: now };
 }
 async function renderReports() {
+  const [sold, returned] = await Promise.all([api('GET', '/api/sales/full'), api('GET', '/api/sales/returns')]);
+  // Each return is shaped exactly like a sale but negated (server/routes/sales.js) — merging it
+  // straight into fullSales means every reduce()-based figure below (and every other Reports
+  // computation that reads fullSales/inRange — by item, by event, by tender…) nets returns out
+  // automatically, the same arithmetic it'd already do for a line with a negative quantity.
   [fullSales, items, appSettings, lib, voidedSales] = await Promise.all([
-    api('GET', '/api/sales/full'),
+    Promise.resolve([...sold, ...returned]),
     api('GET', `/api/items/full?test=${testMode ? 1 : 0}`),
     api('GET', '/api/settings'),
     api('GET', `/api/materials?test=${testMode ? 1 : 0}`),
@@ -1931,22 +2009,26 @@ async function renderReports() {
   ]);
   const { start, end } = rptWindow(rptRange);
   const inRange = fullSales.filter(s => !!s.test === testMode && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
+  const saleCount = inRange.filter(s => !s.isReturn).length;
+  const returnCount = inRange.filter(s => s.isReturn).length;
   const fmtDate = ms => new Date(ms).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  $('rptRangeHint').textContent = `${fmtDate(start)} – ${fmtDate(end)} · ${inRange.length ? `${inRange.length} sale${inRange.length === 1 ? '' : 's'}` : 'no sales yet'}`;
+  $('rptRangeHint').textContent = `${fmtDate(start)} – ${fmtDate(end)} · ${saleCount ? `${saleCount} sale${saleCount === 1 ? '' : 's'}` : 'no sales yet'}${returnCount ? ` · ${returnCount} return${returnCount === 1 ? '' : 's'}` : ''}`;
   const revenue = inRange.reduce((n, s) => n + num(s.total), 0);
   const profit = inRange.reduce((n, s) => n + num(s.profit), 0);
   const tax = inRange.reduce((n, s) => n + num(s.tax), 0);
   const charityDue = inRange.reduce((n, s) => n + num(s.charityDue), 0);
   const cardFees = inRange.reduce((n, s) => n + num(s.cardFee), 0);
+  const returnsTotal = inRange.filter(s => s.isReturn).reduce((n, s) => n - num(s.total), 0);
   const itemsSold = inRange.reduce((n, s) => n + s.lines.reduce((m, l) => m + num(l.qty), 0), 0);
-  const avg = inRange.length ? revenue / inRange.length : 0;
+  const avg = saleCount ? revenue / saleCount : 0;
   const tiles = [
     { lbl: 'Revenue', val: money(revenue) }, { lbl: 'Profit', val: money(profit), neg: profit < 0, highlight: true },
-    { lbl: 'Tax collected', val: money(tax) }, { lbl: 'Sales', val: inRange.length },
+    { lbl: 'Tax collected', val: money(tax) }, { lbl: 'Sales', val: saleCount },
     { lbl: 'Items sold', val: itemsSold }, { lbl: 'Avg sale', val: money(avg) },
   ];
   if (charityDue > 0) tiles.push({ lbl: 'Owed to charity', val: money(charityDue) });
   if (cardFees > 0) tiles.push({ lbl: 'Card processing fees', val: money(cardFees) });
+  if (returnsTotal > 0) tiles.push({ lbl: 'Returned', val: money(returnsTotal), neg: true });
   $('rptStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}"><div class="lbl">${t.lbl}</div><div class="val${t.neg ? ' neg' : ''}">${t.val}</div></div>`).join('');
   renderRptChart(inRange, start, end);
   renderRptTop(inRange);
@@ -1957,12 +2039,13 @@ async function renderReports() {
   renderRptInventory();
   renderRptTax(inRange, start, end);
   renderRptVoids(start, end);
+  renderRptReturns(inRange);
   showReportTab(rptTab);
 }
 function showReportTab(t) {
   rptTab = t;
   document.querySelectorAll('#rptTabs button').forEach(b => b.classList.toggle('on', b.dataset.rpttab === t));
-  ['overview', 'byuser', 'byitem', 'events', 'inventory', 'tax', 'voids'].forEach(x => $('rpt-tab-' + x).hidden = x !== t);
+  ['overview', 'byuser', 'byitem', 'events', 'inventory', 'tax', 'voids', 'returns'].forEach(x => $('rpt-tab-' + x).hidden = x !== t);
 }
 document.querySelectorAll('#rptTabs button').forEach(b => b.onclick = () => showReportTab(b.dataset.rpttab));
 function renderRptByUser(inRange) {
@@ -2164,6 +2247,44 @@ $('rptExportPdf').onclick = () => {
   };
   window.addEventListener('afterprint', restore);
   window.print();
+};
+// A small local CSV cell-escaper/builder — same RFC4180 rule as server/lib/csv.js (quote a
+// cell that contains a comma, quote, or newline; double up any quote inside it), just kept in
+// the client since this is the only place it's needed and there's nothing to share with the
+// server-side CSV routes (those build files from database rows, this builds one from whatever
+// Reports already has loaded and filtered to the screen's own date range).
+function csvCell(v) { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+function toCsvText(rows, columns) {
+  const lines = [columns.map(csvCell).join(',')];
+  for (const row of rows) lines.push(columns.map((c) => csvCell(row[c])).join(','));
+  return lines.join('\r\n') + '\r\n';
+}
+$('rptExportAccountingCsv').onclick = () => {
+  const { start, end } = rptWindow(rptRange);
+  const inRange = fullSales.filter(s => !!s.test === testMode && (s.createdAt || 0) >= start && (s.createdAt || 0) <= end);
+  if (!inRange.length) { toast('Nothing to export in this date range'); return; }
+  const rows = inRange.slice().sort((a, b) => a.createdAt - b.createdAt).map((s) => ({
+    Date: new Date(s.createdAt).toLocaleString(),
+    Type: s.isReturn ? 'Return' : 'Sale',
+    Event: (events.find((e) => e.id === s.eventId) || {}).name || '',
+    Tender: s.tender === 'cash' ? 'Cash' : 'Card/Other',
+    'Card Processor': s.cardProcessor || '',
+    Subtotal: s.subtotal.toFixed(2),
+    Tax: s.tax.toFixed(2),
+    'Card Fee': num(s.cardFee).toFixed(2),
+    Total: s.total.toFixed(2),
+    Profit: num(s.profit).toFixed(2),
+    'Sold By': s.soldBy || '',
+    Note: s.isReturn ? (s.reason || '') : '',
+  }));
+  const columns = ['Date', 'Type', 'Event', 'Tender', 'Card Processor', 'Subtotal', 'Tax', 'Card Fee', 'Total', 'Profit', 'Sold By', 'Note'];
+  const blob = new Blob([toCsvText(rows, columns)], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const fmt = (ms) => new Date(ms).toISOString().slice(0, 10);
+  a.download = `craftium-accounting-${fmt(start)}-to-${fmt(end)}${testMode ? '-test' : ''}.csv`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 function renderRptChart(inRange, start, end) {
   const box = $('rptChart');
@@ -2390,6 +2511,32 @@ function renderRptVoids(start, end) {
   }
 }
 
+// Returns are already in `inRange` (merged into fullSales as negative-shaped entries, see
+// renderReports) — this just picks them back out for their own listing instead of netting them
+// into every other breakdown the way the rest of Reports does.
+function renderRptReturns(inRange) {
+  const rows = inRange.filter(s => s.isReturn).slice().sort((a, b) => b.createdAt - a.createdAt);
+  $('rptReturnsHeader').hidden = rows.length === 0;
+  $('rptReturnsEmpty').hidden = rows.length > 0;
+  const box = $('rptReturnsList'); box.innerHTML = '';
+  for (const r of rows) {
+    const row = document.createElement('div'); row.className = 'rpt-cost-row';
+    row.innerHTML = `<div class="rpt-cost-head" style="cursor:default">
+      <span class="rpt-cost-name"></span>
+      <span class="rpt-cost-cost"></span>
+      <span class="rpt-cost-profit"></span>
+    </div>`;
+    const nameEl = row.querySelector('.rpt-cost-name');
+    const items = r.lines.map(l => `${-num(l.qty)} × ${esc(l.name)}`).join(', ');
+    nameEl.innerHTML = `${esc(new Date(r.createdAt).toLocaleString())} — ${items}<br><small style="color:var(--muted);font-weight:400">Processed by ${esc(r.soldBy || 'unknown')}${r.reason ? ` · ${esc(r.reason)}` : ''}</small>`;
+    row.querySelector('.rpt-cost-cost').textContent = money(-num(r.total));
+    const profEl = row.querySelector('.rpt-cost-profit');
+    profEl.textContent = money(num(r.profit));
+    profEl.classList.add('neg');
+    box.appendChild(row);
+  }
+}
+
 document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => { rptRange = b.dataset.range; document.querySelectorAll('#rptRangeSeg button').forEach(x => x.classList.toggle('on', x === b)); renderReports(); });
 
 // ---------- Settings: sales tracking ----------
@@ -2459,6 +2606,51 @@ function renderDuplicateMaterials() {
     box.appendChild(buildDupGroup(g[0].name, g.length, rows));
   }
 }
+
+// ---------- Settings: email alerts ----------
+async function loadMailSettings() {
+  let c;
+  try { c = await api('GET', '/api/email-settings'); } catch { return; }
+  $('mailHost').value = c.host || '';
+  $('mailPort').value = c.port || '';
+  $('mailSecure').checked = !!c.secure;
+  $('mailUser').value = c.user || '';
+  $('mailPass').value = '';
+  $('mailPass').placeholder = c.hasPassword ? 'leave blank to keep unchanged' : '';
+  $('mailFrom').value = c.from || '';
+  $('mailAlertRecipient').value = c.alertRecipient || '';
+  $('mailLowStockChk').checked = !!c.lowStockEnabled;
+  $('mailStatusHint').textContent = c.host && c.from && c.alertRecipient
+    ? `Configured — sending through ${c.host}.` : 'Not fully configured yet — nothing will be emailed.';
+}
+$('mailSaveBtn').onclick = async () => {
+  const body = {
+    host: $('mailHost').value, port: $('mailPort').value, secure: $('mailSecure').checked,
+    user: $('mailUser').value, password: $('mailPass').value,
+    from: $('mailFrom').value, alertRecipient: $('mailAlertRecipient').value,
+    lowStockEnabled: $('mailLowStockChk').checked,
+  };
+  try { await api('POST', '/api/email-settings', body); toast('Email settings saved'); await loadMailSettings(); }
+  catch (e) { toast(e.message || 'Could not save email settings'); }
+};
+$('mailTestBtn').onclick = async () => {
+  $('mailTestBtn').disabled = true;
+  try { await api('POST', '/api/email-settings/test'); toast('Test email sent — check the alert recipient’s inbox'); }
+  catch (e) { toast(e.message || 'Could not send test email'); }
+  finally { $('mailTestBtn').disabled = false; }
+};
+$('mailCheckNowBtn').onclick = async () => {
+  $('mailCheckNowBtn').disabled = true;
+  try {
+    const r = await api('POST', '/api/email-settings/check-low-stock');
+    if (r.sent) toast(`Low-stock digest sent — ${r.count} item${r.count === 1 ? '' : 's'}/materials low`);
+    else if (r.reason === 'disabled') toast('Turn on the low-stock checkbox first');
+    else if (r.reason === 'no_recipient') toast('Set an alert recipient first');
+    else if (r.reason === 'nothing_low') toast('Nothing is low on stock right now');
+    else toast(r.error || 'Could not run the check');
+  } catch (e) { toast(e.message || 'Could not run the check'); }
+  finally { $('mailCheckNowBtn').disabled = false; }
+};
 
 // ---------- Branding (logo, business name, accent color) ----------
 // Public (no login needed) since the login screen itself shows it — see server/routes/branding.

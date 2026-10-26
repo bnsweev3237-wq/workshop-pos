@@ -1,6 +1,6 @@
 {
   "name": "craftium",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Craftium — pricing calculator & point of sale for workshop/craft businesses, standalone edition",
   "author": "Craftium",
   "main": "electron/main.js",
@@ -20,7 +20,8 @@
     "express": "^4.21.1",
     "express-rate-limit": "^8.7.1",
     "express-session": "^1.18.1",
-    "helmet": "^8.3.0"
+    "helmet": "^8.3.0",
+    "nodemailer": "^10.2.1"
   },
   "devDependencies": {
     "electron": "^44.9.0",

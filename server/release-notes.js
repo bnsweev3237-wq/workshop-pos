@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.6.0',
+    date: '2026-10-26',
+    notes: [
+      'Returns: process a return against a past sale right from its receipt (Sell page or an event\'s sales list) — pick which lines and how many of each came back, a reason, and how the refund went out. Stock is restored and it\'s netted out of revenue, profit, and every Reports breakdown automatically, with its own "Returns" tab for the record of each one. Distinct from voiding a sale (same-session "this never happened") — a return is a separate, later transaction that keeps the original sale intact.',
+      'Reports now has an "Export accounting CSV" button next to Export PDF — the currently-filtered date range\'s sales and returns as a ledger-style CSV (one row each, returns as negative amounts) for an accountant or bookkeeping software.',
+      'Settings → Email alerts: set up an outgoing mail server (SMTP) once, with a "Send test email" button to confirm it works. Its first real use is a daily low-stock digest — turn it on and get an email summary whenever anything drops to or below its low-stock alert level.',
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2026-10-26',
     notes: [

@@ -258,6 +258,51 @@ CREATE TABLE IF NOT EXISTS voided_sales (
 );
 CREATE INDEX IF NOT EXISTS idx_voided_sales_voided_at ON voided_sales(voided_at);
 
+-- A customer bringing something back, days or weeks after the original sale — distinct from
+-- voiding (same-session "this never happened," which deletes the sale outright). A return
+-- never touches the original sale row: it stays exactly as recorded, and this is a separate,
+-- later transaction against it, which is how real accounting treats a return (in the period it
+-- happens, not a retroactive rewrite of the period it was sold in). lines_json holds one entry
+-- per returned line — {lineIndex, itemId, name, price (that line's effective per-unit price
+-- after any original discount), qty (how many of it came back), taxRate} — lineIndex ties it
+-- back to a specific line in the original sale's own lines_json, since a sale's lines have no
+-- id of their own. subtotal/tax/total/profit are all positive magnitudes (what was refunded,
+-- what profit it reverses), the same way voided_sales stores the original sale's own figures
+-- as positive — negated only where something (Reports) needs to subtract them.
+--
+-- sale_id is deliberately NOT `REFERENCES sales(id)` — same reasoning as voided_sales'
+-- original_sale_id above: this is a permanent financial record, meant to survive a purge (see
+-- maintenance.js, which never deletes voided_sales either) even though `sales` itself gets
+-- wiped by one. Enforcing the FK would mean either cascading the purge into this audit trail
+-- too, or detaching it everywhere `sales` rows get deleted — same tradeoff voided_sales already
+-- made the other way.
+CREATE TABLE IF NOT EXISTS returns (
+  id TEXT PRIMARY KEY,
+  sale_id TEXT,
+  event_id TEXT REFERENCES events(id),
+  test INTEGER NOT NULL DEFAULT 0,
+  -- Snapshot of the original sale's own tax_included — needed to re-derive each returned
+  -- line's tax split correctly (Reports treats a return as a negative-quantity sale and reuses
+  -- the exact same per-line tax-split function sales already use, included-vs-added has to
+  -- match what was actually charged).
+  tax_included INTEGER NOT NULL DEFAULT 0,
+  lines_json TEXT NOT NULL DEFAULT '[]',
+  subtotal REAL NOT NULL DEFAULT 0,
+  tax REAL NOT NULL DEFAULT 0,
+  total REAL NOT NULL DEFAULT 0,
+  profit REAL NOT NULL DEFAULT 0,
+  reason TEXT,
+  -- How the refund went back out — 'cash' or 'other', the same two-way split as a sale's own
+  -- tender. No card-processor fee is modeled here: a refund typically isn't charged a second
+  -- fee by the processor, and when it is, policies vary too much to generalize.
+  tender TEXT NOT NULL DEFAULT 'cash',
+  user_id TEXT REFERENCES users(id),
+  user_name TEXT,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
+CREATE INDEX IF NOT EXISTS idx_returns_created ON returns(created_at);
+
 -- Small key/value store for app-wide preferences that don't warrant their own table.
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

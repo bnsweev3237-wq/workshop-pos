@@ -503,7 +503,10 @@
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
         <h2 style="margin:0">Sales reports</h2>
-        <button class="btn sm" id="rptExportPdf">⤓ Export PDF</button>
+        <div class="btn-row" style="margin:0">
+          <button class="btn sm" id="rptExportPdf">⤓ Export PDF</button>
+          <button class="btn sm" id="rptExportAccountingCsv">⤓ Export accounting CSV</button>
+        </div>
       </div>
       <div class="seg" id="rptRangeSeg" style="margin-top:14px">
         <button data-range="today">Today</button>
@@ -520,6 +523,7 @@
         <button data-rpttab="inventory">Inventory</button>
         <button data-rpttab="tax">Tax</button>
         <button data-rpttab="voids">Voids</button>
+        <button data-rpttab="returns">Returns</button>
       </nav>
     </div>
 
@@ -643,6 +647,16 @@
         <div class="rpt-cost-headerrow" id="rptVoidHeader" hidden><span>Voided</span><span>Amount</span><span>Profit lost</span></div>
         <div id="rptVoidList"></div>
         <div class="empty" id="rptVoidEmpty" hidden>No voided sales in this range.</div>
+      </div>
+    </div>
+
+    <div id="rpt-tab-returns" hidden>
+      <div class="card">
+        <h2>Returns</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:10px">Every return processed in the date range above — already netted out of revenue, profit, and every other figure in this report, this is just the record of each one.</div>
+        <div class="rpt-cost-headerrow" id="rptReturnsHeader" hidden><span>Returned</span><span>Refunded</span><span>Profit reversed</span></div>
+        <div id="rptReturnsList"></div>
+        <div class="empty" id="rptReturnsEmpty" hidden>No returns in this range.</div>
       </div>
     </div>
   </section>
@@ -804,6 +818,38 @@
       <label style="margin-top:16px;margin-bottom:6px">Materials</label>
       <div id="dupMaterialsList"></div>
       <div class="empty" id="dupMaterialsEmpty">No duplicate materials found.</div>
+    </div>
+
+    <div class="card">
+      <h2>Email alerts</h2>
+      <div class="help">Set up an outgoing mail server (SMTP) once here, and it's reused for any email alert this app sends — right now, just the low-stock digest below. Nothing is emailed until a host, a "from" address, and an alert recipient are all set.</div>
+      <div class="row r2">
+        <div><label for="mailHost">SMTP host</label><input id="mailHost" placeholder="smtp.example.com"></div>
+        <div><label for="mailPort">Port</label><input id="mailPort" type="number" min="1" step="1" placeholder="587"></div>
+      </div>
+      <label class="chk-field">
+        <input type="checkbox" id="mailSecure">
+        <span>Use SSL/TLS (usually port 465 — leave off for STARTTLS on 587, the more common setup)</span>
+      </label>
+      <div class="row r2" style="margin-top:14px">
+        <div><label for="mailUser">Username</label><input id="mailUser" autocomplete="off"></div>
+        <div><label for="mailPass">Password</label><input id="mailPass" type="password" placeholder="leave blank to keep unchanged" autocomplete="new-password"></div>
+      </div>
+      <div class="row r2" style="margin-top:14px">
+        <div><label for="mailFrom">From address</label><input id="mailFrom" type="email" placeholder="craftium@yourshop.com"></div>
+        <div><label for="mailAlertRecipient">Alert recipient</label><input id="mailAlertRecipient" type="email" placeholder="you@yourshop.com"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn primary sm" id="mailSaveBtn">Save email settings</button>
+        <button class="btn sm" id="mailTestBtn">Send test email</button>
+      </div>
+      <div class="hint" id="mailStatusHint" style="margin-top:10px"></div>
+
+      <label class="chk-field" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+        <input type="checkbox" id="mailLowStockChk">
+        <span>Email me a daily digest when any item or material is at or below its low-stock alert level<br><small style="color:var(--muted);font-weight:400">Checked once a day automatically; only sent when something's actually low. Real catalog only — test-mode stock is never included.</small></span>
+      </label>
+      <div class="btn-row"><button class="btn sm" id="mailCheckNowBtn">Check now</button></div>
     </div>
 
     <div class="card">

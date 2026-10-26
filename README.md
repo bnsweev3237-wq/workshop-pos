@@ -61,6 +61,13 @@ Working end to end, tested:
   real data.
 - Database maintenance (Settings, admin-only) — copy real data into the test sandbox, or
   purge everything.
+- A Duplicates review panel (Settings) grouping same-named items/materials for cleanup.
+- Returns — process a return against a past sale from its receipt, netted out of every Reports
+  figure automatically. See "Returns" below.
+- An "Export accounting CSV" button in Reports, and Export/Import CSV buttons on the Items and
+  Materials tabs for bulk spreadsheet edits. See "CSV import/export" below.
+- Email alerts (Settings, admin-only) — an SMTP config reused for any email this app sends,
+  starting with an optional daily low-stock digest. See "Email alerts" below.
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
 window with its own per-install database in the OS's standard app-data folder — and a GitHub
@@ -269,6 +276,26 @@ accounts can add one from the Sell page ticket; the cashier role can't — the c
 shown to it, and the server rejects a discount on a cashier's ticket even if sent directly,
 so this isn't just a UI restriction.
 
+## Returns
+
+A customer bringing something back — distinct from voiding a sale (the Sell page's existing
+"Void sale," same-session "this never happened," which deletes the sale outright). A return is
+a separate, later transaction against a past sale: the original sale stays exactly as recorded,
+the way real accounting treats a return (in the period it happens, not a rewrite of the period
+it was sold in).
+
+From a sale's receipt — wherever one shows up: the Sell page's recent sales, or an event's own
+sales list — "Return…" opens a line-by-line picker, capped by whatever's already been returned
+against that sale so far. Pick how many of each line came back, how the refund went out (cash
+or card/other), an optional reason, and it's processed: stock comes back, and the refund (with
+its own share of tax, and a prorated share of any discount the line had) is recorded.
+
+Every other figure in Reports — revenue, profit, by item, by salesperson, by event — nets a
+return out automatically, the same arithmetic as a line with a negative quantity on it. Reports
+also has its own "Returns" tab, just the record of each one (already netted out everywhere
+else). Not modeled: a return doesn't claw back a charity pledge from the original sale, and no
+card-processor fee is applied to the refund (real policies on that vary too much to generalize).
+
 ## Card processors
 
 Settings → Card processors (admin-only) holds a list of who you take card payments through —
@@ -372,6 +399,15 @@ across the ones that use it:
   sale has always deleted it outright (stock gets restored); this is a permanent record of
   that happening, kept in a separate table so a void stays visible here even though the
   original sale is gone.
+- **Returns**: every return in the range — see "Returns" above for what a return actually is
+  and how it's netted into every other sub-tab here. This one is just its own record of each.
+
+**Export accounting CSV**, next to Export PDF, downloads the currently-filtered date range's
+sales and returns as a ledger-style CSV — one row per transaction (date, type, event, tender,
+card processor, subtotal/tax/fee/total/profit, sold by), returns as negative amounts — for
+handing to an accountant or importing into bookkeeping software. Separate from (and simpler
+than) the Items/Materials CSV export under "CSV import/export" below, which is for inventory,
+not transactions.
 
 ## Test mode
 
@@ -526,6 +562,24 @@ that first row's update. **A blank cell leaves that field unchanged** on an exis
 sheet that's just a stock recount doesn't need every other column filled in too), but becomes
 a zero/empty default when creating something new. For materials, a Source name that doesn't
 already exist in Settings is created automatically rather than rejected.
+
+## Email alerts
+
+Settings → Email alerts (admin only) holds one outgoing mail server (SMTP) config, reused for
+any email alert this app sends — host, port, SSL/TLS on or off, username/password, a "from"
+address, and where alerts go. Nothing is sent until a host, "from" address, and recipient are
+all set. The password is never echoed back once saved — the field just shows "leave blank to
+keep unchanged" — and "Send test email" sends one to the configured recipient right away, to
+confirm the setup actually works before relying on it for something nobody's watching happen.
+
+The first (and so far only) thing that uses it is a **daily low-stock digest**: turn on "Email
+me when stock is low" and, once a day, if anything in the real catalog (never test-mode stock)
+is at or below its low-stock alert level, you get a summary email listing what and how much is
+left. Nothing is sent on a day nothing's low. A "Check now" button runs the same check
+immediately, for trying it out without waiting for the next scheduled run.
+
+Not modeled (yet, but the SMTP setup above is reusable for it): per-order or per-event alerts,
+a digest frequency other than daily, or more than one recipient.
 
 ## Security model
 

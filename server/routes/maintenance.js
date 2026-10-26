@@ -181,6 +181,12 @@ router.post('/purge', (req, res) => {
     // reasoning as every other foreign key cleared ahead of its parent in this transaction.
     db.prepare('UPDATE custom_orders SET sale_id = NULL').run();
     db.prepare('DELETE FROM sales').run();
+    // voided_sales/returns both reference events(id) and are deliberately kept (never deleted
+    // by this purge — permanent audit trails, same as they survive the test-side purge too) —
+    // detach rather than cascade, or the DELETE FROM events below fails outright the first time
+    // either table actually has a row pointing at a real event.
+    db.prepare('UPDATE voided_sales SET event_id = NULL').run();
+    db.prepare('UPDATE returns SET event_id = NULL').run();
     db.prepare('DELETE FROM events').run();
     db.prepare('DELETE FROM items').run();
     db.prepare('DELETE FROM materials').run();

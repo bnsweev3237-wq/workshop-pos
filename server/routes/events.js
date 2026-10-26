@@ -151,6 +151,7 @@ router.delete('/:id', requireEventManage, (req, res) => {
     db.prepare('DELETE FROM event_items WHERE event_id = ?').run(req.params.id);
     db.prepare('UPDATE sales SET event_id = NULL WHERE event_id = ?').run(req.params.id);
     db.prepare('UPDATE voided_sales SET event_id = NULL WHERE event_id = ?').run(req.params.id);
+    db.prepare('UPDATE returns SET event_id = NULL WHERE event_id = ?').run(req.params.id);
     db.prepare('DELETE FROM events WHERE id = ?').run(req.params.id);
   });
   tx();
