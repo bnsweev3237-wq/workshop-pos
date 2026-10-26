@@ -11,10 +11,13 @@ router.use(requireEventManage);
 const toPublic = (r) => ({
   id: r.id, itemName: r.item_name, customerName: r.customer_name, customerContact: r.customer_contact || '',
   dueDate: r.due_date || '', status: r.status, notes: r.notes || '', test: !!r.test,
+  fulfillment: r.fulfillment || 'pickup', shippingAddress: r.shipping_address || '',
+  shippingCost: r.shipping_cost, trackingNumber: r.tracking_number || '',
   createdAt: r.created_at, updatedAt: r.updated_at,
 });
 
 const STATUSES = ['new', 'in_progress', 'ready', 'picked_up'];
+const FULFILLMENTS = ['pickup', 'ship'];
 
 router.get('/', (req, res) => {
   const testFlag = req.query.test === '1' ? 1 : 0;
@@ -29,6 +32,7 @@ router.post('/', (req, res) => {
   const isUpdate = !!b.id;
   const existing = isUpdate ? db.prepare('SELECT created_at FROM custom_orders WHERE id = ?').get(b.id) : null;
   const now = Date.now();
+  const fulfillment = FULFILLMENTS.includes(b.fulfillment) ? b.fulfillment : 'pickup';
   const row = {
     id: b.id || uid(),
     item_name: itemName,
@@ -37,15 +41,22 @@ router.post('/', (req, res) => {
     due_date: b.dueDate || null,
     status: STATUSES.includes(b.status) ? b.status : 'new',
     notes: String(b.notes || '').trim() || null,
+    fulfillment,
+    // Shipping fields only persist when fulfillment is actually 'ship' — switching an order
+    // back to pickup clears them rather than leaving stale shipping data attached to it.
+    shipping_address: fulfillment === 'ship' ? (String(b.shippingAddress || '').trim() || null) : null,
+    shipping_cost: fulfillment === 'ship' && b.shippingCost !== '' && b.shippingCost != null ? Number(b.shippingCost) || 0 : null,
+    tracking_number: fulfillment === 'ship' ? (String(b.trackingNumber || '').trim() || null) : null,
     test: b.test ? 1 : 0,
     created_at: existing ? existing.created_at : now,
     updated_at: now,
   };
   db.prepare(`
-    INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, test, created_at, updated_at)
-    VALUES (@id, @item_name, @customer_name, @customer_contact, @due_date, @status, @notes, @test, @created_at, @updated_at)
+    INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, fulfillment, shipping_address, shipping_cost, tracking_number, test, created_at, updated_at)
+    VALUES (@id, @item_name, @customer_name, @customer_contact, @due_date, @status, @notes, @fulfillment, @shipping_address, @shipping_cost, @tracking_number, @test, @created_at, @updated_at)
     ON CONFLICT(id) DO UPDATE SET item_name=@item_name, customer_name=@customer_name, customer_contact=@customer_contact,
-      due_date=@due_date, status=@status, notes=@notes, updated_at=@updated_at
+      due_date=@due_date, status=@status, notes=@notes, fulfillment=@fulfillment, shipping_address=@shipping_address,
+      shipping_cost=@shipping_cost, tracking_number=@tracking_number, updated_at=@updated_at
   `).run(row);
   res.json(toPublic(db.prepare('SELECT * FROM custom_orders WHERE id = ?').get(row.id)));
 });

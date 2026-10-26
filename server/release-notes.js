@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.0.1',
+    date: '2026-10-26',
+    notes: [
+      'Custom Orders can now track shipping: check "This order ships" to add a shipping address, a shipping & handling charge, and a tracking number. Statuses relabel to "Ready to ship" / "Shipped" for those orders.',
+    ],
+  },
+  {
     version: '1.0.0',
     date: '2026-10-26',
     notes: [

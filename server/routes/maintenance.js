@@ -69,9 +69,9 @@ router.post('/copy-to-test', (req, res) => {
     // No id remapping needed — item_name is free text, not a foreign key to items(id).
     for (const o of db.prepare('SELECT * FROM custom_orders WHERE test = 0').all()) {
       db.prepare(`
-        INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, test, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-      `).run(uid(), o.item_name, o.customer_name, o.customer_contact, o.due_date, o.status, o.notes, o.created_at, o.updated_at);
+        INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, fulfillment, shipping_address, shipping_cost, tracking_number, test, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(uid(), o.item_name, o.customer_name, o.customer_contact, o.due_date, o.status, o.notes, o.fulfillment, o.shipping_address, o.shipping_cost, o.tracking_number, o.created_at, o.updated_at);
     }
 
     // source_id isn't remapped — `sources` (the vendor tag list) isn't split by test/main,

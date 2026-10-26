@@ -258,9 +258,18 @@ CREATE TABLE IF NOT EXISTS custom_orders (
   customer_contact TEXT,
   due_date TEXT,
   -- 'new' -> 'in_progress' -> 'ready' -> 'picked_up', in the order you'd expect, but nothing
-  -- enforces that order — any status can be set at any time.
+  -- enforces that order — any status can be set at any time. The client relabels 'ready'/
+  -- 'picked_up' as "Ready to ship"/"Shipped" when fulfillment = 'ship', same two statuses
+  -- either way.
   status TEXT NOT NULL DEFAULT 'new',
   notes TEXT,
+  -- 'pickup' (default): the customer collects it in person, same as before this column
+  -- existed — no address or shipping charge needed. 'ship': shipping_address and
+  -- shipping_cost become relevant, and tracking_number once it's gone out.
+  fulfillment TEXT NOT NULL DEFAULT 'pickup',
+  shipping_address TEXT,
+  shipping_cost REAL,
+  tracking_number TEXT,
   test INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL

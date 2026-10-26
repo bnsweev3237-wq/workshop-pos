@@ -725,7 +725,10 @@ $('itemsSort').addEventListener('change', () => { itemsSort = $('itemsSort').val
 // catalog and event inventory — admin/manager/lead only, same as event management. itemName
 // is always free text (not a link to a catalog item): most custom orders are one-offs that
 // never get cataloged, and a free-text snapshot can't be orphaned by a later item edit/delete.
-const ORDER_STATUS_LABEL = { new: 'New', in_progress: 'In progress', ready: 'Ready for pickup', picked_up: 'Picked up' };
+const ORDER_STATUS_LABEL = {
+  pickup: { new: 'New', in_progress: 'In progress', ready: 'Ready for pickup', picked_up: 'Picked up' },
+  ship: { new: 'New', in_progress: 'In progress', ready: 'Ready to ship', picked_up: 'Shipped' },
+};
 let customOrders = [];
 let ordersSearch = '', ordersStatusFilter = '';
 let editingOrderId = null;
@@ -745,19 +748,28 @@ function renderCustomOrders() {
   for (const o of visible) {
     const tr = document.createElement('tr'); tr.dataset.id = o.id;
     tr.innerHTML = `
-      <td><div class="iname"></div>${o.notes ? `<div class="meta"></div>` : ''}</td>
-      <td><div></div><div class="meta"></div></td>
-      <td></td>
+      <td><div class="iname"></div>${o.notes ? `<div class="meta itemMeta"></div>` : ''}</td>
+      <td><div class="custName"></div><div class="meta custMeta"></div></td>
+      <td class="dueCell"></td>
+      <td class="fulfillCell"></td>
       <td><select class="statusSel"></select></td>
       <td class="acts"><button class="btn sm edit">Edit</button><button class="icon-btn del" title="Delete">×</button></td>`;
     tr.querySelector('.iname').textContent = o.itemName;
-    if (o.notes) tr.querySelector('.meta').textContent = o.notes;
-    const custCell = tr.children[1];
-    custCell.querySelector('div').textContent = o.customerName || '—';
-    custCell.querySelector('.meta').textContent = o.customerContact || '';
-    tr.children[2].textContent = o.dueDate ? new Date(o.dueDate + 'T00:00:00').toLocaleDateString() : '—';
+    if (o.notes) tr.querySelector('.itemMeta').textContent = o.notes;
+    tr.querySelector('.custName').textContent = o.customerName || '—';
+    tr.querySelector('.custMeta').textContent = o.customerContact || '';
+    tr.querySelector('.dueCell').textContent = o.dueDate ? new Date(o.dueDate + 'T00:00:00').toLocaleDateString() : '—';
+    const fulfillCell = tr.querySelector('.fulfillCell');
+    if (o.fulfillment === 'ship') {
+      fulfillCell.innerHTML = `<div>Ship${o.shippingCost != null ? ` — ${money(num(o.shippingCost))}` : ''}</div><div class="meta fulfillMeta"></div>`;
+      const shipMeta = [o.shippingAddress, o.trackingNumber ? `Tracking: ${o.trackingNumber}` : ''].filter(Boolean).join(' · ');
+      fulfillCell.querySelector('.fulfillMeta').textContent = shipMeta;
+    } else {
+      fulfillCell.textContent = 'Pickup';
+    }
     const sel = tr.querySelector('.statusSel');
-    sel.innerHTML = Object.entries(ORDER_STATUS_LABEL).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    const statusLabels = ORDER_STATUS_LABEL[o.fulfillment === 'ship' ? 'ship' : 'pickup'];
+    sel.innerHTML = Object.entries(statusLabels).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
     sel.value = o.status;
     sel.onchange = async () => {
       try { await api('POST', `/api/custom-orders/${o.id}/status`, { status: sel.value }); o.status = sel.value; toast('Status updated'); }
@@ -784,9 +796,15 @@ function fillOrderForm(o) {
   $('orderCustomerName').value = o?.customerName || '';
   $('orderCustomerContact').value = o?.customerContact || '';
   $('orderNotes').value = o?.notes || '';
+  $('orderShips').checked = o?.fulfillment === 'ship';
+  $('orderShipFields').hidden = o?.fulfillment !== 'ship';
+  $('orderShipAddress').value = o?.shippingAddress || '';
+  $('orderShipCost').value = o?.shippingCost ?? '';
+  $('orderTracking').value = o?.trackingNumber || '';
   $('orderCancel').hidden = !o;
   if (o) $('orderItemName').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
+$('orderShips').addEventListener('change', () => { $('orderShipFields').hidden = !$('orderShips').checked; });
 $('orderCancel').onclick = () => fillOrderForm(null);
 $('orderSave').onclick = async () => {
   const itemName = $('orderItemName').value.trim();
@@ -796,6 +814,9 @@ $('orderSave').onclick = async () => {
     await api('POST', '/api/custom-orders', {
       id: existing?.id, itemName, dueDate: $('orderDue').value, customerName: $('orderCustomerName').value.trim(),
       customerContact: $('orderCustomerContact').value.trim(), notes: $('orderNotes').value.trim(),
+      fulfillment: $('orderShips').checked ? 'ship' : 'pickup',
+      shippingAddress: $('orderShipAddress').value.trim(), shippingCost: $('orderShipCost').value,
+      trackingNumber: $('orderTracking').value.trim(),
       status: existing?.status, test: testMode,
     });
     toast(existing ? 'Order updated' : 'Order saved');

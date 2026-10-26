@@ -254,7 +254,7 @@
       </div>
       <div class="scroll">
         <table class="items-table">
-          <thead><tr><th>Item</th><th>Customer</th><th>Due</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th>Customer</th><th>Due</th><th>Fulfillment</th><th>Status</th><th></th></tr></thead>
           <tbody id="ordersRows"></tbody>
         </table>
       </div>
@@ -271,6 +271,18 @@
       <div class="row r2" style="margin-top:12px">
         <div><label for="orderCustomerName">Customer name</label><input id="orderCustomerName"></div>
         <div><label for="orderCustomerContact">Customer contact</label><input id="orderCustomerContact" placeholder="phone or email"></div>
+      </div>
+      <label class="chk-field" style="margin-top:12px">
+        <input type="checkbox" id="orderShips">
+        <span>This order ships <small style="color:var(--muted);font-weight:400">(instead of being picked up in person)</small></span>
+      </label>
+      <div id="orderShipFields" hidden style="margin-top:12px">
+        <label for="orderShipAddress">Shipping address</label>
+        <textarea id="orderShipAddress" rows="3" placeholder="Name, street, city, state, ZIP" style="width:100%;resize:vertical;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)"></textarea>
+        <div class="row r2" style="margin-top:12px">
+          <div><label for="orderShipCost">Shipping &amp; handling charge ($)</label><input id="orderShipCost" type="number" min="0" step="0.01" placeholder="0.00"></div>
+          <div><label for="orderTracking">Tracking number</label><input id="orderTracking" placeholder="once it's shipped"></div>
+        </div>
       </div>
       <label for="orderNotes" style="margin-top:12px">Notes</label>
       <textarea id="orderNotes" rows="3" style="width:100%;resize:vertical;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)"></textarea>

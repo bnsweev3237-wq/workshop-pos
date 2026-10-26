@@ -254,13 +254,20 @@ a single per-state number could cover, so this is only ever what you've entered 
 ## Custom Orders
 
 A separate tab (admin/manager/lead) for tracking made-to-order or custom pieces from request
-to pickup — item/description, customer name and contact, due date, status (New → In progress
-→ Ready for pickup → Picked up, changeable inline from the list), and notes. It's deliberately
-separate from the item catalog: most custom orders are one-offs that never get added as a
-catalog item at all, and the item/description here is always free text, never a link to one,
-so a later catalog edit or deletion can never orphan or silently change an order referencing
-it. Ringing up the actual sale when it's picked up still happens on the Sell page as usual —
-this tab only tracks the request itself.
+to pickup — item/description, customer name and contact, due date, status, and notes. It's
+deliberately separate from the item catalog: most custom orders are one-offs that never get
+added as a catalog item at all, and the item/description here is always free text, never a
+link to one, so a later catalog edit or deletion can never orphan or silently change an order
+referencing it. Ringing up the actual sale when it's picked up still happens on the Sell page
+as usual — this tab only tracks the request itself.
+
+An order defaults to in-person pickup, with a status of New → In progress → Ready for pickup
+→ Picked up (changeable inline from the list). Checking "This order ships" instead brings up
+a shipping address field, a shipping & handling charge, and a tracking number (filled in once
+it's gone out) — the same statuses relabel themselves to Ready to ship / Shipped for a shipped
+order, so the queue reads correctly either way. The shipping charge is informational here —
+charging for it still happens as its own line on the Sell page ticket when the order is rung
+up; this tab doesn't total or process payment.
 
 ## Reports
 

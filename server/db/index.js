@@ -75,6 +75,10 @@ ensureColumn('event_items', 'qty_brought', 'REAL');
 ensureColumn('items', 'created_at', 'INTEGER');
 ensureColumn('items', 'not_for_shows', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('events', 'state', 'TEXT');
+ensureColumn('custom_orders', 'fulfillment', "TEXT NOT NULL DEFAULT 'pickup'");
+ensureColumn('custom_orders', 'shipping_address', 'TEXT');
+ensureColumn('custom_orders', 'shipping_cost', 'REAL');
+ensureColumn('custom_orders', 'tracking_number', 'TEXT');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before
