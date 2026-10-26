@@ -40,9 +40,15 @@ Working end to end, tested:
   broken out by category in each event's wrap-up.
 - Events can be set up ahead of time as drafts and started later with one click ("Upcoming
   events" on the Sell page), with a per-event item selection — down to a "bringing X of
-  these" quantity per item — that can also be bulk-set by category.
-- Test mode — a full, independent sandbox (items, materials, events, and sales each have
-  their own test-side copy) for practicing or training without touching real data.
+  these" quantity per item — that can also be bulk-set by category, and can be cloned into
+  a new draft. Printable packing lists and barcoded price tags are generated from that same
+  per-event item selection.
+- Line discounts (% or $, admin/manager/lead only), tax rate presets by state, and an
+  item-number lookup on the Sell page that doubles as a barcode-scanner input.
+- A Custom Orders tab for tracking made-to-order/custom pieces from request to pickup.
+- Test mode — a full, independent sandbox (items, materials, events, sales, and custom
+  orders each have their own test-side copy) for practicing or training without touching
+  real data.
 - Database maintenance (Settings, admin-only) — copy real data into the test sandbox, or
   purge everything.
 
@@ -130,19 +136,20 @@ curious user," not "can't be reverse engineered by someone determined to."
 Four account roles, each strictly a subset of the one above it, except that only admins and
 managers can edit pricing/materials:
 
-| | Sell | Reports | Calculator / Materials / Items | Settings |
-|---|---|---|---|---|
-| **Admin** | ✓ full | ✓ | ✓ | ✓ |
-| **Manager** | ✓ full | ✓ | ✓ | — |
-| **Lead** | ✓ full | ✓ | — | — |
-| **Cashier** | restricted | — | — | — |
+| | Sell | Reports | Custom Orders | Calculator / Materials / Items | Settings |
+|---|---|---|---|---|---|
+| **Admin** | ✓ full | ✓ | ✓ | ✓ | ✓ |
+| **Manager** | ✓ full | ✓ | ✓ | ✓ | — |
+| **Lead** | ✓ full | ✓ | ✓ | — | — |
+| **Cashier** | restricted | — | — | — | — |
 
 A **cashier**'s Sell access is deliberately narrower than every other role's: no custom
-(off-catalog) ticket items, no creating/editing/ending an event, and no overriding a ticket
-line's tax rate — it always uses whatever the open event actually specifies. All three are
-enforced server-side (see `server/routes/sales.js` and `server/routes/events.js`), not just
-hidden in the UI — a cashier's session gets a 403 (or has the submitted value silently
-corrected) even on a direct API request, not just a missing button.
+(off-catalog) ticket items, no creating/editing/ending an event, no overriding a ticket
+line's tax rate (it always uses whatever the open event actually specifies), and no line
+discounts. All of these are enforced server-side (see `server/routes/sales.js` and
+`server/routes/events.js`), not just hidden in the UI — a cashier's session gets a 403 (or
+has the submitted value silently corrected or stripped) even on a direct API request, not
+just a missing button.
 
 ## Charity giving
 
@@ -210,7 +217,50 @@ list on the Sell page, where it just sits — ready to go, including whatever it
 and charity rules you've already set on it — until you hit "Start event". As many drafts can
 exist at once as you want; only one event can be *open* (the live, active one) at a time per
 test/real side, so starting a draft while another is already open is refused until that one
-is ended first.
+is ended first. An existing event (draft, open, or past) can also be cloned — its items/
+quantities, charity rules, tax rate, and state carry over into a new draft, so a recurring
+market doesn't have to be rebuilt from scratch each time. The clone always lands as a draft
+regardless of the source event's own status.
+
+## Packing lists and price tags
+
+From an event's item picker: "Print packing list" gives a plain list of exactly what to bring
+and how many of each (the per-item quantities if the event is scoped to "Selected items", or
+every sellable item's current stock if it's open to the whole catalog — a "not for shows" item
+never appears either way). "Print price tags" makes one tag per item in that same set, with
+name, price, and — unless you uncheck "Include barcode" — a scannable Code128 barcode encoding
+the item's own item number. Both use the browser's print dialog (no bundled PDF library, same
+as Reports' PDF export), and a USB barcode scanner, which types out a barcode's digits like a
+keyboard, reads those tags straight into the Sell page's search box: scan one there and it's
+added to the ticket directly, instead of just filtering the grid the way typing normally does.
+
+## Discounts
+
+Each line on a ticket can get a discount — a % or a flat $ off that line's total, applied
+before tax so tax is only ever charged on what was actually paid. Admin, manager, and lead
+accounts can add one from the Sell page ticket; the cashier role can't — the control isn't
+shown to it, and the server rejects a discount on a cashier's ticket even if sent directly,
+so this isn't just a UI restriction.
+
+## Tax rate presets
+
+Settings can hold a list of your own named tax rate presets by state (sales tax % and, if it
+differs, cash tax %) — add them once, then on any event's form, type the state and click "Fill
+tax rate from preset" to fill both rate fields instead of retyping them. It's a one-time fill,
+not a live link: editing a preset later never changes an event that already used it. There's
+no built-in nationwide rate table — real local rates vary by city and county well beyond what
+a single per-state number could cover, so this is only ever what you've entered yourself.
+
+## Custom Orders
+
+A separate tab (admin/manager/lead) for tracking made-to-order or custom pieces from request
+to pickup — item/description, customer name and contact, due date, status (New → In progress
+→ Ready for pickup → Picked up, changeable inline from the list), and notes. It's deliberately
+separate from the item catalog: most custom orders are one-offs that never get added as a
+catalog item at all, and the item/description here is always free text, never a link to one,
+so a later catalog edit or deletion can never orphan or silently change an order referencing
+it. Ringing up the actual sale when it's picked up still happens on the Sell page as usual —
+this tab only tracks the request itself.
 
 ## Reports
 
@@ -228,7 +278,9 @@ across the ones that use it:
   threshold (the same threshold already used for the red low-stock badges elsewhere). Reading
   material cost/stock here is open to the same roles as the rest of Reports (admin/manager/
   lead) — previously materials data required admin/manager, which would have left a lead role
-  unable to see this report; editing/deleting a material is still admin/manager only.
+  unable to see this report; editing/deleting a material is still admin/manager only. The
+  "Needs ordering" stat tile is a drill-down, not just a count — click it to reveal the actual
+  list of low items/materials underneath, collapsed again on a second click.
 - **Tax**: tax collected for the range, a day-by-day chart, and a breakdown by the actual rate
   charged — useful if cash and card ever use different rates.
 - **Voids**: every voided sale in the range, with who rang it up and who voided it. Voiding a

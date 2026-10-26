@@ -10,7 +10,7 @@ const selectedItems = (eventId) => db.prepare('SELECT item_id, qty_brought FROM 
 
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,
-  taxRate: r.tax_rate, cashTaxRate: r.cash_tax_rate,
+  taxRate: r.tax_rate, cashTaxRate: r.cash_tax_rate, state: r.state || '',
   taxIncludedCash: !!r.tax_included_cash, taxIncludedOther: !!r.tax_included_other,
   test: !!r.test, itemScope: r.item_scope || 'all',
   // Only worth the extra query when it actually matters — 'all' (the common case) doesn't
@@ -50,6 +50,7 @@ router.post('/', requireEventManage, (req, res) => {
     status,
     tax_rate: b.taxRate === '' || b.taxRate == null ? null : Number(b.taxRate),
     cash_tax_rate: b.cashTaxRate === '' || b.cashTaxRate == null ? null : Number(b.cashTaxRate),
+    state: (b.state || '').trim() || null,
     tax_included_cash: b.taxIncludedCash ? 1 : 0,
     tax_included_other: b.taxIncludedOther ? 1 : 0,
     test,
@@ -58,13 +59,58 @@ router.post('/', requireEventManage, (req, res) => {
     ended_at: b.endedAt || null,
   };
   db.prepare(`
-    INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
-    VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
+    INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+    VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
     ON CONFLICT(id) DO UPDATE SET name=@name, start=@start, days=@days, cost=@cost, status=@status,
-      tax_rate=@tax_rate, cash_tax_rate=@cash_tax_rate, tax_included_cash=@tax_included_cash,
+      tax_rate=@tax_rate, cash_tax_rate=@cash_tax_rate, state=@state, tax_included_cash=@tax_included_cash,
       tax_included_other=@tax_included_other, item_scope=@item_scope, ended_at=@ended_at
   `).run(row);
   res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(row.id)));
+});
+
+// Duplicates an event's setup — items/quantities, charity rules, tax settings, cost, state —
+// into a brand-new draft, so a recurring market doesn't have to be rebuilt from scratch each
+// time. Always lands as a draft regardless of the source event's own status (an open or ended
+// event has nothing stopping its setup from being reused; the clone just never starts open on
+// its own, consistent with "at most one open event" above). Start date is copied too since
+// there's no way to know the next one's date — it's just the first thing to change afterward.
+router.post('/:id/clone', requireEventManage, (req, res) => {
+  const src = db.prepare('SELECT * FROM events WHERE id = ?').get(req.params.id);
+  if (!src) return res.status(404).json({ error: 'not_found' });
+  const newId = uid();
+  const row = {
+    id: newId,
+    name: src.name ? `${src.name} (copy)` : '',
+    start: src.start,
+    days: src.days,
+    cost: src.cost,
+    status: 'draft',
+    tax_rate: src.tax_rate,
+    cash_tax_rate: src.cash_tax_rate,
+    state: src.state,
+    tax_included_cash: src.tax_included_cash,
+    tax_included_other: src.tax_included_other,
+    test: src.test,
+    item_scope: src.item_scope,
+    created_at: Date.now(),
+    ended_at: null,
+  };
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+      VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
+    `).run(row);
+    const insertItem = db.prepare('INSERT OR IGNORE INTO event_items (event_id, item_id, qty_brought) VALUES (?, ?, ?)');
+    for (const it of db.prepare('SELECT item_id, qty_brought FROM event_items WHERE event_id = ?').all(src.id)) {
+      insertItem.run(newId, it.item_id, it.qty_brought);
+    }
+    const insertRule = db.prepare('INSERT INTO event_charity_rules (id, event_id, category, charity_pct, created_at) VALUES (?, ?, ?, ?, ?)');
+    for (const r of db.prepare('SELECT category, charity_pct FROM event_charity_rules WHERE event_id = ?').all(src.id)) {
+      insertRule.run(uid(), newId, r.category, r.charity_pct, Date.now());
+    }
+  });
+  tx();
+  res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(newId)));
 });
 
 // Replaces the full set of items selected for this event (and how many of each are being

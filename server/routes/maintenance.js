@@ -64,6 +64,15 @@ router.post('/copy-to-test', (req, res) => {
     db.prepare('DELETE FROM events WHERE test = 1').run();
     db.prepare('DELETE FROM items WHERE test = 1').run();
     db.prepare('DELETE FROM materials WHERE test = 1').run();
+    db.prepare('DELETE FROM custom_orders WHERE test = 1').run();
+
+    // No id remapping needed — item_name is free text, not a foreign key to items(id).
+    for (const o of db.prepare('SELECT * FROM custom_orders WHERE test = 0').all()) {
+      db.prepare(`
+        INSERT INTO custom_orders (id, item_name, customer_name, customer_contact, due_date, status, notes, test, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+      `).run(uid(), o.item_name, o.customer_name, o.customer_contact, o.due_date, o.status, o.notes, o.created_at, o.updated_at);
+    }
 
     // source_id isn't remapped — `sources` (the vendor tag list) isn't split by test/main,
     // it's shared, so the copy just keeps pointing at the same row the original did.
@@ -105,11 +114,11 @@ router.post('/copy-to-test', (req, res) => {
       const newId = uid();
       eventIdMap.set(ev.id, newId);
       db.prepare(`
-        INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
-        VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @tax_included_cash, @tax_included_other, 1, @item_scope, @created_at, @ended_at)
+        INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+        VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @tax_included_cash, @tax_included_other, 1, @item_scope, @created_at, @ended_at)
       `).run({
         id: newId, name: ev.name, start: ev.start, days: ev.days, cost: ev.cost, status: ev.status,
-        tax_rate: ev.tax_rate, cash_tax_rate: ev.cash_tax_rate, tax_included_cash: ev.tax_included_cash,
+        tax_rate: ev.tax_rate, cash_tax_rate: ev.cash_tax_rate, state: ev.state, tax_included_cash: ev.tax_included_cash,
         tax_included_other: ev.tax_included_other, item_scope: ev.item_scope, created_at: ev.created_at, ended_at: ev.ended_at,
       });
       for (const rule of db.prepare('SELECT * FROM event_charity_rules WHERE event_id = ?').all(ev.id)) {
@@ -147,8 +156,8 @@ router.post('/copy-to-test', (req, res) => {
   res.json({ ok: true });
 });
 
-// Wipes every item, material, sale, and event — both the real side and the test side.
-// Accounts, roles, and settings are untouched. The client already makes the admin type
+// Wipes every item, material, sale, event, and custom order — both the real side and the
+// test side. Accounts, roles, and settings are untouched. The client already makes the admin type
 // DELETE to confirm; this checks it again server-side, since a destructive admin action
 // shouldn't rely on a client-only confirmation.
 router.post('/purge', (req, res) => {
@@ -161,6 +170,7 @@ router.post('/purge', (req, res) => {
     db.prepare('DELETE FROM events').run();
     db.prepare('DELETE FROM items').run();
     db.prepare('DELETE FROM materials').run();
+    db.prepare('DELETE FROM custom_orders').run();
   });
   tx();
   res.json({ ok: true });

@@ -23,6 +23,7 @@ router.post('/purge', (req, res) => {
     counts.events = db.prepare('DELETE FROM events WHERE test = 1').run().changes;
     counts.items = db.prepare('DELETE FROM items WHERE test = 1').run().changes;
     counts.materials = db.prepare('DELETE FROM materials WHERE test = 1').run().changes;
+    counts.customOrders = db.prepare('DELETE FROM custom_orders WHERE test = 1').run().changes;
   });
   tx();
   res.json({ ok: true, counts });

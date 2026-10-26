@@ -109,6 +109,19 @@ CREATE TABLE IF NOT EXISTS item_categories (
   PRIMARY KEY (item_id, category)
 );
 
+-- User-managed named tax rate presets (Settings), one-time-fill convenience for the event
+-- form's state field — not a built-in nationwide rate table (real local rates vary by city/
+-- county well beyond what a single per-state number could cover), and not split by test like
+-- items/materials are, same reasoning as `sources` above: this is reference data, not
+-- transactional.
+CREATE TABLE IF NOT EXISTS tax_presets (
+  id TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  sales_tax_rate REAL,
+  cash_tax_rate REAL,
+  created_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS events (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL DEFAULT '',
@@ -131,7 +144,11 @@ CREATE TABLE IF NOT EXISTS events (
   -- not offered for sale at this particular event.
   item_scope TEXT NOT NULL DEFAULT 'all',
   created_at INTEGER NOT NULL,
-  ended_at INTEGER
+  ended_at INTEGER,
+  -- Free text (e.g. "MN") — matched against tax_presets' own `state` field (also free text,
+  -- not a hard-coded list) to offer filling tax_rate/cash_tax_rate from a saved preset. A
+  -- one-time convenience applied on request, not a live link back to the preset.
+  state TEXT
 );
 
 CREATE TABLE IF NOT EXISTS event_items (
@@ -227,3 +244,25 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+-- A made-to-order/custom piece tracked from request through pickup — its own lightweight
+-- workflow, separate from the item catalog and event inventory. item_name is free text, not a
+-- link to items(id): a custom order is often never cataloged at all (one-off, never resold),
+-- and this way deleting or renaming a catalog item later never orphans or silently renames an
+-- order referencing it. Ringing up the actual sale at pickup still goes through the normal
+-- Sell page ticket; this table only tracks the request itself.
+CREATE TABLE IF NOT EXISTS custom_orders (
+  id TEXT PRIMARY KEY,
+  item_name TEXT NOT NULL DEFAULT '',
+  customer_name TEXT NOT NULL DEFAULT '',
+  customer_contact TEXT,
+  due_date TEXT,
+  -- 'new' -> 'in_progress' -> 'ready' -> 'picked_up', in the order you'd expect, but nothing
+  -- enforces that order — any status can be set at any time.
+  status TEXT NOT NULL DEFAULT 'new',
+  notes TEXT,
+  test INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_custom_orders_status ON custom_orders(status);

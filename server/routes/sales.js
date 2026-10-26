@@ -6,17 +6,29 @@ const { getBool } = require('../lib/settings');
 
 const router = express.Router();
 
+// Mirrors the client's applyDiscount() — a line's discount is taken off its pre-tax extended
+// total (price × qty) before tax is split out, so tax is only ever charged on what was
+// actually paid. Capped so a discount can never make a line negative.
+function applyDiscount(l, rawAmt) {
+  const value = Number(l.discountValue) || 0;
+  if (!l.discountType || !value) return 0;
+  if (l.discountType === 'pct') return rawAmt * Math.min(100, Math.max(0, value)) / 100;
+  return Math.min(rawAmt, Math.max(0, value));
+}
+
 // Splits one ticket line's charge into its pre-tax and tax portions — ported 1:1 from the
 // artifact's client-side version, just now computed authoritatively on the server instead of
 // trusted from the client, since a tampered client could otherwise misreport a sale's total.
 function lineTaxSplit(l, included) {
-  const amt = (Number(l.price) || 0) * (Number(l.qty) || 0);
+  const rawAmt = (Number(l.price) || 0) * (Number(l.qty) || 0);
+  const discAmt = applyDiscount(l, rawAmt);
+  const amt = rawAmt - discAmt;
   const rate = (Number(l.taxRate) || 0) / 100;
   if (included && rate > 0) {
     const sub = amt / (1 + rate);
-    return { amt, sub, tax: amt - sub };
+    return { amt, sub, tax: amt - sub, rawAmt, discAmt };
   }
-  return { amt, sub: amt, tax: amt * rate };
+  return { amt, sub: amt, tax: amt * rate, rawAmt, discAmt };
 }
 
 // Mirrors the client's defaultLineTaxRate() — used to force a cashier's line tax rate back
@@ -83,8 +95,9 @@ router.post('/', requireLogin, (req, res) => {
   }
 
   // Cashier restrictions, enforced here rather than trusted from the UI: no custom (non-
-  // catalog) items, and no per-line tax-rate override — their ticket always uses the event's
-  // actual configured rate, regardless of what the client submits.
+  // catalog) items, no per-line tax-rate override — their ticket always uses the event's
+  // actual configured rate regardless of what the client submits — and no discounts, which
+  // the UI already doesn't offer them but a tampered request could still try to send.
   let lines = rawLines;
   if (req.user.role === 'cashier') {
     if (rawLines.some((l) => !l.itemId)) {
@@ -92,7 +105,7 @@ router.post('/', requireLogin, (req, res) => {
     }
     const event = b.eventId ? db.prepare('SELECT * FROM events WHERE id = ?').get(b.eventId) : null;
     const forcedRate = defaultLineTaxRate(event, b.tender || 'cash');
-    lines = rawLines.map((l) => ({ ...l, taxRate: forcedRate }));
+    lines = rawLines.map((l) => ({ ...l, taxRate: forcedRate, discountType: null, discountValue: null }));
   }
 
   // This event's charity rules, loaded once rather than per line. category '' is the "all
@@ -112,8 +125,10 @@ router.post('/', requireLogin, (req, res) => {
   const stockChanges = [];
   const finalLines = [];
   for (const l of lines) {
-    const { sub, tax: lineTax } = lineTaxSplit(l, included);
+    const { sub, tax: lineTax, discAmt } = lineTaxSplit(l, included);
     subtotal += sub; tax += lineTax;
+    const discountType = discAmt > 0 ? (l.discountType === 'amt' ? 'amt' : 'pct') : null;
+    const discountValue = discAmt > 0 ? Number(l.discountValue) || 0 : null;
     // charityRule records which rule produced charityAmt — the matched category, or '' for
     // the all-sales catch-all — so Reports can group a wrap-up report by it. Custom
     // (non-catalog) lines never get a charity figure: there's no known cost for them, so no
@@ -144,7 +159,7 @@ router.post('/', requireLogin, (req, res) => {
         }
       }
     }
-    finalLines.push({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0, charityRule, charityPct, charityAmt });
+    finalLines.push({ itemId: l.itemId || null, name: l.name, price: Number(l.price) || 0, qty: Number(l.qty) || 0, taxRate: Number(l.taxRate) || 0, discountType, discountValue, discountAmt: discAmt, charityRule, charityPct, charityAmt });
   }
   const total = subtotal + tax;
   const received = b.tender === 'cash' ? (Number(b.received) || 0) : total;

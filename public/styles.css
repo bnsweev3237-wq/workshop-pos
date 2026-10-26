@@ -201,10 +201,16 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .tline .qstep { display: inline-flex; align-items: center; gap: 4px; }
 .tline .qstep button { width: 24px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); cursor: pointer; font: inherit; line-height: 1; }
 .tline .qstep span { width: 20px; text-align: center; font-variant-numeric: tabular-nums; }
-.tline .amt { width: 62px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.tline .amt { min-width: 62px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.tline .amt .old { display: block; font-size: 11px; }
 .tline .taxmini { display: inline-flex; align-items: center; gap: 2px; font-size: 11px; color: var(--muted); flex-shrink: 0; }
 .tline .taxmini input { width: 34px; padding: 5px 2px; text-align: center; font-size: 12px; }
 .tline .taxmini input.overridden { border-color: var(--accent); color: var(--accent); }
+.tline .discBtn { font-size: 11px; font-weight: 600; }
+.tline .discBtn.on { color: var(--accent); }
+.tline-discount { display: flex; align-items: center; gap: 8px; padding: 0 0 9px; margin-top: -9px; border-bottom: 1px dashed var(--line); }
+.tline-discount .discType { padding: 5px 6px; font-size: 12px; }
+.tline-discount .discValue { width: 70px; padding: 5px 6px; font-size: 12px; }
 
 .receipt { border-bottom: 1px solid var(--line); }
 .receipt:last-child { border-bottom: none; }
@@ -275,6 +281,8 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .stat-tile.highlight { background: var(--accent-soft); }
 .stat-tile.highlight .lbl { color: var(--accent); }
 .stat-tile.highlight .val.neg { color: var(--danger); }
+.stat-tile.clickable { cursor: pointer; }
+.stat-tile.clickable:hover { background: var(--line); }
 
 .rpt-chart { display: flex; align-items: flex-end; gap: 4px; height: 170px; padding-top: 24px; overflow-x: auto; }
 .rpt-bar-col { flex: 1 1 0; min-width: 8px; max-width: 42px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; position: relative; }
@@ -338,6 +346,25 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
   .wrap { padding: 0; max-width: none; }
   .card { box-shadow: none; border: 1px solid #ccc; break-inside: avoid; }
 }
+/* Packing lists and price tags each get their own printable card, sitting outside any tab so
+   they print regardless of which tab happens to be open — shown only while actively printing,
+   with everything else on the page hidden for that moment (toggled in app.js, restored right
+   after via the 'afterprint' event). */
+.packing-list-print, .price-tags-print { display: none; }
+body.printing-packing-list #packingListCard,
+body.printing-price-tags #priceTagsCard {
+  display: block !important;
+}
+body.printing-packing-list > :not(#packingListCard),
+body.printing-price-tags > :not(#priceTagsCard) {
+  display: none !important;
+}
+.tag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.4in, 1fr)); gap: 0.15in; }
+.price-tag { border: 1px dashed #999; border-radius: 6px; padding: 0.12in; text-align: center; break-inside: avoid; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 1.3in; }
+.price-tag .tag-name { font-weight: 600; font-size: 13px; word-break: break-word; }
+.price-tag .tag-price { font-size: 18px; font-weight: 700; }
+.price-tag .tag-barcode { max-width: 100%; height: 40px; }
+.price-tag .tag-no { font-size: 10px; color: #666; letter-spacing: 1px; }
 
 /* ---- login / first-run setup ---- */
 .login-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; }

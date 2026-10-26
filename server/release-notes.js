@@ -3,6 +3,20 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.0.0',
+    date: '2026-10-26',
+    notes: [
+      'Events can now be cloned — duplicates its items/quantities, charity rules, and tax settings into a new draft, for a recurring market instead of rebuilding it from scratch each time.',
+      'An event\'s item picker can now print a packing list ("what to bring, and how many") straight from its item selection.',
+      'Price tags can now be printed for an event\'s item selection too, each with a barcode (Code128, from the item\'s own item number) you can scan at checkout — or skip the barcode and print name/price only.',
+      'The Sell page\'s search box now also doubles as an item-number lookup: scan or type an item\'s number and press Enter to add it straight to the ticket.',
+      'Ticket lines can now get a % or $ discount — admin/manager/lead only, not the cashier role.',
+      'Added tax rate presets by state (Settings) and a state field on events — type the state on an event and click "Fill tax rate from preset" instead of retyping rates you\'ve saved before.',
+      'New Custom Orders tab: track made-to-order/custom pieces from request to pickup (customer, due date, status, notes), separate from the regular catalog and event inventory.',
+      'The Inventory report\'s "Needs ordering" figure is now a drill-down — click it to reveal exactly which items and materials are running low, instead of a figure with no detail nearby.',
+    ],
+  },
+  {
     version: '0.21.0',
     date: '2026-10-25',
     notes: [

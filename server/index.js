@@ -18,11 +18,12 @@ function createApp() {
   app.set('trust proxy', 1);
 
   // Baseline security headers. The Content-Security-Policy is spelled out explicitly to match
-  // what this app actually loads — app.js is the only script, Google Fonts is the only outside
-  // origin, and the UI relies heavily on inline `style="..."` attributes throughout (hence
-  // style-src needs 'unsafe-inline'; there's no inline *script*, so script-src doesn't). Using
-  // helmet's defaults blind here would risk silently breaking rendering instead of actually
-  // protecting anything.
+  // what this app actually loads — every script is same-origin (app.js, offline.js, and the
+  // vendored barcode library under public/vendor), Google Fonts is the only outside origin,
+  // and the UI relies heavily on inline `style="..."` attributes throughout (hence style-src
+  // needs 'unsafe-inline'; there's no inline *script*, so script-src doesn't). Using helmet's
+  // defaults blind here would risk silently breaking rendering instead of actually protecting
+  // anything.
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
@@ -65,6 +66,8 @@ function createApp() {
   app.use('/api/settings', require('./routes/settings'));
   app.use('/api/materials', require('./routes/materials'));
   app.use('/api/sources', require('./routes/sources'));
+  app.use('/api/tax-presets', require('./routes/taxPresets'));
+  app.use('/api/custom-orders', require('./routes/customOrders'));
   app.use('/api/items', require('./routes/items'));
   app.use('/api/events', require('./routes/events'));
   app.use('/api/sales', require('./routes/sales'));

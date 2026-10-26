@@ -54,9 +54,9 @@ async function api(method, path, body) {
 //   lead:    Sell + Reports
 //   cashier: Sell only (and a restricted Sell — see the POS section below)
 const ROLE_TABS = {
-  admin: ['pos', 'calc', 'lib', 'items', 'reports', 'settings'],
-  manager: ['pos', 'calc', 'lib', 'items', 'reports'],
-  lead: ['pos', 'reports'],
+  admin: ['pos', 'calc', 'lib', 'items', 'orders', 'reports', 'settings'],
+  manager: ['pos', 'calc', 'lib', 'items', 'orders', 'reports'],
+  lead: ['pos', 'orders', 'reports'],
   cashier: ['pos'],
 };
 const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', lead: 'Lead', cashier: 'Cashier' };
@@ -211,12 +211,13 @@ function showTab(t) {
   if (!(ROLE_TABS[me.role] || ['pos']).includes(t)) t = 'pos';
   currentTab = t;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ['calc', 'lib', 'items', 'pos', 'reports', 'settings'].forEach(x => $('tab-' + x).hidden = x !== t);
+  ['calc', 'lib', 'items', 'orders', 'pos', 'reports', 'settings'].forEach(x => $('tab-' + x).hidden = x !== t);
   if (t === 'calc') calc();
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
+  if (t === 'orders') loadCustomOrders();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -719,6 +720,92 @@ $('acceptAll').onclick = async () => {
 $('itemsSearch').addEventListener('input', () => { itemsSearch = $('itemsSearch').value; renderItems(); });
 $('itemsSort').addEventListener('change', () => { itemsSort = $('itemsSort').value; saveSortPref('itemsSort', itemsSort); renderItems(); });
 
+// ---------- Custom Orders ----------
+// A lightweight tracking queue for made-to-order/custom pieces, separate from the item
+// catalog and event inventory — admin/manager/lead only, same as event management. itemName
+// is always free text (not a link to a catalog item): most custom orders are one-offs that
+// never get cataloged, and a free-text snapshot can't be orphaned by a later item edit/delete.
+const ORDER_STATUS_LABEL = { new: 'New', in_progress: 'In progress', ready: 'Ready for pickup', picked_up: 'Picked up' };
+let customOrders = [];
+let ordersSearch = '', ordersStatusFilter = '';
+let editingOrderId = null;
+async function loadCustomOrders() {
+  customOrders = await api('GET', `/api/custom-orders?test=${testMode ? 1 : 0}`);
+  $('itemNameList').innerHTML = [...new Set(items.map(it => it.name).filter(Boolean))].map(n => `<option value="${esc(n)}">`).join('');
+  renderCustomOrders();
+}
+function renderCustomOrders() {
+  const tb = $('ordersRows'); tb.innerHTML = '';
+  const q = ordersSearch.trim().toLowerCase();
+  const visible = customOrders.filter((o) => {
+    if (ordersStatusFilter && o.status !== ordersStatusFilter) return false;
+    if (!q) return true;
+    return o.itemName.toLowerCase().includes(q) || o.customerName.toLowerCase().includes(q);
+  });
+  for (const o of visible) {
+    const tr = document.createElement('tr'); tr.dataset.id = o.id;
+    tr.innerHTML = `
+      <td><div class="iname"></div>${o.notes ? `<div class="meta"></div>` : ''}</td>
+      <td><div></div><div class="meta"></div></td>
+      <td></td>
+      <td><select class="statusSel"></select></td>
+      <td class="acts"><button class="btn sm edit">Edit</button><button class="icon-btn del" title="Delete">×</button></td>`;
+    tr.querySelector('.iname').textContent = o.itemName;
+    if (o.notes) tr.querySelector('.meta').textContent = o.notes;
+    const custCell = tr.children[1];
+    custCell.querySelector('div').textContent = o.customerName || '—';
+    custCell.querySelector('.meta').textContent = o.customerContact || '';
+    tr.children[2].textContent = o.dueDate ? new Date(o.dueDate + 'T00:00:00').toLocaleDateString() : '—';
+    const sel = tr.querySelector('.statusSel');
+    sel.innerHTML = Object.entries(ORDER_STATUS_LABEL).map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+    sel.value = o.status;
+    sel.onchange = async () => {
+      try { await api('POST', `/api/custom-orders/${o.id}/status`, { status: sel.value }); o.status = sel.value; toast('Status updated'); }
+      catch (e) { toast(e.message || 'Could not update status'); sel.value = o.status; }
+    };
+    tr.querySelector('.edit').onclick = () => fillOrderForm(o);
+    tr.querySelector('.del').onclick = async () => {
+      if (!await askConfirm(`Delete the custom order for “${o.itemName}”?`, 'Delete order')) return;
+      await api('DELETE', '/api/custom-orders/' + o.id);
+      toast('Order deleted');
+      await loadCustomOrders();
+    };
+    tb.appendChild(tr);
+  }
+  $('ordersEmpty').hidden = visible.length > 0;
+  $('ordersEmpty').textContent = customOrders.length === 0 ? 'No custom orders yet.' : 'No orders match your search.';
+  $('ordersCount').textContent = customOrders.filter((o) => o.status !== 'picked_up').length || '';
+}
+function fillOrderForm(o) {
+  editingOrderId = o ? o.id : null;
+  $('orderFormTitle').textContent = o ? `Editing order — ${o.itemName}` : 'New custom order';
+  $('orderItemName').value = o?.itemName || '';
+  $('orderDue').value = o?.dueDate || '';
+  $('orderCustomerName').value = o?.customerName || '';
+  $('orderCustomerContact').value = o?.customerContact || '';
+  $('orderNotes').value = o?.notes || '';
+  $('orderCancel').hidden = !o;
+  if (o) $('orderItemName').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+$('orderCancel').onclick = () => fillOrderForm(null);
+$('orderSave').onclick = async () => {
+  const itemName = $('orderItemName').value.trim();
+  if (!itemName) { $('orderItemName').focus(); toast('Give the order an item or description first'); return; }
+  const existing = editingOrderId ? customOrders.find((o) => o.id === editingOrderId) : null;
+  try {
+    await api('POST', '/api/custom-orders', {
+      id: existing?.id, itemName, dueDate: $('orderDue').value, customerName: $('orderCustomerName').value.trim(),
+      customerContact: $('orderCustomerContact').value.trim(), notes: $('orderNotes').value.trim(),
+      status: existing?.status, test: testMode,
+    });
+    toast(existing ? 'Order updated' : 'Order saved');
+    fillOrderForm(null);
+    await loadCustomOrders();
+  } catch (e) { toast(e.message || 'Could not save order'); }
+};
+$('ordersSearch').addEventListener('input', () => { ordersSearch = $('ordersSearch').value; renderCustomOrders(); });
+$('ordersStatusFilter').addEventListener('change', () => { ordersStatusFilter = $('ordersStatusFilter').value; renderCustomOrders(); });
+
 // ---------- Offline mode (Sell page only — see README) ----------
 // A checked-out sale that failed to reach the server because the connection is actually
 // down, vs. a real error the server sent back (bad input, etc.) — api() always sets .code on
@@ -895,15 +982,25 @@ function eventTaxIncluded(ev, forTender) {
   if (!ev) return false;
   return forTender === 'cash' ? !!ev.taxIncludedCash : !!ev.taxIncludedOther;
 }
+// Discount is applied to the line's pre-tax extended total (price × qty), before splitting
+// off tax — so tax is charged on what was actually paid, not the undiscounted price. 'pct' is
+// capped at 100%, 'amt' at the line's own total, so a discount can never make a line negative.
+function applyDiscount(l, rawAmt) {
+  if (!l.discountType || !num(l.discountValue)) return 0;
+  if (l.discountType === 'pct') return rawAmt * Math.min(100, Math.max(0, num(l.discountValue))) / 100;
+  return Math.min(rawAmt, Math.max(0, num(l.discountValue)));
+}
 function lineTaxSplit(l, included) {
-  const amt = num(l.price) * num(l.qty), rate = num(l.taxRate) / 100;
-  if (included && rate > 0) { const sub = amt / (1 + rate); return { amt, sub, tax: amt - sub }; }
-  return { amt, sub: amt, tax: amt * rate };
+  const rawAmt = num(l.price) * num(l.qty);
+  const discAmt = applyDiscount(l, rawAmt);
+  const amt = rawAmt - discAmt, rate = num(l.taxRate) / 100;
+  if (included && rate > 0) { const sub = amt / (1 + rate); return { amt, sub, tax: amt - sub, rawAmt, discAmt }; }
+  return { amt, sub: amt, tax: amt * rate, rawAmt, discAmt };
 }
 function addToTicket(it) {
   const line = ticket.find(l => l.itemId === it.id);
   if (line) line.qty++;
-  else ticket.push({ id: cid(), itemId: it.id, name: it.name, price: num(it.price), qty: 1, taxRate: defaultLineTaxRate(tender), taxOverridden: false });
+  else ticket.push({ id: cid(), itemId: it.id, name: it.name, price: num(it.price), qty: 1, taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null });
   renderTicket();
 }
 function recalcTicketTotals() {
@@ -932,14 +1029,18 @@ $('posSummaryClose').onclick = () => setMobileCartOpen(false);
 $('cartBackdrop').onclick = () => setMobileCartOpen(false);
 function renderTicket() {
   const box = $('ticketLines'); box.innerHTML = '';
+  const canDiscount = !isRestrictedCashier();
   for (const l of ticket) {
+    const { rawAmt, discAmt, amt } = lineTaxSplit(l, false);
     const row = document.createElement('div'); row.className = 'tline';
     row.innerHTML = `<div class="nm"></div><div class="qstep"><button class="minus">−</button><span></span><button class="plus">+</button></div>
       <div class="taxmini"><input type="number" min="0" step="0.1" inputmode="decimal" class="lineTax" title="Tax rate for this item"><span>%</span></div>
-      <div class="amt"></div><button class="icon-btn del" title="Remove">×</button>`;
+      <div class="amt"></div>
+      ${canDiscount ? '<button class="icon-btn discBtn" title="Add a discount">%off</button>' : ''}
+      <button class="icon-btn del" title="Remove">×</button>`;
     row.querySelector('.nm').textContent = l.name;
     row.querySelector('.qstep span').textContent = l.qty;
-    row.querySelector('.amt').textContent = money(l.price * l.qty);
+    row.querySelector('.amt').innerHTML = discAmt > 0 ? `<span class="old">${money(rawAmt)}</span> ${money(amt)}` : money(rawAmt);
     const taxInput = row.querySelector('.lineTax');
     taxInput.value = l.taxRate; taxInput.classList.toggle('overridden', !!l.taxOverridden);
     if (isRestrictedCashier()) { taxInput.disabled = true; taxInput.title = 'Tax rate (set by the event)'; }
@@ -948,9 +1049,38 @@ function renderTicket() {
     row.querySelector('.plus').onclick = () => { l.qty++; renderTicket(); };
     row.querySelector('.del').onclick = () => { ticket = ticket.filter(x => x !== l); renderTicket(); };
     box.appendChild(row);
+    if (canDiscount) {
+      const discBtn = row.querySelector('.discBtn');
+      discBtn.classList.toggle('on', !!l.discountType);
+      const discRow = document.createElement('div'); discRow.className = 'tline-discount'; discRow.hidden = !l.discountType;
+      discRow.innerHTML = `<select class="discType"><option value="pct">% off</option><option value="amt">$ off</option></select>
+        <input type="number" class="discValue" min="0" step="0.01" placeholder="0">
+        <button class="icon-btn discClear" title="Remove discount">×</button>`;
+      const typeSel = discRow.querySelector('.discType'), valueIn = discRow.querySelector('.discValue');
+      typeSel.value = l.discountType || 'pct'; valueIn.value = l.discountValue ?? '';
+      const applyFields = () => { l.discountType = typeSel.value; l.discountValue = valueIn.value; recalcTicketTotals(); updateLineAmt(row, l); };
+      typeSel.addEventListener('change', applyFields);
+      valueIn.addEventListener('input', applyFields);
+      discBtn.onclick = () => {
+        discRow.hidden = !discRow.hidden;
+        if (!discRow.hidden && !l.discountType) { l.discountType = 'pct'; typeSel.value = 'pct'; }
+        else if (discRow.hidden) { l.discountType = null; l.discountValue = null; }
+        discBtn.classList.toggle('on', !discRow.hidden);
+        recalcTicketTotals(); updateLineAmt(row, l);
+      };
+      discRow.querySelector('.discClear').onclick = () => {
+        l.discountType = null; l.discountValue = null; discRow.hidden = true; discBtn.classList.remove('on');
+        recalcTicketTotals(); updateLineAmt(row, l);
+      };
+      box.appendChild(discRow);
+    }
   }
   $('ticketEmpty').hidden = ticket.length > 0;
   recalcTicketTotals();
+}
+function updateLineAmt(row, l) {
+  const { rawAmt, discAmt, amt } = lineTaxSplit(l, false);
+  row.querySelector('.amt').innerHTML = discAmt > 0 ? `<span class="old">${money(rawAmt)}</span> ${money(amt)}` : money(rawAmt);
 }
 function setTender(t) {
   tender = t;
@@ -962,12 +1092,28 @@ function setTender(t) {
 }
 document.querySelectorAll('#tenderSeg button').forEach(b => b.onclick = () => setTender(b.dataset.tender));
 $('posSearch').addEventListener('input', () => { posSearch = $('posSearch').value; renderPosItems(); });
+// A USB barcode scanner acts just like a keyboard — it types the barcode's digits into
+// whatever's focused, then sends an Enter. Since items are barcoded with their own item
+// number (see the price tag printer), scanning one into this same search box while it's
+// focused looks it up by exact item number and adds it straight to the ticket, instead of
+// just filtering the grid the way typing normally does.
+$('posSearch').addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const typed = $('posSearch').value.trim();
+  if (!typed) return;
+  const match = posItemsList.find((it) => it.itemNo === typed);
+  if (!match) return; // not a recognized item number — leave it as a plain text filter
+  e.preventDefault();
+  addToTicket(match);
+  $('posSearch').value = ''; posSearch = ''; renderPosItems();
+  toast(`Added “${match.name}”`);
+});
 $('received').addEventListener('input', recalcTicketTotals);
 $('posCustomToggle').onclick = () => { const show = $('posCustomRow').hidden; $('posCustomRow').hidden = !show; $('posCustomAddRow').hidden = !show; if (show) $('posCustomName').focus(); };
 $('posCustomAdd').onclick = () => {
   const name = $('posCustomName').value.trim(), price = num($('posCustomPrice').value), qty = Math.max(1, Math.round(num($('posCustomQty').value)) || 1);
   if (!name) { $('posCustomName').focus(); toast('Give the item a name first'); return; }
-  ticket.push({ id: cid(), itemId: null, name, price, qty, taxRate: defaultLineTaxRate(tender), taxOverridden: false });
+  ticket.push({ id: cid(), itemId: null, name, price, qty, taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null });
   renderTicket();
   $('posCustomName').value = ''; $('posCustomPrice').value = ''; $('posCustomQty').value = '1'; $('posCustomName').focus();
 };
@@ -983,7 +1129,7 @@ $('checkout').onclick = async () => {
   const received = tender === 'cash' ? num($('received').value) : total;
   const payload = {
     eventId: ev?.id || null, test: testMode, taxIncluded: eventTaxIncluded(ev, tender),
-    lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate) })),
+    lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate), discountType: l.discountType || null, discountValue: l.discountValue || null })),
     tender, received,
   };
   try {
@@ -1015,10 +1161,11 @@ function buildSaleReceipt(sale) {
   const body = document.createElement('div'); body.className = 'receipt-body'; body.hidden = true;
   const included = !!sale.taxIncluded;
   const lineHtml = sale.lines.map(l => {
-    const { amt, tax: lineTax } = lineTaxSplit(l, included); const lt = num(l.taxRate);
-    const item = `<div class="rline item"><span>${num(l.qty)} × ${esc(l.name)}</span><span>${money(amt)}</span></div>`;
+    const { rawAmt, discAmt, amt, tax: lineTax } = lineTaxSplit(l, included); const lt = num(l.taxRate);
+    const item = `<div class="rline item"><span>${num(l.qty)} × ${esc(l.name)}</span><span>${money(rawAmt)}</span></div>`;
+    const discLine = discAmt > 0 ? `<div class="rline sub"><span>discount${l.discountType === 'pct' ? ` (${num(l.discountValue)}%)` : ''}</span><span>−${money(discAmt)}</span></div>` : '';
     const taxLine = lt > 0 ? `<div class="rline sub"><span>tax ${lt}%${included ? ' (included)' : ''}</span><span>${money(lineTax)}</span></div>` : '';
-    return item + taxLine;
+    return item + discLine + taxLine;
   }).join('');
   body.innerHTML = `${lineHtml}
     <div class="rline subtot"><span>Subtotal</span><span>${money(sale.subtotal)}</span></div>
@@ -1134,7 +1281,7 @@ function renderEventHistory() {
     const evSalesList = eventSales(ev).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     const revenue = evSalesList.reduce((s, x) => s + num(x.total), 0);
     const row = document.createElement('div'); row.className = 'ev-row';
-    row.innerHTML = `<div class="ev-top"><b></b><span class="ev-net"></span></div><div class="ev-meta"></div><button class="ev-view-btn"></button><button class="ev-del">Delete</button><div class="ev-sales" hidden></div>`;
+    row.innerHTML = `<div class="ev-top"><b></b><span class="ev-net"></span></div><div class="ev-meta"></div><button class="ev-view-btn"></button><button class="ev-view-btn ev-clone">Clone as new draft</button><button class="ev-del">Delete</button><div class="ev-sales" hidden></div>`;
     row.querySelector('.ev-top b').textContent = ev.name || 'Event';
     const netEl = row.querySelector('.ev-net'); const net = revenue - num(ev.cost);
     netEl.textContent = (net >= 0 ? '+' : '−') + money(Math.abs(net)); netEl.classList.add(net >= 0 ? 'pos' : 'neg');
@@ -1143,6 +1290,7 @@ function renderEventHistory() {
     viewBtn.hidden = evSalesList.length === 0; viewBtn.textContent = `View sales (${evSalesList.length})`;
     let built = false;
     viewBtn.onclick = () => { salesBox.hidden = !salesBox.hidden; viewBtn.textContent = (salesBox.hidden ? 'View' : 'Hide') + ` sales (${evSalesList.length})`; if (!salesBox.hidden && !built) { built = true; evSalesList.forEach(s => salesBox.appendChild(buildSaleReceipt(s))); } };
+    row.querySelector('.ev-clone').onclick = () => cloneEvent(ev);
     row.querySelector('.ev-del').onclick = async () => { if (!await askConfirm(`Delete “${ev.name || 'Event'}” from history?`, 'Delete event')) return; await api('DELETE', '/api/events/' + ev.id); await loadEvents(); };
     box.appendChild(row);
   }
@@ -1151,6 +1299,15 @@ function renderEventHistory() {
 // Draft events — set up in advance, sitting ready until "Start event" makes one the live
 // event. As many as wanted can exist at once (unlike open events, capped at one per
 // test/real side — see events.js), so this is its own list, separate from past/open.
+// Shared by the Upcoming and Past events lists — always lands as a new draft (see the
+// server route for why), so cloning from either one ends up in the same place: Upcoming.
+async function cloneEvent(ev) {
+  try {
+    await api('POST', `/api/events/${ev.id}/clone`);
+    toast(`Cloned “${ev.name || 'Event'}” as a new draft`);
+    await loadEvents();
+  } catch (e) { toast(e.message || 'Could not clone event'); }
+}
 function renderEventUpcoming() {
   const card = $('eventUpcomingCard'), box = $('eventUpcomingList');
   const drafts = events.filter(e => e.status === 'draft' && !!e.test === testMode)
@@ -1159,7 +1316,7 @@ function renderEventUpcoming() {
   for (const ev of drafts) {
     const { days } = eventWindow(ev);
     const row = document.createElement('div'); row.className = 'ev-row';
-    row.innerHTML = `<div class="ev-top"><b></b></div><div class="ev-meta"></div><button class="btn sm ev-start">Start event</button><button class="icon-btn gear ev-edit" title="Edit">⚙</button><button class="ev-del">Delete</button>`;
+    row.innerHTML = `<div class="ev-top"><b></b></div><div class="ev-meta"></div><button class="btn sm ev-start">Start event</button><button class="icon-btn gear ev-edit" title="Edit">⚙</button><button class="icon-btn ev-clone" title="Clone">⧉</button><button class="ev-del">Delete</button>`;
     row.querySelector('.ev-top b').textContent = ev.name || 'Event';
     row.querySelector('.ev-meta').textContent = `${ev.start ? new Date(ev.start + 'T00:00:00').toLocaleDateString() : 'No start date set'} · ${days} day${days > 1 ? 's' : ''} · ${money(num(ev.cost))} space cost`;
     row.querySelector('.ev-start').onclick = async () => {
@@ -1172,6 +1329,7 @@ function renderEventUpcoming() {
       } catch (e) { toast(e.message || 'Could not start event'); }
     };
     row.querySelector('.ev-edit').onclick = () => { fillEventForm(ev); $('eventForm').hidden = false; };
+    row.querySelector('.ev-clone').onclick = () => cloneEvent(ev);
     row.querySelector('.ev-del').onclick = async () => { if (!await askConfirm(`Delete “${ev.name || 'Event'}”?`, 'Delete event')) return; await api('DELETE', '/api/events/' + ev.id); await loadEvents(); };
     box.appendChild(row);
   }
@@ -1181,7 +1339,7 @@ let evWhen = 'open';
 function fillEventForm(ev) {
   editingEventId = ev ? ev.id : null;
   $('evName').value = ev?.name || ''; $('evCost').value = ev?.cost || ''; $('evStart').value = ev?.start || ''; $('evDays').value = ev?.days || 1;
-  $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? '';
+  $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? ''; $('evState').value = ev?.state || '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
   const isOpenEvent = !!ev && ev.status === 'open';
   $('evEnd').hidden = !isOpenEvent;
@@ -1207,6 +1365,9 @@ let evSelectedItems = new Map(); // itemId -> qtyBrought (number or null = no li
 let evPickerItems = [];
 let evItemSearch = '';
 async function loadEventFormExtras(ev) {
+  // Not gated on ev existing — the "Fill tax rate from preset" button is usable on a
+  // brand-new event too, before it's ever been saved.
+  loadTaxPresets().catch(() => {});
   $('evCharitySection').hidden = !ev;
   $('evItemsSection').hidden = !ev;
   $('evCharityAllSales').checked = false; $('evCharityCategory').disabled = false;
@@ -1332,7 +1493,7 @@ $('evSave').onclick = async () => {
   try {
     saved = await api('POST', '/api/events', {
       id: existing?.id, name: $('evName').value.trim(), cost: $('evCost').value, start: $('evStart').value, days: $('evDays').value,
-      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
+      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, state: $('evState').value.trim(), taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
       status, test: testMode, itemScope: existing ? evItemScope : 'all',
     });
   } catch (e) { toast(e.message || 'Could not save event'); return; }
@@ -1349,6 +1510,81 @@ $('evSave').onclick = async () => {
   fillEventForm(events.find(e => e.id === saved.id) || saved);
   $('eventForm').hidden = false;
   renderPosItems();
+};
+$('evFillTaxPreset').onclick = () => {
+  const state = $('evState').value.trim();
+  if (!state) { $('evState').focus(); toast('Type a state first'); return; }
+  const preset = taxPresets.find((p) => p.state.toLowerCase() === state.toLowerCase());
+  if (!preset) { toast(`No saved preset for “${state}” — add one in Settings.`); return; }
+  $('evTax').value = preset.salesTaxRate ?? '';
+  $('evCashTax').value = preset.cashTaxRate ?? '';
+  toast(`Filled tax rate from “${preset.state}”`);
+};
+// What to bring to this event: the explicit per-item quantities if the event is scoped to
+// "selected items", or — if it's open to the whole catalog — every sellable item's current
+// stock (custom "not for shows" items are already excluded from evPickerItems, so they never
+// show up here either). Uses whatever the form currently has, not just what's saved, so
+// a not-yet-saved change to the item picker is reflected immediately.
+function buildPackingListRows() {
+  const byId = new Map(evPickerItems.map((it) => [it.id, it]));
+  const rows = evItemScope === 'selected'
+    ? [...evSelectedItems].map(([itemId, qty]) => {
+        const it = byId.get(itemId);
+        return { name: it ? it.name : '(deleted item)', qty: qty != null ? qty : (it ? it.stock : '') };
+      })
+    : evPickerItems.map((it) => ({ name: it.name, qty: it.stock }));
+  return rows.sort((a, b) => a.name.localeCompare(b.name));
+}
+function printFromCard(bodyClass, cardId, fill) {
+  fill();
+  $(cardId).hidden = false;
+  document.body.classList.add(bodyClass);
+  const restore = () => {
+    document.body.classList.remove(bodyClass);
+    $(cardId).hidden = true;
+    window.removeEventListener('afterprint', restore);
+  };
+  window.addEventListener('afterprint', restore);
+  window.print();
+}
+$('evPrintPacking').onclick = () => {
+  const rows = buildPackingListRows();
+  if (!rows.length) { toast('No items to pack for this event'); return; }
+  printFromCard('printing-packing-list', 'packingListCard', () => {
+    $('packingListTitle').textContent = `Packing list — ${$('evName').value.trim() || 'Event'}`;
+    $('packingListSub').textContent = $('evStart').value ? new Date($('evStart').value + 'T00:00:00').toLocaleDateString() : '';
+    $('packingListRows').innerHTML = rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="r">${r.qty === '' || r.qty == null ? '—' : num(r.qty)}</td></tr>`).join('');
+  });
+};
+// Same item set as the packing list (minus quantities, which tags don't need) — barcoded with
+// the item's own existing number via the vendored Code128 renderer (see public/vendor), which
+// a USB scanner reads back as plain keystrokes at checkout (see the posSearch lookup above).
+function buildTagItems() {
+  const byId = new Map(evPickerItems.map((it) => [it.id, it]));
+  const chosen = evItemScope === 'selected'
+    ? [...evSelectedItems.keys()].map((id) => byId.get(id)).filter(Boolean)
+    : evPickerItems;
+  return chosen.map((it) => ({ name: it.name, price: it.price, itemNo: it.itemNo })).sort((a, b) => a.name.localeCompare(b.name));
+}
+$('evPrintTags').onclick = () => {
+  const tagItems = buildTagItems();
+  if (!tagItems.length) { toast('No items to print tags for in this event'); return; }
+  const withBarcode = $('evTagsBarcode').checked;
+  printFromCard('printing-price-tags', 'priceTagsCard', () => {
+    $('priceTagsGrid').innerHTML = tagItems.map((it, i) => `
+      <div class="price-tag">
+        <div class="tag-name">${esc(it.name)}</div>
+        <div class="tag-price">${money(num(it.price))}</div>
+        ${withBarcode && it.itemNo ? `<svg class="tag-barcode" id="tag-bc-${i}"></svg><div class="tag-no">${esc(it.itemNo)}</div>` : (it.itemNo ? `<div class="tag-no">#${esc(it.itemNo)}</div>` : '')}
+      </div>`).join('');
+    if (withBarcode && window.JsBarcode) {
+      tagItems.forEach((it, i) => {
+        if (!it.itemNo) return;
+        try { window.JsBarcode(`#tag-bc-${i}`, it.itemNo, { format: 'CODE128', displayValue: false, height: 40, margin: 0 }); }
+        catch { /* a malformed item number (shouldn't happen) just skips its barcode, not the whole print */ }
+      });
+    }
+  });
 };
 $('evEnd').onclick = async () => {
   const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
@@ -1376,11 +1612,12 @@ function setTestMode(on) {
   if (me) {
     Promise.all([loadPosItems(), loadMaterials(), loadItems()]).catch(() => {});
     if (currentTab === 'reports') renderReports().catch(() => {});
+    if (currentTab === 'orders') loadCustomOrders().catch(() => {});
   }
 }
 $('testModeOnLink').onclick = () => { setTestMode(true); toast('Test mode on — practice away'); };
 async function purgeTestData(askFirst) {
-  if (askFirst && !await askConfirm('Permanently delete all test items, materials, events, and sales?', 'Clear test data')) return 'cancelled';
+  if (askFirst && !await askConfirm('Permanently delete all test items, materials, events, sales, and custom orders?', 'Clear test data')) return 'cancelled';
   let counts;
   try {
     counts = (await api('POST', '/api/test-data/purge')).counts;
@@ -1391,8 +1628,10 @@ async function purgeTestData(askFirst) {
   // The purge itself already succeeded at this point — a refresh failing for a role that
   // can't read materials/items full detail (e.g. a cashier) shouldn't turn a successful
   // purge into a reported failure.
-  await Promise.all([loadEvents(), loadSales(), loadMaterials(), loadItems(), loadPosItems()]).catch(() => {});
-  const total = (counts.sales || 0) + (counts.events || 0) + (counts.items || 0) + (counts.materials || 0);
+  const refreshes = [loadEvents(), loadSales(), loadMaterials(), loadItems(), loadPosItems()];
+  if (currentTab === 'orders') refreshes.push(loadCustomOrders());
+  await Promise.all(refreshes).catch(() => {});
+  const total = (counts.sales || 0) + (counts.events || 0) + (counts.items || 0) + (counts.materials || 0) + (counts.customOrders || 0);
   return total > 0 ? 'purged' : 'empty';
 }
 $('purgeTestLink').onclick = async () => {
@@ -1714,13 +1953,21 @@ function renderRptInventory() {
   const totalMaterialValue = lib.reduce((s, m) => s + num(m.stock) * unitCost(m), 0);
   const lowItems = items.filter(it => isLow(it.stock, it.low));
   const lowMats = lib.filter(m => isLow(m.stock, m.low));
+  const needsOrdering = lowItems.length + lowMats.length;
   const tiles = [
     { lbl: 'Potential revenue', val: money(totalPotentialRevenue), highlight: true },
     { lbl: 'Item stock value (cost)', val: money(totalItemStockValue) },
     { lbl: 'Material value', val: money(totalMaterialValue) },
-    { lbl: 'Needs ordering', val: lowItems.length + lowMats.length, neg: (lowItems.length + lowMats.length) > 0 },
+    { lbl: 'Needs ordering', val: needsOrdering, neg: needsOrdering > 0, id: 'rptInvReorderTile' },
   ];
-  $('rptInvStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}"><div class="lbl">${t.lbl}</div><div class="val${t.neg ? ' neg' : ''}">${t.val}</div></div>`).join('');
+  $('rptInvStats').innerHTML = tiles.map(t => `<div class="stat-tile${t.highlight ? ' highlight' : ''}${t.id ? ' clickable' : ''}"${t.id ? ` id="${t.id}"` : ''}><div class="lbl">${t.lbl}${t.id ? ' ▾' : ''}</div><div class="val${t.neg ? ' neg' : ''}">${t.val}</div></div>`).join('');
+  // Drill-down: the tile is just a count — click it to reveal exactly which items/materials
+  // are low, instead of a detail card that's always sitting there whether you asked or not.
+  $('rptInvReorderTile').onclick = () => {
+    const card = $('rptInvReorderCard');
+    card.hidden = !card.hidden;
+    if (!card.hidden) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
 
   const qi = rptInvItemSearch.trim().toLowerCase();
   const itemRows = items.filter(it => !qi || it.name.toLowerCase().includes(qi));
@@ -1961,6 +2208,43 @@ $('newSourceAdd').onclick = async () => {
     toast(`Added “${name}”`);
     await loadMaterials();
   } catch (e) { toast(e.message || 'Could not add source'); }
+};
+
+// ---------- Settings: tax rate presets ----------
+// Also needed by the event form's "Fill tax rate from preset" button — loaded there too (see
+// loadEventFormExtras), not just when Settings happens to have been visited, since a lead
+// account can manage events but can't reach Settings at all.
+let taxPresets = [];
+async function loadTaxPresets() { taxPresets = await api('GET', '/api/tax-presets'); renderTaxPresetRows(); }
+function renderTaxPresetRows() {
+  const tb = $('taxPresetRows'); if (!tb) return;
+  tb.innerHTML = '';
+  for (const p of taxPresets) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td></td><td class="num"></td><td class="num"></td><td class="acts"><button class="icon-btn del" title="Remove preset">×</button></td>`;
+    const [stateCell, salesCell, cashCell] = tr.querySelectorAll('td');
+    stateCell.textContent = p.state;
+    salesCell.textContent = p.salesTaxRate != null ? p.salesTaxRate + '%' : '—';
+    cashCell.textContent = p.cashTaxRate != null ? p.cashTaxRate + '%' : 'same as sales';
+    tr.querySelector('.del').onclick = async () => {
+      if (!await askConfirm(`Remove the “${p.state}” tax preset?`, 'Remove preset')) return;
+      try { await api('DELETE', '/api/tax-presets/' + p.id); toast(`Removed “${p.state}”`); await loadTaxPresets(); }
+      catch (e) { toast(e.message || 'Could not remove preset'); }
+    };
+    tb.appendChild(tr);
+  }
+  $('taxPresetsEmpty').hidden = taxPresets.length > 0;
+  $('taxPresetStateList').innerHTML = taxPresets.map(p => `<option value="${esc(p.state)}">`).join('');
+}
+$('newTaxPresetAdd').onclick = async () => {
+  const state = $('newTaxPresetState').value.trim();
+  if (!state) { $('newTaxPresetState').focus(); toast('Give the preset a state first'); return; }
+  try {
+    await api('POST', '/api/tax-presets', { state, salesTaxRate: $('newTaxPresetSales').value, cashTaxRate: $('newTaxPresetCash').value });
+    $('newTaxPresetState').value = ''; $('newTaxPresetSales').value = ''; $('newTaxPresetCash').value = '';
+    toast(`Added “${state}”`);
+    await loadTaxPresets();
+  } catch (e) { toast(e.message || 'Could not add preset'); }
 };
 
 // ---------- Settings: database maintenance ----------

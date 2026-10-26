@@ -37,6 +37,7 @@
     <button data-tab="calc">Calculator</button>
     <button data-tab="lib">Materials <span class="count" id="libCount"></span></button>
     <button data-tab="items">Items <span class="count" id="itemCount"></span></button>
+    <button data-tab="orders">Custom Orders <span class="count" id="ordersCount"></span></button>
     <button data-tab="reports">Reports</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -236,6 +237,50 @@
     </div>
   </section>
 
+  <!-- ===== Custom Orders ===== -->
+  <section id="tab-orders" hidden>
+    <div class="card">
+      <h2>Custom Orders</h2>
+      <div class="help">Track made-to-order or custom pieces from request to pickup — separate from your regular catalog and event inventory. Ringing up the sale when it's picked up still happens on the Sell page as usual.</div>
+      <div class="row" style="grid-template-columns:1fr auto;gap:12px;margin-bottom:12px;align-items:center">
+        <input id="ordersSearch" placeholder="Search by customer or item…">
+        <select id="ordersStatusFilter">
+          <option value="">All statuses</option>
+          <option value="new">New</option>
+          <option value="in_progress">In progress</option>
+          <option value="ready">Ready for pickup</option>
+          <option value="picked_up">Picked up</option>
+        </select>
+      </div>
+      <div class="scroll">
+        <table class="items-table">
+          <thead><tr><th>Item</th><th>Customer</th><th>Due</th><th>Status</th><th></th></tr></thead>
+          <tbody id="ordersRows"></tbody>
+        </table>
+      </div>
+      <div class="empty" id="ordersEmpty">No custom orders yet.</div>
+    </div>
+
+    <div class="card">
+      <h2 id="orderFormTitle">New custom order</h2>
+      <div class="row r2">
+        <div><label for="orderItemName">Item / description</label><input id="orderItemName" list="itemNameList" placeholder="e.g. Engraved oak sign"></div>
+        <div><label for="orderDue">Due date</label><input id="orderDue" type="date"></div>
+      </div>
+      <datalist id="itemNameList"></datalist>
+      <div class="row r2" style="margin-top:12px">
+        <div><label for="orderCustomerName">Customer name</label><input id="orderCustomerName"></div>
+        <div><label for="orderCustomerContact">Customer contact</label><input id="orderCustomerContact" placeholder="phone or email"></div>
+      </div>
+      <label for="orderNotes" style="margin-top:12px">Notes</label>
+      <textarea id="orderNotes" rows="3" style="width:100%;resize:vertical;font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink)"></textarea>
+      <div class="btn-row">
+        <button class="btn primary sm" id="orderSave">Save order</button>
+        <button class="btn sm" id="orderCancel" hidden>Cancel edit</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ===== Point of sale (public — no login required) ===== -->
   <section id="tab-pos">
     <div class="test-row" id="testOffRow">
@@ -276,10 +321,13 @@
         <div><label for="evStart">Start date</label><input id="evStart" type="date"></div>
         <div><label for="evDays">Number of days</label><input id="evDays" type="number" min="1" step="1" value="1"></div>
       </div>
-      <div class="row r2" style="margin-top:12px">
+      <div class="row r3" style="margin-top:12px">
+        <div><label for="evState">State</label><input id="evState" list="taxPresetStateList" placeholder="e.g. MN"></div>
         <div><label for="evTax">Sales tax rate (%)</label><input id="evTax" type="number" min="0" step="0.1" placeholder="0"></div>
         <div><label for="evCashTax">Cash tax rate (%)</label><input id="evCashTax" type="number" min="0" step="0.1" placeholder="same as sales rate"></div>
       </div>
+      <datalist id="taxPresetStateList"></datalist>
+      <div class="btn-row" style="margin-top:8px"><button class="btn sm" id="evFillTaxPreset">Fill tax rate from preset</button></div>
       <div class="row r2" style="margin-top:12px">
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedOther"><span>Card / Other: tax included in price</span></label>
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedCash"><span>Cash: tax included in price</span></label>
@@ -315,6 +363,11 @@
           <div id="evItemCheckList" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
           <div class="hint" id="evItemPickCount" style="margin-top:6px"></div>
         </div>
+        <div class="btn-row" style="margin-top:10px;align-items:center">
+          <button class="btn sm" id="evPrintPacking">Print packing list</button>
+          <button class="btn sm" id="evPrintTags">Print price tags</button>
+          <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTagsBarcode" checked><span>Include barcode</span></label>
+        </div>
       </div>
       <div class="btn-row">
         <button class="btn primary sm" id="evSave">Save</button>
@@ -326,7 +379,7 @@
       <main>
         <div class="card">
           <h2>Add to ticket</h2>
-          <input id="posSearch" placeholder="Search your items…" style="margin-bottom:12px">
+          <input id="posSearch" placeholder="Search your items, or scan/type an item number…" style="margin-bottom:12px">
           <div class="pos-grid" id="posItems"></div>
           <div class="empty" id="posItemsEmpty" hidden>No items yet.</div>
           <div class="btn-row"><button class="btn" id="posCustomToggle">+ Custom item</button></div>
@@ -499,7 +552,7 @@
         <div id="rptInvMatList"></div>
         <div class="empty" id="rptInvMatEmpty" hidden>No materials yet.</div>
       </div>
-      <div class="card">
+      <div class="card" id="rptInvReorderCard" hidden>
         <h2>Needs to be ordered</h2>
         <div class="hint" style="margin-top:-8px;margin-bottom:10px">Items and materials at or below their low-stock threshold.</div>
         <div id="rptInvReorderList"></div>
@@ -589,6 +642,22 @@
       <div class="row r2" style="margin-top:12px;max-width:420px">
         <div><label for="newSourceName">Add a source</label><input id="newSourceName" placeholder="e.g. Michaels"></div>
         <div style="display:flex;align-items:flex-end"><button class="btn sm" id="newSourceAdd" style="width:100%">+ Add</button></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Tax rate presets</h2>
+      <div class="help">Your own saved tax rates by state — fill them in once here, then on an event's form, enter the state and click "Fill from preset" to apply them instead of retyping. A one-time fill, not a live link, so changing a preset later doesn't change events that already used it.</div>
+      <table class="items-table">
+        <thead><tr><th>State</th><th class="r">Sales tax %</th><th class="r">Cash tax %</th><th></th></tr></thead>
+        <tbody id="taxPresetRows"></tbody>
+      </table>
+      <div class="empty" id="taxPresetsEmpty" hidden>No tax presets yet.</div>
+      <div class="row r4" style="margin-top:12px;max-width:620px">
+        <div><label for="newTaxPresetState">State</label><input id="newTaxPresetState" placeholder="e.g. MN"></div>
+        <div><label for="newTaxPresetSales">Sales tax %</label><input id="newTaxPresetSales" type="number" min="0" step="0.1" placeholder="0"></div>
+        <div><label for="newTaxPresetCash">Cash tax %</label><input id="newTaxPresetCash" type="number" min="0" step="0.1" placeholder="same as sales"></div>
+        <div style="display:flex;align-items:flex-end"><button class="btn sm" id="newTaxPresetAdd" style="width:100%">+ Add</button></div>
       </div>
     </div>
 
@@ -687,6 +756,19 @@
   </div>
 </div>
 
+<div class="card packing-list-print" id="packingListCard" hidden>
+  <h2 id="packingListTitle"></h2>
+  <div class="hint" id="packingListSub" style="margin-top:-6px;margin-bottom:10px"></div>
+  <table class="items-table">
+    <thead><tr><th>Item</th><th class="r">Qty to bring</th></tr></thead>
+    <tbody id="packingListRows"></tbody>
+  </table>
+</div>
+
+<div class="price-tags-print" id="priceTagsCard" hidden>
+  <div class="tag-grid" id="priceTagsGrid"></div>
+</div>
+
 <div class="toast" id="toast" role="status"></div>
 <div class="modal" id="modal" hidden>
   <div class="modal-card" role="dialog" aria-modal="true">
@@ -695,6 +777,9 @@
   </div>
 </div>
 
+<!-- Vendored locally (not a CDN script) so barcode printing keeps working on a fully offline
+     install — see public/vendor/README.md. -->
+<script src="/vendor/jsbarcode.code128.min.js"></script>
 <script src="/offline.js"></script>
 <script src="/app.js"></script>
 </body>
