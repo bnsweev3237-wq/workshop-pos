@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.5.0',
+    date: '2026-10-26',
+    notes: [
+      'Settings → Duplicates: items and materials that share a name (ignoring case and extra spaces) are grouped together for review, with enough detail (price, cost, stock, when it was added) to tell copies apart, and a Delete button that works exactly like deleting from the Items/Materials tab.',
+    ],
+  },
+  {
     version: '1.4.2',
     date: '2026-10-26',
     notes: [

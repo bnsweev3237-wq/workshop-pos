@@ -394,6 +394,22 @@ ambiguous which side you're looking at. From that banner:
 All three only ever touch the test side (items, materials, events, sales, and any charity
 rules on those test events) — the real side is never affected.
 
+## Duplicates
+
+Settings → Duplicates (admin only) groups items and materials that share a name — ignoring
+case and extra/trailing whitespace, so "Wooden Keychain" and "wooden keychain " show up as the
+same group even though they're not byte-for-byte identical. Most often this is a double-
+submitted save or a CSV-imported row whose name didn't quite match an existing one closely
+enough for the importer's own matching to catch (see "CSV import/export" above).
+
+Only name groups with more than one entry are shown, each with enough to tell them apart —
+item number or source, price, cost, stock, and when it was added — plus its own exact name in
+quotes, so a case difference between two otherwise-identical-looking rows is visible. Deleting
+one from here is the exact same action as deleting it from the Items or Materials tab (the
+same confirmation, the same cleanup of anything that referenced it), just found by scanning
+for duplicates instead of searching for it directly. The list is purely a read of what's
+already there — nothing is merged or auto-deleted on its own.
+
 ## Database maintenance
 
 Settings → Database maintenance (admin only):

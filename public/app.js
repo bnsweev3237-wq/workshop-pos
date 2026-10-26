@@ -220,7 +220,7 @@ function showTab(t) {
   if (t === 'items') loadItems();
   if (t === 'orders') loadCustomOrders();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); fillBrandingForm(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); fillBrandingForm(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -641,6 +641,11 @@ function itemStatus(it) {
   return { c, diff, costDiff, priceMoved, moved: priceMoved || Math.abs(costDiff) >= 0.005 };
 }
 async function loadItems() { items = await api('GET', `/api/items/full?test=${testMode ? 1 : 0}`); renderItems(); refreshCategoryList(); }
+async function deleteItem(it) {
+  if (!await askConfirm(`Delete “${it.name}”? This can’t be undone.`, 'Delete item')) return;
+  await api('DELETE', '/api/items/' + it.id);
+  await Promise.all([loadItems(), loadPosItems()]);
+}
 function refreshCategoryList() {
   const cats = [...new Set(items.flatMap(it => it.categories || []))].sort();
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
@@ -713,11 +718,7 @@ function renderItems() {
     tr.querySelector('.sell').onclick = () => sellItem(it, qtyInput.value);
     const acc = tr.querySelector('.accept');
     if (acc) acc.onclick = async () => { freshCopy(it); await api('POST', '/api/items', it); toast(`${it.name} is now ${money(it.price)}`); await Promise.all([loadItems(), loadPosItems()]); };
-    tr.querySelector('.del').onclick = async () => {
-      if (!await askConfirm(`Delete “${it.name}”? This can’t be undone.`, 'Delete item')) return;
-      await api('DELETE', '/api/items/' + it.id);
-      await Promise.all([loadItems(), loadPosItems()]);
-    };
+    tr.querySelector('.del').onclick = () => deleteItem(it);
     tb.appendChild(tr);
   }
   $('itemsEmpty').hidden = visibleCount > 0;
@@ -2393,6 +2394,72 @@ document.querySelectorAll('#rptRangeSeg button').forEach(b => b.onclick = () => 
 
 // ---------- Settings: sales tracking ----------
 let appSettings = { trackSaleAttribution: true, defaultCardProcessorId: '' };
+// ---------- Settings: duplicate items/materials ----------
+// Groups by name only (trimmed, lowercased, internal whitespace collapsed) — catches the
+// common accidental-duplicate causes (a double-submitted save, a re-imported CSV row whose
+// name didn't quite match an existing one) without the false-positive risk of fuzzy matching.
+// Deletion reuses the exact same deleteItem()/deleteLib() as each tab's own delete button —
+// same confirmation, same cleanup of anything that referenced it — this is just a different
+// way of finding what to delete, not a different way of deleting it.
+const dupKey = (name) => String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+function groupDuplicates(list, nameOf) {
+  const map = new Map();
+  for (const x of list) {
+    const k = dupKey(nameOf(x));
+    if (!k) continue;
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(x);
+  }
+  return [...map.values()].filter((g) => g.length > 1).sort((a, b) => nameOf(a[0]).localeCompare(nameOf(b[0])));
+}
+async function loadDuplicates() {
+  await Promise.all([loadItems(), loadMaterials()]);
+  renderDuplicateItems();
+  renderDuplicateMaterials();
+}
+function buildDupGroup(name, count, rows) {
+  const wrap = document.createElement('div'); wrap.className = 'dup-group';
+  wrap.innerHTML = `<div class="dup-group-title">${esc(name)} <span class="count">${count} copies</span></div>`;
+  for (const row of rows) wrap.appendChild(row);
+  return wrap;
+}
+function renderDuplicateItems() {
+  const box = $('dupItemsList'); if (!box) return;
+  const groups = groupDuplicates(items, (it) => it.name);
+  $('dupItemsEmpty').hidden = groups.length > 0;
+  box.innerHTML = '';
+  for (const g of groups) {
+    const rows = g.map((it) => {
+      const row = document.createElement('div'); row.className = 'dup-row';
+      row.innerHTML = `<div class="dup-info"></div><button class="btn sm danger">Delete</button>`;
+      row.querySelector('.dup-info').innerHTML =
+        `“${esc(it.name)}” <span style="color:var(--ink)">· #${it.itemNo} · ${money(it.price)}, cost ${money(it.cost)} · stock ${it.stock}${it.createdAt ? ` · added ${new Date(it.createdAt).toLocaleDateString()}` : ''}</span>`;
+      row.querySelector('button').onclick = async () => { await deleteItem(it); renderDuplicateItems(); };
+      return row;
+    });
+    box.appendChild(buildDupGroup(g[0].name, g.length, rows));
+  }
+}
+function renderDuplicateMaterials() {
+  const box = $('dupMaterialsList'); if (!box) return;
+  const groups = groupDuplicates(lib, (m) => m.name);
+  $('dupMaterialsEmpty').hidden = groups.length > 0;
+  box.innerHTML = '';
+  for (const g of groups) {
+    const rows = g.map((m) => {
+      const row = document.createElement('div'); row.className = 'dup-row';
+      row.innerHTML = `<div class="dup-info"></div><button class="btn sm danger">Delete</button>`;
+      const src = sources.find((s) => s.id === m.sourceId);
+      const u = usedIn(m.id);
+      row.querySelector('.dup-info').innerHTML =
+        `“${esc(m.name)}” <span style="color:var(--ink)">· ${money(m.price)} per ${m.yield}${src ? ` · ${src.name}` : ''} · stock ${m.stock}${u ? ` · used in ${u} item${u > 1 ? 's' : ''}` : ''}${m.created ? ` · added ${new Date(m.created).toLocaleDateString()}` : ''}</span>`;
+      row.querySelector('button').onclick = async () => { await deleteLib(m); renderDuplicateMaterials(); };
+      return row;
+    });
+    box.appendChild(buildDupGroup(g[0].name, g.length, rows));
+  }
+}
+
 // ---------- Branding (logo, business name, accent color) ----------
 // Public (no login needed) since the login screen itself shows it — see server/routes/branding.
 let branding = { name: '', accentColor: '', logo: '' };

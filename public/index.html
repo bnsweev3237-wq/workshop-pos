@@ -796,6 +796,17 @@
     </div>
 
     <div class="card">
+      <h2>Duplicates</h2>
+      <div class="help">Items and materials with the same name (ignoring case, extra spaces) — most often from a double-submitted save or a re-imported CSV row that didn't quite match an existing one. Review each copy and delete the one(s) you don't want; deleting here works exactly like deleting from the Items/Materials tab, including detaching anything that referenced it.</div>
+      <label style="margin-bottom:6px">Items</label>
+      <div id="dupItemsList"></div>
+      <div class="empty" id="dupItemsEmpty">No duplicate items found.</div>
+      <label style="margin-top:16px;margin-bottom:6px">Materials</label>
+      <div id="dupMaterialsList"></div>
+      <div class="empty" id="dupMaterialsEmpty">No duplicate materials found.</div>
+    </div>
+
+    <div class="card">
       <h2>Database maintenance</h2>
       <div class="help">These act on the whole database, not just one business's typical day-to-day use — handle with care.</div>
       <label style="margin-bottom:4px">Copy main data to test</label>

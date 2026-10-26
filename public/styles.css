@@ -428,6 +428,14 @@ body.printing-purchase-order > :not(#purchaseOrderCard) {
 .rn-entry li { margin-bottom: 4px; }
 #appVersion { color: var(--muted); font-variant-numeric: tabular-nums; }
 
+/* ---- duplicate items/materials (Settings) ---- */
+.dup-group { background: var(--bg); border-radius: 10px; padding: 10px 14px; margin-bottom: 10px; }
+.dup-group-title { font-weight: 600; margin-bottom: 4px; }
+.dup-group-title .count { font-size: 11px; font-weight: 600; color: var(--muted); background: var(--card); border-radius: 99px; padding: 1px 8px; margin-left: 6px; }
+.dup-row { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+.dup-row:last-child { border-bottom: none; }
+.dup-info { font-size: 13px; color: var(--muted); }
+
 /* ---- branding (Settings → Branding) ---- */
 .logo-pick { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .logo-preview { width: 72px; height: 72px; border-radius: 10px; border: 1px dashed var(--line); background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
