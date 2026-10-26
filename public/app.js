@@ -522,7 +522,7 @@ function renderLib() {
     sourceSelect.innerHTML = '<option value="">—</option>' + sources.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('');
     n.value = m.name; p.value = m.price; y.value = m.yield; stockIn.value = m.stock ?? 0; lowIn.value = m.low ?? '';
     sourceSelect.value = m.sourceId || '';
-    const refresh = () => { tr.querySelector('.num').textContent = money4(unitCost(m)); const u = usedIn(m.id); tr.querySelector('.used').textContent = u ? `${u} item${u > 1 ? 's' : ''}` : '—'; };
+    const refresh = () => { tr.querySelector('.num').textContent = money(unitCost(m)); const u = usedIn(m.id); tr.querySelector('.used').textContent = u ? `${u} item${u > 1 ? 's' : ''}` : '—'; };
     refresh();
     stockIn.classList.toggle('low-input', low);
     let saveTimer;

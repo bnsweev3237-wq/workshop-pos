@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.4.1',
+    date: '2026-10-26',
+    notes: [
+      'The Materials tab\'s "Per piece" cost now rounds to 2 decimal places like every other price in the app, instead of showing up to 4.',
+    ],
+  },
+  {
     version: '1.4.0',
     date: '2026-10-26',
     notes: [
