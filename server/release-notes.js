@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.0.2',
+    date: '2026-10-26',
+    notes: [
+      'A shipping custom order with a shipping & handling charge now has an "Add shipping to ticket" button — drops that charge onto the current Sell page ticket as its own line instead of retyping it there.',
+    ],
+  },
+  {
     version: '1.0.1',
     date: '2026-10-26',
     notes: [

@@ -753,7 +753,10 @@ function renderCustomOrders() {
       <td class="dueCell"></td>
       <td class="fulfillCell"></td>
       <td><select class="statusSel"></select></td>
-      <td class="acts"><button class="btn sm edit">Edit</button><button class="icon-btn del" title="Delete">×</button></td>`;
+      <td class="acts">
+        ${o.fulfillment === 'ship' && num(o.shippingCost) > 0 ? '<button class="btn sm shipToTicket">Add shipping to ticket</button>' : ''}
+        <button class="btn sm edit">Edit</button><button class="icon-btn del" title="Delete">×</button>
+      </td>`;
     tr.querySelector('.iname').textContent = o.itemName;
     if (o.notes) tr.querySelector('.itemMeta').textContent = o.notes;
     tr.querySelector('.custName').textContent = o.customerName || '—';
@@ -775,6 +778,8 @@ function renderCustomOrders() {
       try { await api('POST', `/api/custom-orders/${o.id}/status`, { status: sel.value }); o.status = sel.value; toast('Status updated'); }
       catch (e) { toast(e.message || 'Could not update status'); sel.value = o.status; }
     };
+    const shipBtn = tr.querySelector('.shipToTicket');
+    if (shipBtn) shipBtn.onclick = () => addShippingToTicket(o);
     tr.querySelector('.edit').onclick = () => fillOrderForm(o);
     tr.querySelector('.del').onclick = async () => {
       if (!await askConfirm(`Delete the custom order for “${o.itemName}”?`, 'Delete order')) return;
@@ -826,6 +831,21 @@ $('orderSave').onclick = async () => {
 };
 $('ordersSearch').addEventListener('input', () => { ordersSearch = $('ordersSearch').value; renderCustomOrders(); });
 $('ordersStatusFilter').addEventListener('change', () => { ordersStatusFilter = $('ordersStatusFilter').value; renderCustomOrders(); });
+// Adds the order's shipping & handling charge to the current Sell page ticket as its own
+// custom (off-catalog) line, instead of having to retype the amount there by hand. Only
+// offered on a 'ship' order with an actual charge set (see the button's own conditional
+// above) — same admin/manager/lead-only territory as the rest of this tab, and custom lines
+// are already off-limits to the cashier role at checkout regardless.
+function addShippingToTicket(o) {
+  showTab('pos');
+  ticket.push({
+    id: cid(), itemId: null, name: `Shipping & handling — ${o.itemName}`, price: num(o.shippingCost), qty: 1,
+    taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null,
+  });
+  renderTicket();
+  setMobileCartOpen(true);
+  toast(`Added shipping (${money(num(o.shippingCost))}) to the ticket`);
+}
 
 // ---------- Offline mode (Sell page only — see README) ----------
 // A checked-out sale that failed to reach the server because the connection is actually

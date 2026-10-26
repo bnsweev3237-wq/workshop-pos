@@ -265,9 +265,10 @@ An order defaults to in-person pickup, with a status of New → In progress → 
 → Picked up (changeable inline from the list). Checking "This order ships" instead brings up
 a shipping address field, a shipping & handling charge, and a tracking number (filled in once
 it's gone out) — the same statuses relabel themselves to Ready to ship / Shipped for a shipped
-order, so the queue reads correctly either way. The shipping charge is informational here —
-charging for it still happens as its own line on the Sell page ticket when the order is rung
-up; this tab doesn't total or process payment.
+order, so the queue reads correctly either way. A shipping order with a charge set gets an
+"Add shipping to ticket" button in the list, which switches to the Sell page and drops that
+charge onto the current ticket as its own custom line, instead of retyping the amount there
+by hand — this tab still never totals or processes payment itself, it just saves that one step.
 
 ## Reports
 
