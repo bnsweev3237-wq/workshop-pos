@@ -3,6 +3,13 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.4.2',
+    date: '2026-10-26',
+    notes: [
+      'Every remaining 4-decimal price display now rounds to 2 like the rest of the app — the Calculator\'s per-material cost breakdown and Reports\' material/item cost drill-downs, alongside the Materials tab\'s "Per piece" column from the last update.',
+    ],
+  },
+  {
     version: '1.4.1',
     date: '2026-10-26',
     notes: [

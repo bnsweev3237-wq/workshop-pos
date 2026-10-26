@@ -1,6 +1,5 @@
 const $ = id => document.getElementById(id);
 const money = n => { n = isFinite(n) ? n : 0; return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-const money4 = n => { n = isFinite(n) ? n : 0; return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 }); };
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now() + '-' + Math.random());
@@ -371,7 +370,7 @@ function calc() {
   [...$('mats').children].forEach((tr, i) => {
     const row = s.materials[i];
     const unit = unitCost(matSource(row));
-    const detail = num(row.per) !== 1 ? `<small>${money4(unit)} × ${num(row.per)}</small>` : '';
+    const detail = num(row.per) !== 1 ? `<small>${money(unit)} × ${num(row.per)}</small>` : '';
     tr.querySelector('.num').innerHTML = money(unit * num(row.per)) + detail;
   });
   const profit = r.price - r.cost;
@@ -2088,7 +2087,7 @@ function buildCostRow(entry) {
     body.innerHTML = `<div class="hint">This item has no materials recorded.</div>`;
   } else {
     body.innerHTML = `<table class="rpt-mat-table"><thead><tr><th>Material</th><th class="r">Used per item</th><th class="r">Total used</th><th class="r">Unit cost</th><th class="r">Total cost</th></tr></thead><tbody>${
-      mats.map(m => `<tr><td>${esc(m.name)}</td><td class="r">${m.usedPerItem.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${m.totalUsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${money4(m.unitCost)}</td><td class="r">${money(m.totalCost)}</td></tr>`).join('')
+      mats.map(m => `<tr><td>${esc(m.name)}</td><td class="r">${m.usedPerItem.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${m.totalUsed.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td><td class="r">${money(m.unitCost)}</td><td class="r">${money(m.totalCost)}</td></tr>`).join('')
     }</tbody></table>`;
   }
   row.querySelector('.rpt-cost-head').onclick = () => { body.hidden = !body.hidden; };
@@ -2287,7 +2286,7 @@ function renderRptInventory() {
     </div>`;
     row.querySelector('.rpt-cost-name').textContent = m.name;
     row.querySelector('.rpt-cost-qty').textContent = stock;
-    row.querySelector('.rpt-cost-cost').textContent = money4(unit);
+    row.querySelector('.rpt-cost-cost').textContent = money(unit);
     row.querySelector('.rpt-cost-num').textContent = money(stock * unit);
     matBox.appendChild(row);
   }
