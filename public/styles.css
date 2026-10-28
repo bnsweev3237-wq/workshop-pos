@@ -301,6 +301,14 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 
 .app-footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); }
 
+/* A small, always-present Craftium credit — independent of a tenant's own custom branding
+   (name/logo/accent, all set in Settings → Branding), so it's always clear what the app
+   underneath a rebranded install actually is. Reused on the login screen and in the footer;
+   never printed (packing lists/purchase orders already hide header/footer for print). */
+.craftium-credit { display: inline-flex; align-items: center; gap: 6px; }
+.craftium-credit img { width: 14px; height: 14px; border-radius: 3px; }
+.login-card > .craftium-credit { display: flex; justify-content: center; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); font-size: 12px; color: var(--muted); }
+
 .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .stat-tile { background: var(--bg); border-radius: 10px; padding: 14px; }
 .stat-tile .lbl { font-size: 12px; color: var(--muted); font-weight: 500; }

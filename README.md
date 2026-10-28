@@ -274,6 +274,10 @@ Settings → Branding (admin-only) holds your business name, a logo, and an acce
 
 All three are public, even logged out, since the sign-in screen itself shows them — none of
 it is sensitive information (the same name/logo a customer already sees on a receipt).
+
+A small "Powered by Craftium" credit (sign-in screen) and footer mark (every tab) are
+independent of all of the above — they always show, regardless of what a business's own
+branding is set to, so it's never unclear what the app underneath a rebranded install is.
 Changing it only takes effect after "Save branding"; nothing is applied live as you type.
 
 ## Discounts

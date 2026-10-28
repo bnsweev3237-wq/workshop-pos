@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.2',
+    date: '2026-10-28',
+    notes: [
+      'A small "Powered by Craftium" credit now always shows on the sign-in screen and in the app footer — independent of a business\'s own custom branding (name/logo/accent color), which still controls everything else (header, title, printed packing lists and purchase orders) exactly as before.',
+    ],
+  },
+  {
     version: '1.8.1',
     date: '2026-10-28',
     notes: [
