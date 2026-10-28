@@ -1,6 +1,16 @@
 // Hand-maintained changelog shown in the app's "What's new" viewer. Add a new entry at the
 // top each time package.json's version is bumped — keep it short, user-facing language,
 // what changed and why it matters to someone running the shop, not commit-message detail.
+//
+// Versioning standard (semver — bump package.json's version to match):
+//   - PATCH (x.y.Z+1): bug fixes, copy/polish tweaks only — nothing a user would call a new
+//     capability.
+//   - MINOR (x.Y+1.0): one or more new features/capabilities, still backward-compatible.
+//     Everything shipped together in one release gets one minor bump and one entry below,
+//     even if it bundles several unrelated features.
+//   - MAJOR (X+1.0.0): reserved for an actual breaking change (removing/replacing a feature,
+//     an incompatible data format) or a deliberate milestone — never bumped without calling
+//     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
     version: '1.7.0',
