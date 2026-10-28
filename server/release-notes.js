@@ -3,6 +3,15 @@
 // what changed and why it matters to someone running the shop, not commit-message detail.
 module.exports = [
   {
+    version: '1.7.0',
+    date: '2026-10-28',
+    notes: [
+      'Settings → Automatic backups: each backup now has a Restore button next to Download — replaces everything (items, materials, sales, settings) with that backup\'s data and restarts the server. A fresh backup of whatever\'s live is taken automatically first, so restoring the wrong one by mistake is itself recoverable.',
+      'Every section on the Settings page can now be collapsed by clicking its heading — handy once there are a dozen of them. Stays how you left it on this device.',
+      'Items can now have a photo — upload one from the Calculator\'s item editor and it shows as a thumbnail in the Items list. Photos are automatically resized and compressed on upload so they don\'t bloat the database.',
+    ],
+  },
+  {
     version: '1.6.1',
     date: '2026-10-26',
     notes: [

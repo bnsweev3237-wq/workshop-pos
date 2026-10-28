@@ -21,6 +21,45 @@ function sortByPref(list, pref, getAdded) {
   return sorted;
 }
 
+// Downscales and re-encodes an uploaded image as JPEG, via an off-DOM canvas, so a phone's
+// full-resolution photo doesn't get stored and shipped around at full size. Resolves to a
+// data: URL; rejects only if the file can't be decoded as an image at all.
+function compressImage(file, { maxDim = 900, targetBytes = 180_000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const width = Math.max(1, Math.round(img.width * scale));
+        const height = Math.max(1, Math.round(img.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        // JPEG has no alpha channel — flatten any transparency onto white first, rather than
+        // let the browser pick (usually black, which looks broken for a product photo).
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+        // Step quality down until the result is roughly under targetBytes, or we've tried
+        // enough times — a simple, low-detail photo may hit the target on the first pass, a
+        // busy one needs a few. *1.37 approximates base64's ~4/3 overhead so the character
+        // count (what we can actually measure) tracks real byte size.
+        let quality = 0.82;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        for (let i = 0; i < 6 && dataUrl.length > targetBytes * 1.37 && quality > 0.3; i++) {
+          quality -= 0.12;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = () => reject(new Error('Could not read that image'));
+      img.src = reader.result;
+    };
+    reader.onerror = () => reject(new Error('Could not read that image'));
+    reader.readAsDataURL(file);
+  });
+}
+
 // Caches the app shell so it can open at all with no connection (installable as a PWA too —
 // see manifest.json). Has nothing to do with the Sell page's actual offline sale handling,
 // which lives below and in offline.js.
@@ -408,8 +447,28 @@ function setMode(m, keepValue) {
 document.querySelectorAll('#mode button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
 ['minutes', 'rate', 'overhead', 'pct', 'round', 'override'].forEach(id => $(id).addEventListener('input', calc));
 
+let currentItemPhoto = '';
+function renderItemPhotoPreview() {
+  $('itemPhotoPreview').innerHTML = currentItemPhoto ? `<img src="${currentItemPhoto}">` : '<span class="ph">No photo</span>';
+  $('itemPhotoRemoveBtn').hidden = !currentItemPhoto;
+}
+$('itemPhotoPickBtn').onclick = () => $('itemPhotoFile').click();
+$('itemPhotoFile').onchange = async () => {
+  const file = $('itemPhotoFile').files[0];
+  $('itemPhotoFile').value = '';
+  if (!file) return;
+  if (!file.type.startsWith('image/')) { toast('Please choose an image file'); return; }
+  try {
+    currentItemPhoto = await compressImage(file);
+    renderItemPhotoPreview();
+    toast('Photo ready — save the item to keep it');
+  } catch (e) { toast(e.message || 'Could not read that image'); }
+};
+$('itemPhotoRemoveBtn').onclick = () => { currentItemPhoto = ''; renderItemPhotoPreview(); };
+
 function restore(s) {
   setItemType(s.itemType || 'made');
+  currentItemPhoto = s.photo || ''; renderItemPhotoPreview();
   $('itemName').value = s.name;
   $('itemCategory').value = (s.categories || []).join(', ');
   $('itemNotForShows').checked = !!s.notForShows;
@@ -456,7 +515,7 @@ $('save').onclick = async () => {
   }
   const r = computeItem(s);
   const existing = currentEditId ? items.find(x => x.id === currentEditId) : items.find(x => x.name.toLowerCase() === s.name.toLowerCase());
-  const saved = await api('POST', '/api/items', { ...s, id: existing ? existing.id : undefined, price: r.price, cost: r.cost, test: testMode });
+  const saved = await api('POST', '/api/items', { ...s, id: existing ? existing.id : undefined, price: r.price, cost: r.cost, photo: currentItemPhoto, test: testMode });
   currentEditId = saved.id;
   $('itemNoHint').hidden = false;
   $('itemNoHint').textContent = `Item #${saved.itemNo}`;
@@ -685,7 +744,7 @@ function renderItems() {
     const notesBadge = it.notes ? ` · <span class="cat-badge" title="${esc(it.notes)}">📝 note</span>` : '';
     const tr = document.createElement('tr'); tr.dataset.id = it.id;
     tr.innerHTML = `
-      <td><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}${notForShowsBadge}${notesBadge}</div></td>
+      <td><div class="item-name-cell">${it.photo ? `<img class="item-thumb" src="${it.photo}">` : ''}<div><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}${notForShowsBadge}${notesBadge}</div></div></div></td>
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
@@ -2726,6 +2785,28 @@ $('brandSaveBtn').onclick = async () => {
   } catch (e) { toast(e.message || 'Could not save branding'); }
 };
 
+// Every card directly under Settings gets a click-to-collapse header, independent of what's
+// inside it — so a new card added later picks this up for free with no markup of its own.
+// Collapsed state is per-browser (localStorage), keyed by the card's own title, not synced
+// between devices or admins — purely a "leave it how I left it" convenience.
+function initCollapsibleSettingsCards() {
+  for (const card of document.querySelectorAll('#tab-settings > .card')) {
+    const h2 = card.querySelector('h2');
+    if (!h2) continue;
+    const key = 'settingsCollapsed:' + h2.textContent.trim();
+    h2.classList.add('collapsible-header');
+    h2.insertAdjacentHTML('beforeend', '<span class="collapse-chevron">▾</span>');
+    let collapsed = false;
+    try { collapsed = localStorage.getItem(key) === '1'; } catch {}
+    card.classList.toggle('collapsed', collapsed);
+    h2.onclick = () => {
+      const now = card.classList.toggle('collapsed');
+      try { localStorage.setItem(key, now ? '1' : '0'); } catch {}
+    };
+  }
+}
+initCollapsibleSettingsCards();
+
 async function loadSettings() {
   appSettings = await api('GET', '/api/settings');
   $('trackAttributionChk').checked = appSettings.trackSaleAttribution;
@@ -2946,11 +3027,26 @@ async function loadServerBackups() {
   const tb = $('backupRows'); tb.innerHTML = '';
   for (const b of backups) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td></td><td>${formatBytes(b.size)}</td><td class="acts"><a class="btn sm" href="/api/maintenance/backups/${encodeURIComponent(b.file)}/download">Download</a></td>`;
+    tr.innerHTML = `<td></td><td>${formatBytes(b.size)}</td><td class="acts"><a class="btn sm" href="/api/maintenance/backups/${encodeURIComponent(b.file)}/download">Download</a><button class="btn sm danger restore-backup">Restore</button></td>`;
     tr.querySelector('td').textContent = new Date(b.createdAt).toLocaleString();
+    tr.querySelector('.restore-backup').onclick = () => restoreBackup(b);
     tb.appendChild(tr);
   }
   $('backupsEmpty').hidden = backups.length > 0;
+}
+async function restoreBackup(b) {
+  const when = new Date(b.createdAt).toLocaleString();
+  if (!await askConfirm(`Replace ALL current data — items, materials, sales, settings, everything — with the backup from ${when}? A fresh backup of what's live right now is taken automatically first, so this isn't the only copy of today's data, but nothing saved after ${when} will be in the app once this finishes. The server restarts immediately after.`, 'Restore this backup')) return;
+  const tb = $('backupRows'); tb.querySelectorAll('button, a').forEach((el) => el.disabled = true);
+  try {
+    await api('POST', `/api/maintenance/backups/${encodeURIComponent(b.file)}/restore`);
+    toast('Restoring…');
+    if (await waitForServerRestart()) { toast('Restored — reloading'); location.reload(); return; }
+    toast('Restore applied, but the server hasn’t come back online yet — check on it directly.');
+  } catch (e) {
+    toast(e.message || 'Restore failed');
+    await loadServerBackups();
+  }
 }
 $('backupNowBtn').onclick = async () => {
   $('backupNowBtn').disabled = true;

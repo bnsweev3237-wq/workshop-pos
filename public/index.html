@@ -71,6 +71,15 @@
           </div>
           <label for="itemName">Item name</label><input id="itemName" placeholder="e.g. Wooden keychain">
           <div class="hint" id="itemNoHint" hidden></div>
+          <label style="margin-top:14px">Photo</label>
+          <div class="logo-pick">
+            <div class="logo-preview" id="itemPhotoPreview"><span class="ph">No photo</span></div>
+            <div class="btn-row" style="margin-top:0">
+              <button class="btn sm" id="itemPhotoPickBtn" type="button">Upload photo</button>
+              <button class="btn sm" id="itemPhotoRemoveBtn" type="button" hidden>Remove</button>
+            </div>
+            <input type="file" id="itemPhotoFile" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
           <div class="row r2" style="margin-top:12px">
             <div><label for="itemCategory">Categories</label><input id="itemCategory" list="categoryList" placeholder="optional, comma-separated, e.g. Military, Holiday"></div>
             <div></div>

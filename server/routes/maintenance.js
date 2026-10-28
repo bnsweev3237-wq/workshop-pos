@@ -4,7 +4,7 @@ const fs = require('fs');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
 const { requireAdmin } = require('../middleware/auth');
-const { runBackup, listBackups, clearOldBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
+const { runBackup, beginRestore, finishRestore, listBackups, clearOldBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
 const { getDiskUsage } = require('../lib/diskUsage');
 
 const router = express.Router();
@@ -33,6 +33,30 @@ router.get('/backups/:file/download', (req, res) => {
   const match = listBackups().find((b) => b.file === req.params.file);
   if (!match) return res.status(404).json({ error: 'not_found' });
   res.download(path.join(BACKUP_DIR, match.file), match.file);
+});
+
+// Replaces every bit of live data with what's in this backup file — items, materials, sales,
+// settings, everything, since it's a full database snapshot rather than a business-data-only
+// restore. Filename is matched against the real backup list the same way /download is, never
+// taken from the request directly.
+let restoring = false;
+router.post('/backups/:file/restore', async (req, res) => {
+  if (restoring) return res.status(409).json({ error: 'already_restoring' });
+  restoring = true;
+  let match;
+  try {
+    match = await beginRestore(req.params.file);
+  } catch (err) {
+    restoring = false;
+    return res.status(err.message === 'Backup not found' ? 404 : 502).json({ error: 'restore_failed', message: err.message });
+  }
+  res.json({ ok: true });
+  // Same handoff as /api/update/apply — exit and let a process manager (pm2, per the deploy
+  // docs) bring the server back up. The actual close-and-swap runs in here, after the
+  // response above has gone out — see the comment on beginRestore/finishRestore for why.
+  setTimeout(() => {
+    try { finishRestore(match); } finally { process.exit(0); }
+  }, 300);
 });
 
 router.get('/disk', (req, res) => {

@@ -57,6 +57,41 @@ async function runBackup() {
   return { ok: true, file: path.basename(dest) };
 }
 
+// Restoring overwrites the live database, then exits the process — mirrors how the self-update
+// feature hands control back to a process manager (pm2, per the deploy docs) rather than
+// trying to safely swap out an open better-sqlite3 handle in place while the rest of the
+// server keeps running against it. Under plain `node server/index.js` with no process manager
+// this leaves the server stopped until started again by hand, same caveat as applyUpdate() in
+// lib/selfUpdate.js.
+//
+// Split into two steps, deliberately not done as one function: beginRestore() only validates
+// and takes a safety snapshot — nothing it does stops the database from working normally — so
+// the route handler can call it, then send the request's own response, and only run
+// finishRestore() (which actually closes db) afterward. Closing db any earlier breaks that
+// same response: express-session touches the session's last-accessed time through this same
+// connection as part of finishing the response, and a closed handle makes that throw.
+
+// A safety net: snapshots whatever's live right now before it's overwritten, so restoring the
+// wrong backup by mistake is itself just as recoverable. Resolves to the backup being restored.
+async function beginRestore(file) {
+  const match = listBackups().find((b) => b.file === file);
+  if (!match) throw new Error('Backup not found');
+  await runBackup();
+  return match;
+}
+
+function finishRestore(match) {
+  const dbPath = db.name;
+  db.close();
+  // These belong to the connection that just closed, not to the backup file about to take
+  // dbPath's place — leftover WAL frames from the old data would otherwise be replayed on top
+  // of the restored file the next time something opens it, corrupting it.
+  for (const suffix of ['-wal', '-shm']) {
+    try { fs.unlinkSync(dbPath + suffix); } catch {}
+  }
+  fs.copyFileSync(path.join(BACKUP_DIR, match.file), dbPath);
+}
+
 // Runs once a day. On startup, backs up immediately only if the most recent backup is more
 // than a day old (or there isn't one yet) — so a server that restarts often (crashes, the
 // self-update feature) doesn't burn through the keep-5 window with duplicate same-day backups.
@@ -71,4 +106,4 @@ function scheduleDailyBackups() {
   }, delay);
 }
 
-module.exports = { runBackup, listBackups, pruneOldBackups, clearOldBackups, scheduleDailyBackups, BACKUP_DIR, KEEP };
+module.exports = { runBackup, beginRestore, finishRestore, listBackups, pruneOldBackups, clearOldBackups, scheduleDailyBackups, BACKUP_DIR, KEEP };

@@ -19,7 +19,8 @@ Working end to end, tested:
 - Items (make/sell stock tracking) — either priced from materials/labor/overhead ("made"),
   or entered directly as a cost and sale price ("resale", for things bought ready-made and
   resold as-is). An item can belong to more than one category (comma-separated), used to
-  target charity rules (below) and to bulk-select items for an event.
+  target charity rules (below) and to bulk-select items for an event. An optional photo,
+  automatically resized/compressed on upload, shows as a thumbnail in the Items list.
 - Sell / point of sale — requires signing in; every role can reach it, but the base cashier
   role is restricted there (see roles below)
 - Four account roles — add/remove, reset passwords, change role, all from Settings
@@ -62,6 +63,8 @@ Working end to end, tested:
 - Database maintenance (Settings, admin-only) — copy real data into the test sandbox, or
   purge everything.
 - A Duplicates review panel (Settings) grouping same-named items/materials for cleanup.
+- Every section of the Settings page can be collapsed by clicking its heading, remembered
+  per browser.
 - Returns — process a return against a past sale from its receipt, netted out of every Reports
   figure automatically. See "Returns" below.
 - An "Export accounting CSV" button in Reports, and Export/Import CSV buttons on the Items and
@@ -467,6 +470,11 @@ the 5 most recent are kept, older ones are removed automatically. A run is skipp
 failed) if the server is low on disk space; it just tries again on the next scheduled run.
 Settings → Automatic backups (admin only) lists current backups with download links, and has
 a "Back up now" button for an on-demand one outside the daily schedule.
+
+Each backup also has a **Restore** button, which replaces every bit of live data — items,
+materials, sales, settings, everything — with that backup's, then restarts the server the
+same way Software updates does (see below): a fresh backup of whatever was live is taken
+automatically first, so restoring the wrong one by mistake is itself recoverable.
 
 This is separate from the manual **Export backup** button in the header, which downloads a
 portable JSON file of items/materials/sales/events you can re-import — the daily backups are
