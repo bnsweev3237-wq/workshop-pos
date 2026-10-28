@@ -1,5 +1,7 @@
 # Craftium — standalone edition
 
+![Craftium](docs/logo.png)
+
 A pricing calculator + point-of-sale app for a small workshop/craft business, built to be
 installed standalone (desktop or a customer's own web host) rather than run as a hosted
 multi-tenant service. Single business per install, no account signup, no cloud dependency.

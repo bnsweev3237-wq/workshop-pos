@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.1',
+    date: '2026-10-28',
+    notes: [
+      'Updated logo — the browser tab icon, installed-PWA icon, and desktop app icon all use the new mark.',
+    ],
+  },
+  {
     version: '1.8.0',
     date: '2026-10-28',
     notes: [
