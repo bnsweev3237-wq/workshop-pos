@@ -71,6 +71,9 @@ Working end to end, tested:
   Materials tabs for bulk spreadsheet edits. See "CSV import/export" below.
 - Email alerts (Settings, admin-only) — an SMTP config reused for any email this app sends,
   starting with an optional daily low-stock digest. See "Email alerts" below.
+- Licensing groundwork (Settings → License, admin-only) — an instance can optionally be given
+  a key and check in with a central license server. Inert with no key set, which is every
+  install's default today. See "Licensing (groundwork)" below.
 
 Also working: an Electron desktop package — the same server and UI, running inside a native
 window with its own per-install database in the OS's standard app-data folder — and a GitHub
@@ -496,6 +499,16 @@ by `npm install`. After a successful update the server exits on purpose — a pr
 (the deploy guide sets this up with `pm2`) restarts it running the new code. Without one,
 the server just stops and needs to be started by hand. On the desktop app, or any install
 that isn't a git checkout, this section explains that and doesn't offer the button.
+
+## Licensing (groundwork)
+
+Settings → License (admin only) lets an instance be given a key and checks in once a day
+against a central license server the vendor runs — see `licensing/README.md` for that side.
+This is groundwork for a future tiered/licensed product, not a live feature: with no key
+entered (the default for every install today, including this one), the app runs exactly as it
+always has, fully unrestricted. Nothing is gated yet — no tiers have been decided — but the
+plumbing (phone-home, a 30-day offline grace period, and `hasFeature()`/`checkUsageCap()`
+helpers routes can opt into) is real and in place for when they are.
 
 ## Sell page on a phone
 

@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.0',
+    date: '2026-10-28',
+    notes: [
+      'Settings → License: groundwork for a future licensed/tiered product — an instance can optionally be given a key and check in daily with a central license server. With no key set (the default, unchanged for every existing install), nothing about the app is different. No tiers exist yet and nothing is gated — this just lays the plumbing.',
+    ],
+  },
+  {
     version: '1.7.1',
     date: '2026-10-28',
     notes: [

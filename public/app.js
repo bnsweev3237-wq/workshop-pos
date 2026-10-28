@@ -259,7 +259,7 @@ function showTab(t) {
   if (t === 'items') loadItems();
   if (t === 'orders') loadCustomOrders();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); loadMailSettings(); fillBrandingForm(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); loadMailSettings(); loadLicenseStatus(); fillBrandingForm(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -3133,6 +3133,50 @@ $('updateApplyBtn').onclick = async () => {
     $('updateStatusLine').textContent = 'Update failed.';
   }
   $('updateApplyBtn').disabled = false; $('updateCheckBtn').disabled = false;
+};
+
+// ---------- License (groundwork — see server/lib/license.js) ----------
+function renderLicenseStatus(s) {
+  $('licenseKeyInput').value = s.key || '';
+  $('licenseCheckBtn').hidden = !s.configured;
+  $('licenseClearBtn').hidden = !s.configured;
+  const when = s.checkedAt ? new Date(s.checkedAt).toLocaleString() : null;
+  const lines = {
+    unlicensed: 'No license key set — running unrestricted.',
+    unchecked: 'License key saved — checking…',
+    invalid_key: 'This license key wasn’t recognized by the license server.',
+    suspended: 'This license is suspended.',
+    revoked: 'This license has been revoked.',
+  };
+  let line = lines[s.status] || `Active${s.tier ? ` (${s.tier})` : ''}${s.licensedTo ? ` — licensed to ${s.licensedTo}` : ''}.${when ? ` Last checked ${when}.` : ''}`;
+  if (s.degraded) line += ' Hasn’t checked in successfully for over 30 days — treating as unlicensed until it can reach the license server again.';
+  $('licenseStatusLine').textContent = line;
+  const hasDetail = s.configured && (Object.keys(s.featureFlags || {}).length || Object.keys(s.usageCaps || {}).length);
+  $('licenseDetailLine').hidden = !hasDetail;
+  if (hasDetail) $('licenseDetailLine').textContent = `Features: ${JSON.stringify(s.featureFlags)}  ·  Usage caps: ${JSON.stringify(s.usageCaps)}`;
+}
+async function loadLicenseStatus() {
+  try { renderLicenseStatus(await api('GET', '/api/license')); }
+  catch (e) { $('licenseStatusLine').textContent = 'Could not load license status.'; }
+}
+$('licenseActivateBtn').onclick = async () => {
+  const key = $('licenseKeyInput').value.trim();
+  if (!key) { toast('Enter a license key first'); return; }
+  $('licenseActivateBtn').disabled = true;
+  try { renderLicenseStatus(await api('POST', '/api/license', { key })); toast('License activated'); }
+  catch (e) { toast(e.message || 'Could not activate that license'); }
+  $('licenseActivateBtn').disabled = false;
+};
+$('licenseCheckBtn').onclick = async () => {
+  $('licenseCheckBtn').disabled = true;
+  try { renderLicenseStatus(await api('POST', '/api/license/check')); toast('License re-checked'); }
+  catch (e) { toast(e.message || 'Could not check license'); }
+  $('licenseCheckBtn').disabled = false;
+};
+$('licenseClearBtn').onclick = async () => {
+  if (!await askConfirm('Remove this license key? This install goes back to running unrestricted.', 'Remove license')) return;
+  try { renderLicenseStatus(await api('DELETE', '/api/license')); toast('License removed'); }
+  catch (e) { toast(e.message || 'Could not remove license'); }
 };
 
 // ---------- Backup ----------
