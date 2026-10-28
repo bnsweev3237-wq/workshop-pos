@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.4',
+    date: '2026-10-28',
+    notes: [
+      'Fixed: the footer\'s Craftium icon was oversized relative to the small footer text, looking out of place. Sized back down to fit.',
+    ],
+  },
+  {
     version: '1.8.3',
     date: '2026-10-28',
     notes: [

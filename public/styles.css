@@ -305,8 +305,8 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
    (name/logo/accent, all set in Settings → Branding), so it's always clear what the app
    underneath a rebranded install actually is. Reused on the login screen and in the footer;
    never printed (packing lists/purchase orders already hide header/footer for print). */
-.craftium-credit { display: inline-flex; align-items: center; gap: 8px; }
-.craftium-credit img { width: 22px; height: 22px; border-radius: 5px; }
+.craftium-credit { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.craftium-credit img { width: 16px; height: 16px; border-radius: 4px; }
 
 /* The login screen's own, much bigger Craftium mark — see the comment above .craftium-credit;
    same independence from a tenant's own branding, just given the most prominent spot on the
