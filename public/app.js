@@ -2796,8 +2796,11 @@ function initCollapsibleSettingsCards() {
     const key = 'settingsCollapsed:' + h2.textContent.trim();
     h2.classList.add('collapsible-header');
     h2.insertAdjacentHTML('beforeend', '<span class="collapse-chevron">▾</span>');
-    let collapsed = false;
-    try { collapsed = localStorage.getItem(key) === '1'; } catch {}
+    // Collapsed by default — only an explicit "0" (the admin expanded it themselves) opens
+    // one up on load; anything else, including a browser that's never seen this card before,
+    // stays collapsed.
+    let collapsed = true;
+    try { collapsed = localStorage.getItem(key) !== '0'; } catch {}
     card.classList.toggle('collapsed', collapsed);
     h2.onclick = () => {
       const now = card.classList.toggle('collapsed');

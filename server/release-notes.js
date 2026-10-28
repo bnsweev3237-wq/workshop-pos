@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.7.1',
+    date: '2026-10-28',
+    notes: [
+      'Settings sections now start collapsed by default instead of expanded — click a heading to open the ones you need. Any section you\'ve already expanded on this device stays that way.',
+    ],
+  },
+  {
     version: '1.7.0',
     date: '2026-10-28',
     notes: [
