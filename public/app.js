@@ -2784,6 +2784,14 @@ $('brandSaveBtn').onclick = async () => {
     toast('Branding saved');
   } catch (e) { toast(e.message || 'Could not save branding'); }
 };
+$('brandResetAllBtn').onclick = async () => {
+  if (!await askConfirm('Reset branding back to default? This clears your business name, logo, and accent color — the app goes back to plain Craftium branding everywhere until you set it again.', 'Reset all branding')) return;
+  try {
+    branding = await api('POST', '/api/branding', { name: '', accentColor: '', logo: '' });
+    applyBranding(); fillBrandingForm();
+    toast('Branding reset to default');
+  } catch (e) { toast(e.message || 'Could not reset branding'); }
+};
 
 // Every card directly under Settings gets a click-to-collapse header, independent of what's
 // inside it — so a new card added later picks this up for free with no markup of its own.

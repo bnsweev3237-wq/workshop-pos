@@ -695,6 +695,7 @@
       <div class="btn-row">
         <button class="btn primary" id="brandSaveBtn">Save branding</button>
         <button class="btn sm" id="brandResetBtn">Reset color to default</button>
+        <button class="btn sm danger" id="brandResetAllBtn">Reset all branding to default</button>
       </div>
     </div>
     <div class="card">
@@ -897,7 +898,7 @@
   </section>
 
   <footer class="app-footer">
-    <span class="craftium-credit"><img src="/favicon.png" alt=""><span>Craftium</span></span>
+    <span class="craftium-credit"><img src="/icons/icon-192.png" alt=""><span>Craftium</span></span>
     · © <span id="footYear"></span> · standalone edition
     · <span id="appVersion"></span> · <button class="link" id="whatsNewLink">What's new</button>
   </footer>
@@ -916,6 +917,7 @@
 <!-- ===== Login / first-run setup ===== -->
 <div class="login-screen" id="loginScreen" hidden>
   <div class="login-card">
+    <div class="login-craftium-banner"><img src="/img/craftium-logo.png" alt="Craftium"></div>
     <div class="brand-row" id="loginBrandRow" hidden><img class="brand-logo" id="loginBrandLogo" alt=""></div>
     <h1 id="loginTitle">Sign in</h1>
     <p class="hint" id="loginSub">Admin sign-in — cashiers don't need this to use the Sell page.</p>
@@ -939,10 +941,6 @@
     <button class="link" id="forgotLink" style="margin-top:14px">Forgot your password?</button>
     <div class="hint" id="forgotPanel" hidden style="margin-top:8px">
       Ask an admin to sign in and reset it for you from Settings → Users. If you're the only admin and you're locked out, you'll need direct access to the server to reset it manually.
-    </div>
-    <div class="craftium-credit">
-      <img src="/favicon.png" alt="">
-      <span>Powered by Craftium</span>
     </div>
   </div>
 </div>

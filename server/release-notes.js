@@ -13,6 +13,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.3',
+    date: '2026-10-28',
+    notes: [
+      'The sign-in screen now leads with a large Craftium banner instead of a small credit line — bigger and clearer. The in-app footer mark is also larger.',
+      'Settings → Branding: a "Reset all branding to default" button clears your business name, logo, and accent color in one step, instead of reverting each field separately.',
+    ],
+  },
+  {
     version: '1.8.2',
     date: '2026-10-28',
     notes: [

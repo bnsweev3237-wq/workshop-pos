@@ -272,12 +272,17 @@ Settings → Branding (admin-only) holds your business name, a logo, and an acce
   in the palette (background, text, borders) stays fixed to keep contrast and readability
   consistent regardless of what color is picked.
 
+"Reset all branding to default" clears all three in one step — back to plain Craftium
+branding everywhere, no name, no logo, default accent — for undoing a shop's customization
+entirely rather than reverting one field at a time.
+
 All three are public, even logged out, since the sign-in screen itself shows them — none of
 it is sensitive information (the same name/logo a customer already sees on a receipt).
 
-A small "Powered by Craftium" credit (sign-in screen) and footer mark (every tab) are
-independent of all of the above — they always show, regardless of what a business's own
-branding is set to, so it's never unclear what the app underneath a rebranded install is.
+A large Craftium banner at the top of the sign-in screen, and a small footer mark (every
+tab), are independent of all of the above — they always show, regardless of what a
+business's own branding is set to, so it's never unclear what the app underneath a
+rebranded install is.
 Changing it only takes effect after "Save branding"; nothing is applied live as you type.
 
 ## Discounts
