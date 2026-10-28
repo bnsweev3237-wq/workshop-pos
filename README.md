@@ -266,7 +266,10 @@ Settings → Branding (admin-only) holds your business name, a logo, and an acce
   heads up printed packing lists and purchase orders alongside the logo.
 - **Logo** is uploaded as an image file (PNG/JPEG/WebP/SVG, under 1.5MB) and stored as a data
   URL in the database itself — no separate upload folder to back up, it travels with the
-  rest of your data in the same SQLite file/backups.
+  rest of your data in the same SQLite file/backups. With none uploaded, the app header
+  shows the Craftium mark in that spot instead of going logo-less — upload your own and it
+  replaces it there. Printed packing lists/purchase orders don't get this fallback — with no
+  logo set, those just show your business name, no image.
 - **Accent color** re-skins the app's buttons, highlights, and links — pick one of the warm
   presets or any custom color. It's the one thing a shop can make its own; everything else
   in the palette (background, text, borders) stays fixed to keep contrast and readability

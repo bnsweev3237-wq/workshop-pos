@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.5',
+    date: '2026-10-28',
+    notes: [
+      'The app header shows the Craftium mark when a business hasn\'t uploaded their own logo, instead of just an empty spot — upload one in Settings → Branding and it takes over there as before.',
+    ],
+  },
+  {
     version: '1.8.4',
     date: '2026-10-28',
     notes: [

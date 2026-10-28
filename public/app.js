@@ -2734,8 +2734,13 @@ function applyBranding() {
   const name = branding.name || 'Craftium';
   $('brandName').textContent = name;
   document.title = name;
-  $('brandLogo').hidden = !branding.logo;
-  if (branding.logo) $('brandLogo').src = branding.logo;
+  // A shop's own uploaded logo if they've set one; otherwise fall back to the Craftium mark
+  // rather than showing no logo at all — the header is the app's own UI, not a customer-facing
+  // document, so defaulting to Craftium's own branding here is fine. The sign-in screen
+  // doesn't need this fallback too — it already always shows the Craftium banner up top, so
+  // repeating it in this smaller slot right below would just be the same logo shown twice.
+  $('brandLogo').hidden = false;
+  $('brandLogo').src = branding.logo || '/icons/icon-512.png';
   $('loginBrandRow').hidden = !branding.logo;
   if (branding.logo) $('loginBrandLogo').src = branding.logo;
   fillLetterhead('packingLetterhead', 'packingLetterheadLogo', 'packingLetterheadName');
