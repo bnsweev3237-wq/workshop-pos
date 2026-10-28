@@ -259,6 +259,10 @@ as Reports' PDF export), and a USB barcode scanner, which types out a barcode's 
 keyboard, reads those tags straight into the Sell page's search box: scan one there and it's
 added to the ticket directly, instead of just filtering the grid the way typing normally does.
 
+Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
+carries a small "Powered by Craftium" line at the bottom, independent of whatever business
+branding the document's own letterhead shows above it.
+
 ## Branding
 
 Settings → Branding (admin-only) holds your business name, a logo, and an accent color:

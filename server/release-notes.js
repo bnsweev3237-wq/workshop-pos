@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.8.6',
+    date: '2026-10-28',
+    notes: [
+      'Every printed document — packing lists, price tags, purchase orders, and Reports\' PDF export — now has a small "Powered by Craftium" line at the bottom, alongside whatever business branding the document\'s own letterhead already shows.',
+    ],
+  },
+  {
     version: '1.8.5',
     date: '2026-10-28',
     notes: [

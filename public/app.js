@@ -2300,8 +2300,16 @@ $('rptExportPdf').onclick = () => {
   const bodies = [...document.querySelectorAll('#tab-reports .rpt-cost-body, #tab-reports .rpt-ev-body')];
   const prevHidden = bodies.map(el => el.hidden);
   bodies.forEach(el => { el.hidden = false; });
+  // Reports has no dedicated print-only card like the packing list/price tags/purchase order
+  // do (it prints the live tab itself), so the credit is added just for this print and removed
+  // right after — same mark, same reasoning, see .print-credit in styles.css.
+  const credit = document.createElement('div');
+  credit.className = 'print-credit';
+  credit.innerHTML = '<img src="/icons/icon-192.png" alt=""><span>Powered by Craftium</span>';
+  $('tab-reports').appendChild(credit);
   const restore = () => {
     bodies.forEach((el, i) => { el.hidden = prevHidden[i]; });
+    credit.remove();
     window.removeEventListener('afterprint', restore);
   };
   window.addEventListener('afterprint', restore);

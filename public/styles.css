@@ -410,6 +410,18 @@ body.printing-price-tags > :not(#priceTagsCard),
 body.printing-purchase-order > :not(#purchaseOrderCard) {
   display: none !important;
 }
+/* Same small Craftium mark as the app footer/sign-in screen, independent of whatever
+   business-name letterhead a document itself has — see the comment above .craftium-credit.
+   Hidden outside an actual print: the packing list/price tags/purchase order cards it lives in
+   are already screen-hidden the rest of the time, but the Reports one is injected straight
+   into the always-visible live tab just for the moment of printing, so this needs its own
+   print-only visibility rather than relying on a parent being hidden. */
+.print-credit { display: none; }
+@media print {
+  .print-credit { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line); font-size: 11px; color: var(--muted); }
+  .print-credit img { width: 14px; height: 14px; border-radius: 3px; }
+}
+
 .tag-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(2.4in, 1fr)); gap: 0.15in; }
 .price-tag { border: 1px dashed #999; border-radius: 6px; padding: 0.12in; text-align: center; break-inside: avoid; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-height: 1.3in; }
 .price-tag .tag-name { font-weight: 600; font-size: 13px; word-break: break-word; }
