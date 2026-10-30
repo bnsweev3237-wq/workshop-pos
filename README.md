@@ -17,7 +17,8 @@ Working end to end, tested:
 - Material library — each material can be tagged with where it's bought from (a user-managed
   list in Settings, prepopulated with common sites) and a saved product link, with a
   "Check price" button that tries to fetch the current price from that link for you to
-  review (see "Checking material prices" below)
+  review (see "Checking material prices" below). An optional photo, automatically
+  resized/compressed on upload same as an item's, shows as a thumbnail in the material row.
 - Items (make/sell stock tracking) — either priced from materials/labor/overhead ("made"),
   or entered directly as a cost and sale price ("resale", for things bought ready-made and
   resold as-is). An item can belong to more than one category (comma-separated), used to
@@ -504,9 +505,17 @@ between installs.
 
 Settings → Disk space (admin only) shows a gauge of the filesystem the data directory lives
 on — used/free/total, color-shifting from green to yellow at 70% used and red at 90% — plus a
-breakdown of how much Craftium's own database and backups are using. A "Clear old backups"
-button deletes everything except the single most recent backup, for freeing space immediately
-rather than waiting for the daily keep-5 pruning to age old ones out on its own.
+breakdown of how much Craftium's own database and backups are using, including how much of
+the database is item/material photos specifically (they're stored inline in the database
+itself, not as separate files, so this is pulled from the actual column sizes rather than
+anything `du` could find). A "Clear old backups" button deletes everything except the single
+most recent backup, for freeing space immediately rather than waiting for the daily keep-5
+pruning to age old ones out on its own. A "Purge all photos" button removes every photo from
+every item and material (real and test side both) in one step and tries to reclaim the freed
+space on disk immediately (a SQLite `VACUUM`, which itself needs roughly another copy of the
+database's worth of free space to run — if that's not available the photos are still gone,
+the file just doesn't shrink until a future vacuum has room to work with). Both are
+destructive and can't be undone.
 
 ## Software updates
 

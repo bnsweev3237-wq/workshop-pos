@@ -13,6 +13,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.9.0',
+    date: '2026-10-30',
+    notes: [
+      'Materials can now have a photo too, same as items — automatically resized/compressed on upload, shown as a thumbnail in the Materials tab (click the 🔗 button on a row to open the upload control, next to the product link).',
+      'Settings → Disk space now breaks out how much of the database is item/material photos specifically, and has a "Purge all photos" button to clear every photo (items and materials, real and test) in one step and reclaim the space.',
+    ],
+  },
+  {
     version: '1.8.6',
     date: '2026-10-28',
     notes: [

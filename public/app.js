@@ -563,7 +563,7 @@ function renderLib() {
     const tr = document.createElement('tr'); tr.className = 'erow'; tr.dataset.id = m.id;
     const low = isLow(m.stock, m.low);
     tr.innerHTML = `
-      <td><input class="in-name" placeholder="Material name"></td>
+      <td><div class="item-name-cell"><img class="item-thumb matThumb" hidden><input class="in-name" style="flex:1;min-width:0" placeholder="Material name"></div></td>
       <td data-l="Price paid ($)"><input class="in-small" type="number" min="0" step="0.01" placeholder="0.00"></td>
       <td data-l="Makes / pack of"><input class="in-small" type="number" min="1" step="any"></td>
       <td class="num" data-l="Per piece"></td>
@@ -582,6 +582,15 @@ function renderLib() {
     sourceSelect.value = m.sourceId || '';
     const refresh = () => { tr.querySelector('.num').textContent = money(unitCost(m)); const u = usedIn(m.id); tr.querySelector('.used').textContent = u ? `${u} item${u > 1 ? 's' : ''}` : '—'; };
     refresh();
+    let detailTr; // assigned below; renderMatPhoto() is only ever called once it exists
+    const renderMatPhoto = () => {
+      const thumb = tr.querySelector('.matThumb');
+      thumb.hidden = !m.photo;
+      if (m.photo) thumb.src = m.photo;
+      const preview = detailTr.querySelector('.matPhotoPreview');
+      preview.innerHTML = m.photo ? `<img src="${m.photo}">` : '<span class="ph">No photo</span>';
+      detailTr.querySelector('.matPhotoRemoveBtn').hidden = !m.photo;
+    };
     stockIn.classList.toggle('low-input', low);
     let saveTimer;
     const onRowChange = () => {
@@ -598,7 +607,7 @@ function renderLib() {
 
     // Detail row: product link + "Check price" — kept collapsed by default since a long URL
     // doesn't fit well as a permanent table column.
-    const detailTr = document.createElement('tr'); detailTr.className = 'lib-detail'; detailTr.hidden = true;
+    detailTr = document.createElement('tr'); detailTr.className = 'lib-detail'; detailTr.hidden = true;
     detailTr.innerHTML = `
       <td colspan="9">
         <div class="lib-detail-inner">
@@ -606,6 +615,15 @@ function renderLib() {
           <input class="productUrlIn" type="url" placeholder="https://www.amazon.com/...">
           <div class="btn-row"><button class="btn sm checkPriceBtn">Check price</button></div>
           <div class="checkPriceResult hint"></div>
+          <label style="margin-top:14px">Photo</label>
+          <div class="logo-pick">
+            <div class="logo-preview matPhotoPreview"><span class="ph">No photo</span></div>
+            <div class="btn-row" style="margin-top:0">
+              <button class="btn sm matPhotoPickBtn" type="button">Upload photo</button>
+              <button class="btn sm matPhotoRemoveBtn" type="button" hidden>Remove</button>
+            </div>
+            <input type="file" class="matPhotoFile" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
         </div>
       </td>`;
     const urlIn = detailTr.querySelector('.productUrlIn');
@@ -640,6 +658,27 @@ function renderLib() {
       }
     };
     tr.querySelector('.link').onclick = () => { detailTr.hidden = !detailTr.hidden; };
+
+    const photoFile = detailTr.querySelector('.matPhotoFile');
+    detailTr.querySelector('.matPhotoPickBtn').onclick = () => photoFile.click();
+    photoFile.onchange = async () => {
+      const file = photoFile.files[0];
+      photoFile.value = '';
+      if (!file) return;
+      if (!file.type.startsWith('image/')) { toast('Please choose an image file'); return; }
+      try {
+        m.photo = await compressImage(file);
+        renderMatPhoto();
+        await api('POST', '/api/materials', m);
+        toast('Photo saved');
+      } catch (e) { toast(e.message || 'Could not read that image'); }
+    };
+    detailTr.querySelector('.matPhotoRemoveBtn').onclick = async () => {
+      m.photo = '';
+      renderMatPhoto();
+      await api('POST', '/api/materials', m);
+    };
+    renderMatPhoto();
 
     tb.appendChild(tr);
     tb.appendChild(detailTr);
@@ -3088,7 +3127,7 @@ async function loadDiskUsage() {
     fill.style.width = pct + '%';
     fill.className = 'disk-gauge-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
     $('diskStatusLine').textContent = `${formatBytes(d.used)} used of ${formatBytes(d.total)} (${pct}%) — ${formatBytes(d.free)} free`;
-    $('diskBreakdownLine').textContent = `Craftium's own data: database ${formatBytes(d.dbBytes)}, backups ${formatBytes(d.backupBytes)}`;
+    $('diskBreakdownLine').textContent = `Craftium's own data: database ${formatBytes(d.dbBytes)} (of which ${formatBytes(d.photoBytes)} is item/material photos), backups ${formatBytes(d.backupBytes)}`;
   } catch (e) {
     $('diskStatusLine').textContent = 'Could not check disk space.';
     $('diskBreakdownLine').textContent = '';
@@ -3101,6 +3140,14 @@ $('clearOldBackupsBtn').onclick = async () => {
     toast(r.removed > 0 ? `Freed ${formatBytes(r.freedBytes)} (removed ${r.removed} backup${r.removed === 1 ? '' : 's'})` : 'No old backups to clear');
     await Promise.all([loadServerBackups(), loadDiskUsage()]);
   } catch (e) { toast(e.message || 'Could not clear old backups'); }
+};
+$('purgePhotosBtn').onclick = async () => {
+  if (!await askConfirm('Remove every photo from every item and material — including test mode — to free up space? Nothing else about them changes, and this can’t be undone; you’d need to re-upload any you want back.', 'Purge all photos')) return;
+  try {
+    const r = await api('POST', '/api/maintenance/purge-photos');
+    toast(r.vacuumed ? 'Photos removed and space reclaimed' : 'Photos removed, but there wasn’t enough free space to reclaim the file size right away');
+    await Promise.all([loadDiskUsage(), loadItems(), loadMaterials(), loadPosItems()]);
+  } catch (e) { toast(e.message || 'Could not purge photos'); }
 };
 
 // ---------- Software updates ----------

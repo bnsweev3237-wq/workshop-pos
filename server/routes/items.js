@@ -3,6 +3,7 @@ const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
 const { requireManageItems, requireReports, requireLogin } = require('../middleware/auth');
 const { toCsv, parseCsvObjects } = require('../lib/csv');
+const { validatePhoto } = require('../lib/photos');
 
 const router = express.Router();
 
@@ -40,12 +41,6 @@ const toFullItem = (r, categories) => ({
   stock: r.stock, low: r.low, price: r.price, cost: r.cost, savedAt: r.saved_at, createdAt: r.created_at, notForShows: !!r.not_for_shows,
   notes: r.notes || '', photo: r.photo || '', test: !!r.test,
 });
-
-// The client compresses/resizes a photo (canvas, re-encoded as JPEG) before ever sending it,
-// so this is just a safety net against a misbehaving client or a direct API call — not the
-// thing actually keeping storage small.
-const PHOTO_RE = /^data:image\/(png|jpeg|jpg|webp);base64,/i;
-const MAX_PHOTO_CHARS = 700_000;
 
 // Items are split into two fully independent catalogs by `test` — see schema.sql. Every
 // list here is scoped to one side or the other (default: the real, non-test catalog) so
@@ -173,10 +168,8 @@ router.post('/import.csv', requireManageItems, (req, res) => {
 
 router.post('/', requireManageItems, (req, res) => {
   const b = req.body || {};
-  const photo = typeof b.photo === 'string' ? b.photo : '';
-  if (photo && (photo.length > MAX_PHOTO_CHARS || !PHOTO_RE.test(photo))) {
-    return res.status(400).json({ error: 'invalid_photo' });
-  }
+  let photo;
+  try { photo = validatePhoto(b.photo); } catch { return res.status(400).json({ error: 'invalid_photo' }); }
   const isUpdate = !!b.id;
   const itemNo = isUpdate
     ? (db.prepare('SELECT item_no FROM items WHERE id = ?').get(b.id)?.item_no || genItemNo(db))

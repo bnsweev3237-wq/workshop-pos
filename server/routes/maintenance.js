@@ -6,6 +6,7 @@ const { uid, genItemNo } = require('../lib/ids');
 const { requireAdmin } = require('../middleware/auth');
 const { runBackup, beginRestore, finishRestore, listBackups, clearOldBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
 const { getDiskUsage } = require('../lib/diskUsage');
+const { photoBytes, purgeAllPhotos } = require('../lib/photos');
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -66,9 +67,20 @@ router.get('/disk', (req, res) => {
     const backupBytes = listBackups().reduce((sum, b) => sum + b.size, 0);
     let dbBytes = 0;
     try { dbBytes = fs.statSync(db.name).size; } catch {}
-    res.json({ ...disk, dbBytes, backupBytes });
+    res.json({ ...disk, dbBytes, backupBytes, photoBytes: photoBytes(db) });
   } catch (err) {
     res.status(502).json({ error: 'disk_check_failed', message: err.message });
+  }
+});
+
+// Clears every photo on every item and material (real and test side both) and tries to
+// reclaim the space on disk — see lib/photos.js for why that second part isn't guaranteed.
+router.post('/purge-photos', (req, res) => {
+  try {
+    const { vacuumed } = purgeAllPhotos(db);
+    res.json({ ok: true, vacuumed, photoBytes: photoBytes(db) });
+  } catch (err) {
+    res.status(502).json({ error: 'purge_failed', message: err.message });
   }
 });
 

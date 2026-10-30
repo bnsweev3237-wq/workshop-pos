@@ -4,6 +4,7 @@ const { uid } = require('../lib/ids');
 const { requireManageItems, requireReports } = require('../middleware/auth');
 const { checkPrice } = require('../lib/priceFetch');
 const { toCsv, parseCsvObjects } = require('../lib/csv');
+const { validatePhoto } = require('../lib/photos');
 
 const router = express.Router();
 // Reading the list is open to Reports roles too (admin/manager/lead) — the Inventory report
@@ -11,7 +12,7 @@ const router = express.Router();
 // requireReports rather than requireManageItems. Editing/deleting/checking a price stays
 // admin+manager only, applied per-route below instead of router-wide.
 
-const toPublic = (r) => ({ id: r.id, name: r.name, price: r.price, yield: r.yield, stock: r.stock, low: r.low, sourceId: r.source_id || null, productUrl: r.product_url || '', test: !!r.test, created: r.created_at });
+const toPublic = (r) => ({ id: r.id, name: r.name, price: r.price, yield: r.yield, stock: r.stock, low: r.low, sourceId: r.source_id || null, productUrl: r.product_url || '', photo: r.photo || '', test: !!r.test, created: r.created_at });
 
 // Materials are split into two fully independent catalogs by `test`, same as items —
 // see schema.sql.
@@ -106,6 +107,8 @@ router.post('/', requireManageItems, (req, res) => {
   // rejected outright — source_id references sources(id) with foreign keys enforced, so
   // inserting one that doesn't exist would otherwise throw a constraint error.
   const sourceId = b.sourceId && db.prepare('SELECT 1 FROM sources WHERE id = ?').get(b.sourceId) ? b.sourceId : null;
+  let photo;
+  try { photo = validatePhoto(b.photo); } catch { return res.status(400).json({ error: 'invalid_photo' }); }
   const row = {
     id: b.id || uid(),
     name: b.name || '',
@@ -115,13 +118,14 @@ router.post('/', requireManageItems, (req, res) => {
     low: b.low === '' || b.low == null ? null : Number(b.low),
     source_id: sourceId,
     product_url: b.productUrl ? String(b.productUrl).trim() || null : null,
+    photo,
     test: b.test ? 1 : 0,
     created_at: b.created || Date.now(),
   };
   db.prepare(`
-    INSERT INTO materials (id, name, price, yield, stock, low, source_id, product_url, test, created_at)
-    VALUES (@id, @name, @price, @yield, @stock, @low, @source_id, @product_url, @test, @created_at)
-    ON CONFLICT(id) DO UPDATE SET name=@name, price=@price, yield=@yield, stock=@stock, low=@low, source_id=@source_id, product_url=@product_url, test=@test
+    INSERT INTO materials (id, name, price, yield, stock, low, source_id, product_url, photo, test, created_at)
+    VALUES (@id, @name, @price, @yield, @stock, @low, @source_id, @product_url, @photo, @test, @created_at)
+    ON CONFLICT(id) DO UPDATE SET name=@name, price=@price, yield=@yield, stock=@stock, low=@low, source_id=@source_id, product_url=@product_url, photo=@photo, test=@test
   `).run(row);
   res.json(toPublic(row));
 });
