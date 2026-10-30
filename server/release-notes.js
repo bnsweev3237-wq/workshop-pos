@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.9.2',
+    date: '2026-10-30',
+    notes: [
+      'Click any item or material photo to see it bigger — the thumbnail in the Items/Materials list, the preview in the Calculator or a material\'s detail panel. Esc or clicking outside closes it.',
+    ],
+  },
+  {
     version: '1.9.1',
     date: '2026-10-30',
     notes: [

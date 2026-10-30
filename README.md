@@ -18,7 +18,8 @@ Working end to end, tested:
   list in Settings, prepopulated with common sites) and a saved product link, with a
   "Check price" button that tries to fetch the current price from that link for you to
   review (see "Checking material prices" below). An optional photo, automatically
-  resized/compressed on upload same as an item's, shows as a thumbnail in the material row.
+  resized/compressed on upload same as an item's, shows as a thumbnail in the material row —
+  click it (or an item's) to see it full-size.
 - Items (make/sell stock tracking) — either priced from materials/labor/overhead ("made"),
   or entered directly as a cost and sale price ("resale", for things bought ready-made and
   resold as-is). An item can belong to more than one category (comma-separated), used to

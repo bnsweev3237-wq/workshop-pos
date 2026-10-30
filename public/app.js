@@ -450,6 +450,7 @@ document.querySelectorAll('#mode button').forEach(b => b.onclick = () => setMode
 let currentItemPhoto = '';
 function renderItemPhotoPreview() {
   $('itemPhotoPreview').innerHTML = currentItemPhoto ? `<img src="${currentItemPhoto}">` : '<span class="ph">No photo</span>';
+  if (currentItemPhoto) $('itemPhotoPreview').querySelector('img').onclick = () => openImageLightbox(currentItemPhoto);
   $('itemPhotoRemoveBtn').hidden = !currentItemPhoto;
 }
 $('itemPhotoPickBtn').onclick = () => $('itemPhotoFile').click();
@@ -588,9 +589,10 @@ function renderLib() {
       thumb.classList.toggle('empty', !m.photo);
       thumb.textContent = m.photo ? '' : '+';
       thumb.style.backgroundImage = m.photo ? `url("${m.photo}")` : '';
-      thumb.title = m.photo ? 'Change photo' : 'Add a photo';
+      thumb.title = m.photo ? 'View photo' : 'Add a photo';
       const preview = detailTr.querySelector('.matPhotoPreview');
       preview.innerHTML = m.photo ? `<img src="${m.photo}">` : '<span class="ph">No photo</span>';
+      if (m.photo) preview.querySelector('img').onclick = () => openImageLightbox(m.photo);
       detailTr.querySelector('.matPhotoRemoveBtn').hidden = !m.photo;
     };
     stockIn.classList.toggle('low-input', low);
@@ -663,10 +665,12 @@ function renderLib() {
 
     const photoFile = detailTr.querySelector('.matPhotoFile');
     detailTr.querySelector('.matPhotoPickBtn').onclick = () => photoFile.click();
-    // The thumbnail in the main row is always visible (even as an empty "+" placeholder) and
-    // opens the same file picker directly — clicking into the collapsed detail row just to
-    // find the upload button isn't an obvious path, so this is the primary way in.
-    tr.querySelector('.matThumb').onclick = () => photoFile.click();
+    // The thumbnail in the main row is always visible (even as an empty "+" placeholder). With
+    // no photo yet, clicking it opens the file picker directly — clicking into the collapsed
+    // detail row just to find the upload button isn't an obvious path. With a photo already
+    // set, clicking shows it bigger instead; replacing/removing it still goes through the
+    // detail row's own controls (or the lightbox's own, below).
+    tr.querySelector('.matThumb').onclick = () => { if (m.photo) openImageLightbox(m.photo); else photoFile.click(); };
     photoFile.onchange = async () => {
       const file = photoFile.files[0];
       photoFile.value = '';
@@ -804,6 +808,8 @@ function renderItems() {
       </td>`;
     tr.querySelector('.iname').textContent = it.name;
     tr.querySelector('.iname').onclick = tr.querySelector('.open').onclick = () => { restore(it); showTab('calc'); window.scrollTo({ top: 0 }); };
+    const thumb = tr.querySelector('.item-thumb');
+    if (thumb) thumb.onclick = (e) => { e.stopPropagation(); openImageLightbox(it.photo); };
     const stockIn = tr.querySelector('.stockIn');
     stockIn.value = num(it.stock);
     stockIn.classList.toggle('low-input', low);
@@ -3310,6 +3316,13 @@ function renderReleaseNotes() {
 $('whatsNewLink').onclick = () => { renderReleaseNotes(); $('releaseNotesModal').hidden = false; };
 $('releaseNotesClose').onclick = () => { $('releaseNotesModal').hidden = true; };
 $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('releaseNotesModal')) $('releaseNotesModal').hidden = true; });
+
+// ---------- Image lightbox — click any item/material photo to see it bigger ----------
+function openImageLightbox(src) { $('imageLightboxImg').src = src; $('imageLightbox').hidden = false; }
+function closeImageLightbox() { $('imageLightbox').hidden = true; }
+$('imageLightboxClose').onclick = closeImageLightbox;
+$('imageLightbox').addEventListener('click', e => { if (e.target === $('imageLightbox')) closeImageLightbox(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('imageLightbox').hidden) closeImageLightbox(); });
 
 // ---------- Boot ----------
 (async function boot() {

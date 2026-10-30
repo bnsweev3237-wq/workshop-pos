@@ -198,6 +198,10 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 .modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .modal-card { background: var(--card); color: var(--ink); border-radius: 14px; padding: 22px; max-width: 420px; width: 100%; box-shadow: var(--shadow); }
 .modal-card p { margin: 0; line-height: 1.5; }
+.image-lightbox { z-index: 20; cursor: zoom-out; }
+.lightbox-card { position: relative; background: none; box-shadow: none; padding: 0; max-width: 92vw; width: auto; cursor: default; }
+.lightbox-card img { display: block; max-width: 92vw; max-height: 88vh; border-radius: 10px; box-shadow: var(--shadow); }
+.lightbox-close { position: absolute; top: -14px; right: -14px; background: var(--card); box-shadow: var(--shadow); }
 
 .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 20px); opacity: 0; pointer-events: none; background: var(--ink); color: var(--card); padding: 10px 16px; border-radius: 10px; font-size: 14px; font-weight: 500; transition: opacity .2s, transform .2s; box-shadow: var(--shadow); max-width: calc(100% - 32px); z-index: 50; }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -474,9 +478,11 @@ body.printing-purchase-order > :not(#purchaseOrderCard) {
 .logo-pick { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .logo-preview { width: 72px; height: 72px; border-radius: 10px; border: 1px dashed var(--line); background: var(--bg); display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
 .logo-preview img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.matPhotoPreview img, #itemPhotoPreview img { cursor: zoom-in; }
 .logo-preview .ph { font-size: 11px; color: var(--muted); text-align: center; padding: 4px; }
 .item-name-cell { display: flex; align-items: center; gap: 10px; }
 .item-thumb { width: 36px; height: 36px; border-radius: 8px; object-fit: cover; background-size: cover; background-position: center; flex-shrink: 0; border: 1px solid var(--line); }
+img.item-thumb { cursor: zoom-in; }
 button.item-thumb { appearance: none; background-color: var(--card); color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; padding: 0; }
 button.item-thumb.empty { border-style: dashed; }
 button.item-thumb.empty:hover { color: var(--accent); border-color: var(--accent); }
