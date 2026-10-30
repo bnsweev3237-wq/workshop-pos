@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.9.1',
+    date: '2026-10-30',
+    notes: [
+      'Fixed: the new material photo upload was hard to find — it only lived inside a collapsed panel with no hint it was there. Each material row now has a visible "+" thumbnail that opens the photo picker directly.',
+    ],
+  },
+  {
     version: '1.9.0',
     date: '2026-10-30',
     notes: [

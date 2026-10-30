@@ -563,7 +563,7 @@ function renderLib() {
     const tr = document.createElement('tr'); tr.className = 'erow'; tr.dataset.id = m.id;
     const low = isLow(m.stock, m.low);
     tr.innerHTML = `
-      <td><div class="item-name-cell"><img class="item-thumb matThumb" hidden><input class="in-name" style="flex:1;min-width:0" placeholder="Material name"></div></td>
+      <td><div class="item-name-cell"><button type="button" class="item-thumb matThumb empty" title="Add a photo">+</button><input class="in-name" style="flex:1;min-width:0" placeholder="Material name"></div></td>
       <td data-l="Price paid ($)"><input class="in-small" type="number" min="0" step="0.01" placeholder="0.00"></td>
       <td data-l="Makes / pack of"><input class="in-small" type="number" min="1" step="any"></td>
       <td class="num" data-l="Per piece"></td>
@@ -572,7 +572,7 @@ function renderLib() {
       <td data-l="Source"><select class="in-small sourceSelect"></select></td>
       <td class="num used" data-l="Used in"></td>
       <td class="acts">
-        <button class="icon-btn link" title="Product link &amp; price check">🔗</button>
+        <button class="icon-btn link" title="Product link, price check &amp; photo">🔗</button>
         <button class="icon-btn del" title="Delete material">×</button>
       </td>`;
     const [n, p, y, stockIn, lowIn] = tr.querySelectorAll('input');
@@ -585,8 +585,10 @@ function renderLib() {
     let detailTr; // assigned below; renderMatPhoto() is only ever called once it exists
     const renderMatPhoto = () => {
       const thumb = tr.querySelector('.matThumb');
-      thumb.hidden = !m.photo;
-      if (m.photo) thumb.src = m.photo;
+      thumb.classList.toggle('empty', !m.photo);
+      thumb.textContent = m.photo ? '' : '+';
+      thumb.style.backgroundImage = m.photo ? `url("${m.photo}")` : '';
+      thumb.title = m.photo ? 'Change photo' : 'Add a photo';
       const preview = detailTr.querySelector('.matPhotoPreview');
       preview.innerHTML = m.photo ? `<img src="${m.photo}">` : '<span class="ph">No photo</span>';
       detailTr.querySelector('.matPhotoRemoveBtn').hidden = !m.photo;
@@ -661,6 +663,10 @@ function renderLib() {
 
     const photoFile = detailTr.querySelector('.matPhotoFile');
     detailTr.querySelector('.matPhotoPickBtn').onclick = () => photoFile.click();
+    // The thumbnail in the main row is always visible (even as an empty "+" placeholder) and
+    // opens the same file picker directly — clicking into the collapsed detail row just to
+    // find the upload button isn't an obvious path, so this is the primary way in.
+    tr.querySelector('.matThumb').onclick = () => photoFile.click();
     photoFile.onchange = async () => {
       const file = photoFile.files[0];
       photoFile.value = '';
