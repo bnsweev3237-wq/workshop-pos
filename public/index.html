@@ -422,10 +422,23 @@
           <div id="evItemCheckList" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
           <div class="hint" id="evItemPickCount" style="margin-top:6px"></div>
         </div>
+        <div class="row r3" style="margin-top:10px">
+          <div><label for="evTagsFormat">Price tag label sheet</label>
+            <select id="evTagsFormat">
+              <option value="plain">Plain paper (cut out) — any size</option>
+              <option value="5160">Avery 5160/8160 — 1" × 2⅝" (30/sheet)</option>
+              <option value="5162">Avery 5162/8162 — 1⅓" × 4" (14/sheet)</option>
+              <option value="5163">Avery 5163/8163 — 2" × 4" (10/sheet)</option>
+              <option value="22806">Avery 22806 — 2" round (20/sheet)</option>
+            </select>
+          </div>
+          <div><label for="evTagsBooth">Booth # (optional)</label><input id="evTagsBooth" placeholder="e.g. 12"></div>
+          <div style="display:flex;align-items:flex-end"><label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTagsBarcode" checked><span>Include barcode</span></label></div>
+        </div>
+        <div class="hint" id="evTagsHint" style="margin-top:4px"></div>
         <div class="btn-row" style="margin-top:10px;align-items:center">
           <button class="btn sm" id="evPrintPacking">Print packing list</button>
           <button class="btn sm" id="evPrintTags">Print price tags</button>
-          <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTagsBarcode" checked><span>Include barcode</span></label>
         </div>
       </div>
       <div class="btn-row">

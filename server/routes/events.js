@@ -10,7 +10,7 @@ const selectedItems = (eventId) => db.prepare('SELECT item_id, qty_brought FROM 
 
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,
-  taxRate: r.tax_rate, cashTaxRate: r.cash_tax_rate, state: r.state || '',
+  taxRate: r.tax_rate, cashTaxRate: r.cash_tax_rate, state: r.state || '', boothNumber: r.booth_number || '',
   taxIncludedCash: !!r.tax_included_cash, taxIncludedOther: !!r.tax_included_other,
   test: !!r.test, itemScope: r.item_scope || 'all',
   // Only worth the extra query when it actually matters — 'all' (the common case) doesn't
@@ -51,6 +51,7 @@ router.post('/', requireEventManage, (req, res) => {
     tax_rate: b.taxRate === '' || b.taxRate == null ? null : Number(b.taxRate),
     cash_tax_rate: b.cashTaxRate === '' || b.cashTaxRate == null ? null : Number(b.cashTaxRate),
     state: (b.state || '').trim() || null,
+    booth_number: (b.boothNumber || '').trim() || null,
     tax_included_cash: b.taxIncludedCash ? 1 : 0,
     tax_included_other: b.taxIncludedOther ? 1 : 0,
     test,
@@ -59,10 +60,10 @@ router.post('/', requireEventManage, (req, res) => {
     ended_at: b.endedAt || null,
   };
   db.prepare(`
-    INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
-    VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
+    INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, booth_number, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+    VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @booth_number, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
     ON CONFLICT(id) DO UPDATE SET name=@name, start=@start, days=@days, cost=@cost, status=@status,
-      tax_rate=@tax_rate, cash_tax_rate=@cash_tax_rate, state=@state, tax_included_cash=@tax_included_cash,
+      tax_rate=@tax_rate, cash_tax_rate=@cash_tax_rate, state=@state, booth_number=@booth_number, tax_included_cash=@tax_included_cash,
       tax_included_other=@tax_included_other, item_scope=@item_scope, ended_at=@ended_at
   `).run(row);
   res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(row.id)));

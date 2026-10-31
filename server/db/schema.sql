@@ -167,7 +167,10 @@ CREATE TABLE IF NOT EXISTS events (
   -- Free text (e.g. "MN") — matched against tax_presets' own `state` field (also free text,
   -- not a hard-coded list) to offer filling tax_rate/cash_tax_rate from a saved preset. A
   -- one-time convenience applied on request, not a live link back to the preset.
-  state TEXT
+  state TEXT,
+  -- Free text (e.g. "Booth 12") — printed on price tags for this event when set, so a
+  -- consignment host can tell at a glance whose tag is whose. Not used anywhere else.
+  booth_number TEXT
 );
 
 CREATE TABLE IF NOT EXISTS event_items (

@@ -1771,6 +1771,7 @@ function fillEventForm(ev) {
   editingEventId = ev ? ev.id : null;
   $('evName').value = ev?.name || ''; $('evCost').value = ev?.cost || ''; $('evStart').value = ev?.start || ''; $('evDays').value = ev?.days || 1;
   $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? ''; $('evState').value = ev?.state || '';
+  $('evTagsBooth').value = ev?.boothNumber || '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
   const isOpenEvent = !!ev && ev.status === 'open';
   $('evEnd').hidden = !isOpenEvent;
@@ -1924,7 +1925,7 @@ $('evSave').onclick = async () => {
   try {
     saved = await api('POST', '/api/events', {
       id: existing?.id, name: $('evName').value.trim(), cost: $('evCost').value, start: $('evStart').value, days: $('evDays').value,
-      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, state: $('evState').value.trim(), taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
+      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, state: $('evState').value.trim(), boothNumber: $('evTagsBooth').value.trim(), taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
       status, test: testMode, itemScope: existing ? evItemScope : 'all',
     });
   } catch (e) { toast(e.message || 'Could not save event'); return; }
@@ -1997,17 +1998,56 @@ function buildTagItems() {
     : evPickerItems;
   return chosen.map((it) => ({ name: it.name, price: it.price, itemNo: it.itemNo })).sort((a, b) => a.name.localeCompare(b.name));
 }
+// Real Avery template specs (inches) — label size, sheet margins, and grid pitch — verified
+// against Avery's own published layouts for each product number, so tags land inside each
+// sticker's actual edges rather than drifting sheet to sheet. 'plain' keeps the original
+// free-flow, cut-it-yourself mode (any paper, unbounded, no sheet to align to).
+const AVERY_TEMPLATES = {
+  plain: { label: 'Plain paper (cut out)' },
+  '5160': { label: 'Avery 5160/8160', cols: 3, rows: 10, labelW: 2.625, labelH: 1, marginTop: 0.5, marginLeft: 0.1875, colPitch: 2.75, rowPitch: 1, shape: 'rect' },
+  '5162': { label: 'Avery 5162/8162', cols: 2, rows: 7, labelW: 4, labelH: 1.3333, marginTop: 0.5, marginLeft: 0.15625, colPitch: 4.1875, rowPitch: 1.3333, shape: 'rect' },
+  '5163': { label: 'Avery 5163/8163', cols: 2, rows: 5, labelW: 4, labelH: 2, marginTop: 0.5, marginLeft: 0.15625, colPitch: 4.1875, rowPitch: 2, shape: 'rect' },
+  '22806': { label: 'Avery 22806', cols: 4, rows: 5, labelW: 2, labelH: 2, marginTop: 0.5, marginLeft: 0.25, colPitch: 2, rowPitch: 2, shape: 'round' },
+};
+try { $('evTagsFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
+try { $('evTagsBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+function renderTagsHint() {
+  const tpl = AVERY_TEMPLATES[$('evTagsFormat').value];
+  $('evTagsHint').textContent = tpl.cols
+    ? `${tpl.cols * tpl.rows} tags per sheet — in the print dialog, set Margins to “None” for the best alignment on real ${tpl.label} sheets.`
+    : 'Fits as many tags as possible per page with a dashed cut line — any plain paper works.';
+}
+$('evTagsFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('evTagsFormat').value); } catch {} renderTagsHint(); };
+$('evTagsBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('evTagsBarcode').checked ? '1' : '0'); } catch {} };
+renderTagsHint();
+function tagInnerHtml(it, i, withBarcode, booth) {
+  let idHtml = '';
+  if (withBarcode && it.itemNo) idHtml = `<svg class="tag-barcode" id="tag-bc-${i}"></svg><div class="tag-no">${esc(it.itemNo)}</div>`;
+  else if (it.itemNo) idHtml = `<div class="tag-no">#${esc(it.itemNo)}</div>`;
+  return `<div class="tag-name">${esc(it.name)}</div><div class="tag-price">${money(num(it.price))}</div>${idHtml}${booth ? `<div class="tag-booth">Booth ${esc(booth)}</div>` : ''}`;
+}
 $('evPrintTags').onclick = () => {
   const tagItems = buildTagItems();
   if (!tagItems.length) { toast('No items to print tags for in this event'); return; }
   const withBarcode = $('evTagsBarcode').checked;
+  const booth = $('evTagsBooth').value.trim();
+  const templateId = $('evTagsFormat').value;
+  const tpl = AVERY_TEMPLATES[templateId];
   printFromCard('printing-price-tags', 'priceTagsCard', () => {
-    $('priceTagsGrid').innerHTML = tagItems.map((it, i) => `
-      <div class="price-tag">
-        <div class="tag-name">${esc(it.name)}</div>
-        <div class="tag-price">${money(num(it.price))}</div>
-        ${withBarcode && it.itemNo ? `<svg class="tag-barcode" id="tag-bc-${i}"></svg><div class="tag-no">${esc(it.itemNo)}</div>` : (it.itemNo ? `<div class="tag-no">#${esc(it.itemNo)}</div>` : '')}
-      </div>`).join('');
+    $('priceTagsCard').querySelector('.print-credit').style.display = tpl.cols ? 'none' : '';
+    if (tpl.cols) {
+      const perSheet = tpl.cols * tpl.rows;
+      const sheets = [];
+      for (let s = 0; s < tagItems.length; s += perSheet) sheets.push(tagItems.slice(s, s + perSheet));
+      $('priceTagsGrid').className = 'avery-sheets';
+      $('priceTagsGrid').innerHTML = sheets.map((sheetItems, si) => `
+        <div class="avery-sheet" style="grid-template-columns:repeat(${tpl.cols},${tpl.labelW}in);grid-template-rows:repeat(${tpl.rows},${tpl.labelH}in);column-gap:${(tpl.colPitch - tpl.labelW).toFixed(4)}in;row-gap:${(tpl.rowPitch - tpl.labelH).toFixed(4)}in;padding:${tpl.marginTop}in 0 0 ${tpl.marginLeft}in">
+          ${sheetItems.map((it, j) => `<div class="price-tag avery${tpl.shape === 'round' ? ' round' : ''}">${tagInnerHtml(it, si * perSheet + j, withBarcode, booth)}</div>`).join('')}
+        </div>`).join('');
+    } else {
+      $('priceTagsGrid').className = 'tag-grid';
+      $('priceTagsGrid').innerHTML = tagItems.map((it, i) => `<div class="price-tag cutout">${tagInnerHtml(it, i, withBarcode, booth)}</div>`).join('');
+    }
     if (withBarcode && window.JsBarcode) {
       tagItems.forEach((it, i) => {
         if (!it.itemNo) return;

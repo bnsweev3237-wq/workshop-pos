@@ -13,6 +13,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.10.0',
+    date: '2026-10-31',
+    notes: [
+      'Price tags can now print to real Avery label sheets — pick 5160, 5162, 5163, or 2" round 22806 (or stick with plain cut-out paper) from the event\'s "Items available" section, with or without a barcode.',
+      'Add a booth number to an event (same section) and it prints on every price tag — handy for consignment shops and multi-vendor shows.',
+    ],
+  },
+  {
     version: '1.9.2',
     date: '2026-10-30',
     notes: [

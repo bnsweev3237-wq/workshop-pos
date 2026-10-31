@@ -261,9 +261,20 @@ as Reports' PDF export), and a USB barcode scanner, which types out a barcode's 
 keyboard, reads those tags straight into the Sell page's search box: scan one there and it's
 added to the ticket directly, instead of just filtering the grid the way typing normally does.
 
+Price tags can print two ways: "Plain paper (cut out)" lays out as many tags as fit per page
+with a dashed cut line around each one — any printer, any paper. Or pick a real Avery label
+sheet size — 5160/8160 (30/sheet), 5162/8162 (14/sheet), 5163/8163 (10/sheet), or the 2" round
+22806 (20/sheet) — and the tags are positioned to land inside each sticker's own edges, filling
+one sheet before starting the next. (In the print dialog, set Margins to "None" for the best
+alignment on real label stock.) An optional booth number, set on the event itself right next to
+the label picker, prints on every tag either way — handy for a consignment shop or a multi-
+vendor show where more than one seller's tags end up in the same display.
+
 Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
 carries a small "Powered by Craftium" line at the bottom, independent of whatever business
-branding the document's own letterhead shows above it.
+branding the document's own letterhead shows above it. Price tags printed to an Avery sheet
+skip this, since there's no room on a 1-inch sticker and it would otherwise waste a whole extra
+sheet printing on its own page.
 
 ## Branding
 
