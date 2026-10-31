@@ -186,7 +186,11 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 
 .banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; background: var(--warn-soft); color: var(--warn); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; font-size: 14px; font-weight: 500; }
 .scroll { overflow-x: auto; }
-.items-table td { padding: 12px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+/* Top-aligned, not the generic td's vertical-align:middle — Sales price and Item often wrap to
+   two or three lines (suggested-price note, margin, category badges) while Cost/Stock/Actions
+   don't, and middle-aligning against whichever cell is tallest pushed the action row down out
+   of line with the item name above it instead of sitting level with it. */
+.items-table td { padding: 12px 8px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; vertical-align: top; }
 .items-table tr:last-child td { border-bottom: none; }
 .items-table th { padding: 0 8px 8px; white-space: nowrap; }
 .items-table .iname { font-weight: 600; cursor: pointer; }

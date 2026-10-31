@@ -1,6 +1,6 @@
 {
   "name": "craftium",
-  "version": "1.14.2",
+  "version": "1.14.3",
   "description": "Craftium — pricing calculator & point of sale for workshop/craft businesses, standalone edition",
   "author": "Craftium",
   "main": "electron/main.js",

@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.14.3',
+    date: '2026-10-31',
+    notes: [
+      'Fixed the Items tab\'s rows looking like two staggered lines whenever the Sales price column wrapped (a suggested-price note, margin %) — every column now lines up at the top instead of centering against whichever one happened to be tallest.',
+    ],
+  },
+  {
     version: '1.14.2',
     date: '2026-10-31',
     notes: [
