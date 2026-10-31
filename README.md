@@ -274,6 +274,12 @@ optional booth number, set on the event itself right next to the label picker, p
 tag either way — handy for a consignment shop or a multi-vendor show where more than one
 seller's tags end up in the same display.
 
+A single item doesn't need a whole event for a tag reprint — click the 🏷 button next to any
+item on the Items tab for the same label sheet, barcode, and booth number options in a small
+window, plus how many copies to print (handy for restocking a shelf with several of the same
+tag). It remembers your last-used label sheet and barcode choice between the two entry points,
+and pre-fills the booth number from the currently open event if one has it set.
+
 Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
 carries a small "Powered by Craftium" line at the bottom, independent of whatever business
 branding the document's own letterhead shows above it. Price tags printed to an Avery sheet

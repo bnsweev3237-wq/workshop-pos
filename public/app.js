@@ -804,10 +804,12 @@ function renderItems() {
           <button class="btn sm sell" title="Log a sale — reduces stock">− Sell</button></div>
         ${moved ? '<button class="btn sm accept">Accept</button>' : ''}
         <button class="btn sm open">Open</button>
+        <button class="icon-btn tag" title="Print price tag">🏷</button>
         <button class="icon-btn del" title="Delete item">×</button>
       </td>`;
     tr.querySelector('.iname').textContent = it.name;
     tr.querySelector('.iname').onclick = tr.querySelector('.open').onclick = () => { restore(it); showTab('calc'); window.scrollTo({ top: 0 }); };
+    tr.querySelector('.tag').onclick = () => openItemTagModal(it);
     const thumb = tr.querySelector('.item-thumb');
     if (thumb) thumb.onclick = (e) => { e.stopPropagation(); openImageLightbox(it.photo); };
     const stockIn = tr.querySelector('.stockIn');
@@ -2018,30 +2020,29 @@ const AVERY_TEMPLATES = {
   '5167': { label: 'Avery 5167/8167', cols: 4, rows: 20, labelW: 1.75, labelH: 0.5, marginTop: 0.5, marginLeft: 0.3, colPitch: 2.05, rowPitch: 0.5, shape: 'rect', compact: true, noBarcode: true },
   '5195': { label: 'Avery 5195/8195', cols: 4, rows: 15, labelW: 1.75, labelH: 0.6667, marginTop: 0.5, marginLeft: 0.3, colPitch: 2.05, rowPitch: 0.6667, shape: 'rect', compact: true, noBarcode: true },
 };
-try { $('evTagsFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
-try { $('evTagsBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
-function renderTagsHint() {
-  const tpl = AVERY_TEMPLATES[$('evTagsFormat').value];
-  $('evTagsHint').textContent = tpl.cols
+// Shared by the event's "Print price tags" and a single item's tag-icon button below — same
+// options (label sheet, barcode, booth), same rendering, just a different source for tagItems
+// ({name, price, itemNo} each) and a different pair of format-select/hint element ids.
+function renderTagsHint(formatId, hintId) {
+  const tpl = AVERY_TEMPLATES[$(formatId).value];
+  $(hintId).textContent = tpl.cols
     ? `${tpl.cols * tpl.rows} tags per sheet — in the print dialog, set Margins to “None” for the best alignment on real ${tpl.label} sheets.${tpl.noBarcode ? ' Too small to fit a barcode — the item number prints as text instead.' : ''}`
     : 'Fits as many tags as possible per page with a dashed cut line — any plain paper works.';
 }
-$('evTagsFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('evTagsFormat').value); } catch {} renderTagsHint(); };
+try { $('evTagsFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
+try { $('evTagsBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+$('evTagsFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('evTagsFormat').value); } catch {} renderTagsHint('evTagsFormat', 'evTagsHint'); };
 $('evTagsBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('evTagsBarcode').checked ? '1' : '0'); } catch {} };
-renderTagsHint();
+renderTagsHint('evTagsFormat', 'evTagsHint');
 function tagInnerHtml(it, i, withBarcode, booth) {
   let idHtml = '';
   if (withBarcode && it.itemNo) idHtml = `<svg class="tag-barcode" id="tag-bc-${i}"></svg><div class="tag-no">${esc(it.itemNo)}</div>`;
   else if (it.itemNo) idHtml = `<div class="tag-no">#${esc(it.itemNo)}</div>`;
   return `<div class="tag-name">${esc(it.name)}</div><div class="tag-price">${money(num(it.price))}</div>${idHtml}${booth ? `<div class="tag-booth">Booth ${esc(booth)}</div>` : ''}`;
 }
-$('evPrintTags').onclick = () => {
-  const tagItems = buildTagItems();
-  if (!tagItems.length) { toast('No items to print tags for in this event'); return; }
-  const templateId = $('evTagsFormat').value;
+function printPriceTags(tagItems, rawWithBarcode, booth, templateId) {
   const tpl = AVERY_TEMPLATES[templateId];
-  const withBarcode = $('evTagsBarcode').checked && !tpl.noBarcode;
-  const booth = $('evTagsBooth').value.trim();
+  const withBarcode = rawWithBarcode && !tpl.noBarcode;
   printFromCard('printing-price-tags', 'priceTagsCard', () => {
     $('priceTagsCard').querySelector('.print-credit').style.display = tpl.cols ? 'none' : '';
     if (tpl.cols) {
@@ -2066,6 +2067,38 @@ $('evPrintTags').onclick = () => {
       });
     }
   });
+}
+$('evPrintTags').onclick = () => {
+  const tagItems = buildTagItems();
+  if (!tagItems.length) { toast('No items to print tags for in this event'); return; }
+  printPriceTags(tagItems, $('evTagsBarcode').checked, $('evTagsBooth').value.trim(), $('evTagsFormat').value);
+};
+// Items tab: print one item's tag — same options as the event flow (format/barcode/booth
+// preferences are shared via the same localStorage keys), plus how many copies to print, since
+// restocking a shelf usually means more than one of the same tag.
+let itemTagTarget = null;
+function openItemTagModal(it) {
+  itemTagTarget = it;
+  $('itemTagTitle').textContent = `Print price tag — ${it.name}`;
+  $('itemTagFormat').innerHTML = $('evTagsFormat').innerHTML;
+  try { $('itemTagFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
+  try { $('itemTagBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+  $('itemTagCopies').value = 1;
+  $('itemTagBooth').value = openEvent()?.boothNumber || '';
+  renderTagsHint('itemTagFormat', 'itemTagHint');
+  $('itemTagModal').hidden = false;
+}
+$('itemTagFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('itemTagFormat').value); } catch {} renderTagsHint('itemTagFormat', 'itemTagHint'); };
+$('itemTagBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('itemTagBarcode').checked ? '1' : '0'); } catch {} };
+function closeItemTagModal() { $('itemTagModal').hidden = true; itemTagTarget = null; }
+$('itemTagClose').onclick = $('itemTagCancel').onclick = closeItemTagModal;
+$('itemTagModal').addEventListener('click', (e) => { if (e.target === $('itemTagModal')) closeItemTagModal(); });
+$('itemTagPrint').onclick = () => {
+  if (!itemTagTarget) return;
+  const copies = Math.max(1, Math.round(num($('itemTagCopies').value)) || 1);
+  const tagItems = Array.from({ length: copies }, () => ({ name: itemTagTarget.name, price: itemTagTarget.price, itemNo: itemTagTarget.itemNo }));
+  printPriceTags(tagItems, $('itemTagBarcode').checked, $('itemTagBooth').value.trim(), $('itemTagFormat').value);
+  closeItemTagModal();
 };
 $('evEnd').onclick = async () => {
   const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
@@ -3373,6 +3406,7 @@ function closeImageLightbox() { $('imageLightbox').hidden = true; }
 $('imageLightboxClose').onclick = closeImageLightbox;
 $('imageLightbox').addEventListener('click', e => { if (e.target === $('imageLightbox')) closeImageLightbox(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('imageLightbox').hidden) closeImageLightbox(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('itemTagModal').hidden) closeItemTagModal(); });
 
 // ---------- Boot ----------
 (async function boot() {

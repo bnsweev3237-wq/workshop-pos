@@ -937,6 +937,26 @@
       <img id="imageLightboxImg" alt="">
     </div>
   </div>
+
+  <div class="modal" id="itemTagModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" style="max-width:420px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h2 style="margin:0" id="itemTagTitle">Print price tag</h2>
+        <button class="icon-btn" id="itemTagClose" title="Close">×</button>
+      </div>
+      <div><label for="itemTagFormat">Label sheet</label><select id="itemTagFormat"></select></div>
+      <div class="hint" id="itemTagHint" style="margin-top:4px"></div>
+      <div class="row r3" style="margin-top:12px">
+        <div><label for="itemTagCopies">How many tags</label><input id="itemTagCopies" type="number" min="1" step="1" value="1"></div>
+        <div><label for="itemTagBooth">Booth # (optional)</label><input id="itemTagBooth" placeholder="e.g. 12"></div>
+        <div style="display:flex;align-items:flex-end"><label class="chk-field" style="margin-top:0"><input type="checkbox" id="itemTagBarcode" checked><span>Include barcode</span></label></div>
+      </div>
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn primary sm" id="itemTagPrint">Print</button>
+        <button class="btn sm" id="itemTagCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ===== Login / first-run setup ===== -->

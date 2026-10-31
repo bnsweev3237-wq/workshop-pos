@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.12.0',
+    date: '2026-10-31',
+    notes: [
+      'Print a price tag for a single item straight from the Items tab — click the 🏷 next to any item for the same label sheet, barcode, and booth number options as an event\'s price tags, plus how many copies to print.',
+    ],
+  },
+  {
     version: '1.11.0',
     date: '2026-10-31',
     notes: [
