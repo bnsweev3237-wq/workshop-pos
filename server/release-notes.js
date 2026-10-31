@@ -13,6 +13,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.14.1',
+    date: '2026-10-31',
+    notes: [
+      'Fixed the event\'s price adjustment field stretching to half the card width — it\'s a proportionate size now, like the other small number fields next to it.',
+      'The Items tab\'s per-item button is now just "Labels" instead of "Print labels," to save room in that row.',
+    ],
+  },
+  {
     version: '1.14.0',
     date: '2026-10-31',
     notes: [

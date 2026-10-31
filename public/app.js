@@ -804,7 +804,7 @@ function renderItems() {
           <button class="btn sm sell" title="Log a sale — reduces stock">− Sell</button></div>
         ${moved ? '<button class="btn sm accept">Accept</button>' : ''}
         <button class="btn sm open">Open</button>
-        <button class="btn sm tag">Print labels</button>
+        <button class="btn sm tag" title="Print price labels for this item">Labels</button>
         <button class="icon-btn del" title="Delete item">×</button>
       </td>`;
     tr.querySelector('.iname').textContent = it.name;
