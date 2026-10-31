@@ -263,12 +263,16 @@ added to the ticket directly, instead of just filtering the grid the way typing 
 
 Price tags can print two ways: "Plain paper (cut out)" lays out as many tags as fit per page
 with a dashed cut line around each one — any printer, any paper. Or pick a real Avery label
-sheet size — 5160/8160 (30/sheet), 5162/8162 (14/sheet), 5163/8163 (10/sheet), or the 2" round
-22806 (20/sheet) — and the tags are positioned to land inside each sticker's own edges, filling
-one sheet before starting the next. (In the print dialog, set Margins to "None" for the best
-alignment on real label stock.) An optional booth number, set on the event itself right next to
-the label picker, prints on every tag either way — handy for a consignment shop or a multi-
-vendor show where more than one seller's tags end up in the same display.
+sheet size — 5160/8160 (30/sheet), 5162/8162 (14/sheet), 5163/8163 (10/sheet), the 2" round
+22806 (20/sheet), or the address-label-sized 5167/8167 (80/sheet) and 5195/8195 (60/sheet) — and
+the tags are positioned to land inside each sticker's own edges, filling one sheet before
+starting the next. (In the print dialog, set Margins to "None" for the best alignment on real
+label stock.) 5167 and 5195 are only half an inch to two-thirds of an inch tall, too short to
+fit a legible barcode, so those two always print the item number as plain text regardless of
+the "Include barcode" checkbox — pick any of the other sizes if you need a scannable tag. An
+optional booth number, set on the event itself right next to the label picker, prints on every
+tag either way — handy for a consignment shop or a multi-vendor show where more than one
+seller's tags end up in the same display.
 
 Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
 carries a small "Powered by Craftium" line at the bottom, independent of whatever business

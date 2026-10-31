@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.11.0',
+    date: '2026-10-31',
+    notes: [
+      'Two more Avery label sheets for price tags: 5167/8167 and 5195/8195. Both are too short for a barcode, so they print the item number as text instead — pick 5160, 5162, 5163, or 22806 if you need a scannable one.',
+    ],
+  },
+  {
     version: '1.10.0',
     date: '2026-10-31',
     notes: [

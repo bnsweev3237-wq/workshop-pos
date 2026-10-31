@@ -437,12 +437,12 @@ body.printing-purchase-order > :not(#purchaseOrderCard) {
 .price-tag .tag-no, .price-tag .tag-booth { font-size: 10px; color: #666; letter-spacing: 1px; }
 /* Avery sheet mode: each .avery-sheet is one physical 8.5x11 sheet, sized and padded to match
    that template's real margins/pitch (set inline per-template in app.js, from AVERY_TEMPLATES —
-   verified against Avery's own published specs), so tags land inside each sticker's actual
-   edges. Tags get no border of their own here — the adhesive label's edge is the only outline —
-   and text shrinks to fit the smallest supported label (1in tall). One sheet per printed page;
-   named `page` box below drops the browser's default page margin so the sheet's own padding is
-   the only margin that counts (tell people to still set the print dialog's margin to "None" —
-   some browsers add their own on top of @page otherwise). */
+   see that file for how each one's numbers were sourced), so tags land inside each sticker's
+   actual edges. Tags get no border of their own here — the adhesive label's edge is the only
+   outline — and text shrinks to fit the smallest supported label (half an inch tall). One
+   sheet per printed page; named `page` box below drops the browser's default page margin so
+   the sheet's own padding is the only margin that counts (tell people to still set the print
+   dialog's margin to "None" — some browsers add their own on top of @page otherwise). */
 .avery-sheet { width: 8.5in; height: 11in; box-sizing: border-box; display: grid; justify-content: start; align-content: start; overflow: hidden; page: avery-sheet; }
 .avery-sheet:not(:last-child) { page-break-after: always; break-after: page; }
 @page avery-sheet { size: letter; margin: 0; }
@@ -452,6 +452,12 @@ body.printing-purchase-order > :not(#purchaseOrderCard) {
 .price-tag.avery .tag-price { font-size: 13px; }
 .price-tag.avery .tag-barcode { height: 22px; }
 .price-tag.avery .tag-no, .price-tag.avery .tag-booth { font-size: 7px; }
+/* 5167/5195 — half-inch/two-thirds-inch-tall strips, no barcode (see AVERY_TEMPLATES'
+   noBarcode), just name/price/item-no/booth squeezed into a much shorter label. */
+.price-tag.avery.compact { padding: 1px 3px; gap: 0; line-height: 1.1; }
+.price-tag.avery.compact .tag-name { font-size: 7px; }
+.price-tag.avery.compact .tag-price { font-size: 9px; }
+.price-tag.avery.compact .tag-no, .price-tag.avery.compact .tag-booth { font-size: 6px; letter-spacing: 0; }
 
 /* ---- login / first-run setup ---- */
 .login-screen { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 40; }

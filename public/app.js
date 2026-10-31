@@ -2001,20 +2001,29 @@ function buildTagItems() {
 // Real Avery template specs (inches) — label size, sheet margins, and grid pitch — verified
 // against Avery's own published layouts for each product number, so tags land inside each
 // sticker's actual edges rather than drifting sheet to sheet. 'plain' keeps the original
-// free-flow, cut-it-yourself mode (any paper, unbounded, no sheet to align to).
+// free-flow, cut-it-yourself mode (any paper, unbounded, no sheet to align to). 5167/5195's
+// margins and pitch aren't published directly — avery.com states only label size and count —
+// so they're derived from the confirmed label size/count plus Avery's stated 0.5in top/bottom,
+// 0.3in left/right margins, solved for the pitch that fills the sheet exactly symmetrically
+// (checked: 2 x 0.3in margin + 4 x 1.75in labels + 3 x 0.3in gaps = 8.5in, exact). Both are
+// address-label-strip sizes (half an inch / two-thirds of an inch tall) — too short to fit a
+// legible barcode alongside name/price/booth, so `noBarcode` forces the item-number text
+// fallback instead, however the checkbox is set (see evPrintTags below).
 const AVERY_TEMPLATES = {
   plain: { label: 'Plain paper (cut out)' },
   '5160': { label: 'Avery 5160/8160', cols: 3, rows: 10, labelW: 2.625, labelH: 1, marginTop: 0.5, marginLeft: 0.1875, colPitch: 2.75, rowPitch: 1, shape: 'rect' },
   '5162': { label: 'Avery 5162/8162', cols: 2, rows: 7, labelW: 4, labelH: 1.3333, marginTop: 0.5, marginLeft: 0.15625, colPitch: 4.1875, rowPitch: 1.3333, shape: 'rect' },
   '5163': { label: 'Avery 5163/8163', cols: 2, rows: 5, labelW: 4, labelH: 2, marginTop: 0.5, marginLeft: 0.15625, colPitch: 4.1875, rowPitch: 2, shape: 'rect' },
   '22806': { label: 'Avery 22806', cols: 4, rows: 5, labelW: 2, labelH: 2, marginTop: 0.5, marginLeft: 0.25, colPitch: 2, rowPitch: 2, shape: 'round' },
+  '5167': { label: 'Avery 5167/8167', cols: 4, rows: 20, labelW: 1.75, labelH: 0.5, marginTop: 0.5, marginLeft: 0.3, colPitch: 2.05, rowPitch: 0.5, shape: 'rect', compact: true, noBarcode: true },
+  '5195': { label: 'Avery 5195/8195', cols: 4, rows: 15, labelW: 1.75, labelH: 0.6667, marginTop: 0.5, marginLeft: 0.3, colPitch: 2.05, rowPitch: 0.6667, shape: 'rect', compact: true, noBarcode: true },
 };
 try { $('evTagsFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
 try { $('evTagsBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
 function renderTagsHint() {
   const tpl = AVERY_TEMPLATES[$('evTagsFormat').value];
   $('evTagsHint').textContent = tpl.cols
-    ? `${tpl.cols * tpl.rows} tags per sheet — in the print dialog, set Margins to “None” for the best alignment on real ${tpl.label} sheets.`
+    ? `${tpl.cols * tpl.rows} tags per sheet — in the print dialog, set Margins to “None” for the best alignment on real ${tpl.label} sheets.${tpl.noBarcode ? ' Too small to fit a barcode — the item number prints as text instead.' : ''}`
     : 'Fits as many tags as possible per page with a dashed cut line — any plain paper works.';
 }
 $('evTagsFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('evTagsFormat').value); } catch {} renderTagsHint(); };
@@ -2029,10 +2038,10 @@ function tagInnerHtml(it, i, withBarcode, booth) {
 $('evPrintTags').onclick = () => {
   const tagItems = buildTagItems();
   if (!tagItems.length) { toast('No items to print tags for in this event'); return; }
-  const withBarcode = $('evTagsBarcode').checked;
-  const booth = $('evTagsBooth').value.trim();
   const templateId = $('evTagsFormat').value;
   const tpl = AVERY_TEMPLATES[templateId];
+  const withBarcode = $('evTagsBarcode').checked && !tpl.noBarcode;
+  const booth = $('evTagsBooth').value.trim();
   printFromCard('printing-price-tags', 'priceTagsCard', () => {
     $('priceTagsCard').querySelector('.print-credit').style.display = tpl.cols ? 'none' : '';
     if (tpl.cols) {
@@ -2040,9 +2049,10 @@ $('evPrintTags').onclick = () => {
       const sheets = [];
       for (let s = 0; s < tagItems.length; s += perSheet) sheets.push(tagItems.slice(s, s + perSheet));
       $('priceTagsGrid').className = 'avery-sheets';
+      const tagClass = `price-tag avery${tpl.shape === 'round' ? ' round' : ''}${tpl.compact ? ' compact' : ''}`;
       $('priceTagsGrid').innerHTML = sheets.map((sheetItems, si) => `
         <div class="avery-sheet" style="grid-template-columns:repeat(${tpl.cols},${tpl.labelW}in);grid-template-rows:repeat(${tpl.rows},${tpl.labelH}in);column-gap:${(tpl.colPitch - tpl.labelW).toFixed(4)}in;row-gap:${(tpl.rowPitch - tpl.labelH).toFixed(4)}in;padding:${tpl.marginTop}in 0 0 ${tpl.marginLeft}in">
-          ${sheetItems.map((it, j) => `<div class="price-tag avery${tpl.shape === 'round' ? ' round' : ''}">${tagInnerHtml(it, si * perSheet + j, withBarcode, booth)}</div>`).join('')}
+          ${sheetItems.map((it, j) => `<div class="${tagClass}">${tagInnerHtml(it, si * perSheet + j, withBarcode, booth)}</div>`).join('')}
         </div>`).join('');
     } else {
       $('priceTagsGrid').className = 'tag-grid';
