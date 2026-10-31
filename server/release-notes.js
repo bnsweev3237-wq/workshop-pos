@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.14.2',
+    date: '2026-10-31',
+    notes: [
+      'Actually fixed the price adjustment field this time — it\'s a proper few-characters-wide box now, not a stretched one, with normal spacing to the text below it.',
+    ],
+  },
+  {
     version: '1.14.1',
     date: '2026-10-31',
     notes: [
