@@ -13,6 +13,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.13.0',
+    date: '2026-10-31',
+    notes: [
+      'The Items tab\'s per-item print button now reads "Print labels" and no longer gets lost in a crowded row on smaller screens.',
+      'New "Print labels" section at the bottom of the Items tab — check off any number of items, set how many of each, and print them all as one batch with the same label sheet, barcode, and booth number options.',
+    ],
+  },
+  {
     version: '1.12.0',
     date: '2026-10-31',
     notes: [

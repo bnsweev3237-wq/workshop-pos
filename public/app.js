@@ -798,13 +798,13 @@ function renderItems() {
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
       <td class="num" data-l="Stock"><div class="stock-cell${low ? ' low' : ''}"><input type="number" class="in-tiny stockIn" min="0" step="1"><span class="stock-badge"${low ? '' : ' hidden'}>LOW</span></div></td>
-      <td class="acts">
+      <td class="acts items-acts">
         <div class="qty-ctrl"><input type="number" class="qty" min="1" step="1" value="1">
           <button class="btn sm make" title="Log a batch made — deducts materials">+ Make</button>
           <button class="btn sm sell" title="Log a sale — reduces stock">− Sell</button></div>
         ${moved ? '<button class="btn sm accept">Accept</button>' : ''}
         <button class="btn sm open">Open</button>
-        <button class="icon-btn tag" title="Print price tag">🏷</button>
+        <button class="btn sm tag">Print labels</button>
         <button class="icon-btn del" title="Delete item">×</button>
       </td>`;
     tr.querySelector('.iname').textContent = it.name;
@@ -839,6 +839,7 @@ function renderItems() {
   $('changedBanner').hidden = changed === 0;
   $('changedText').textContent = `Material costs changed for ${changed} item${changed > 1 ? 's' : ''}. Review the new numbers below.`;
   refreshLowItemBanner();
+  renderBulkTagList();
   const badge = $('itemCount');
   badge.textContent = changed ? `${changed} ▲▼` : (items.length || '');
 }
@@ -2079,7 +2080,7 @@ $('evPrintTags').onclick = () => {
 let itemTagTarget = null;
 function openItemTagModal(it) {
   itemTagTarget = it;
-  $('itemTagTitle').textContent = `Print price tag — ${it.name}`;
+  $('itemTagTitle').textContent = `Print labels — ${it.name}`;
   $('itemTagFormat').innerHTML = $('evTagsFormat').innerHTML;
   try { $('itemTagFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
   try { $('itemTagBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
@@ -2099,6 +2100,63 @@ $('itemTagPrint').onclick = () => {
   const tagItems = Array.from({ length: copies }, () => ({ name: itemTagTarget.name, price: itemTagTarget.price, itemNo: itemTagTarget.itemNo }));
   printPriceTags(tagItems, $('itemTagBarcode').checked, $('itemTagBooth').value.trim(), $('itemTagFormat').value);
   closeItemTagModal();
+};
+// Items tab: "Print labels" card at the bottom — pick any number of items and how many of
+// each, printed as one combined batch. bulkTagQty survives re-renders (search, items
+// reloading) since it's keyed by item id, not by row; stale ids (an item got deleted) are
+// dropped whenever the list re-renders.
+const bulkTagQty = new Map(); // itemId -> qty
+let bulkTagSearch = '';
+$('bulkTagFormat').innerHTML = $('evTagsFormat').innerHTML;
+try { $('bulkTagFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
+try { $('bulkTagBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+renderTagsHint('bulkTagFormat', 'bulkTagHint');
+function renderBulkTagList() {
+  for (const id of [...bulkTagQty.keys()]) if (!items.some((it) => it.id === id)) bulkTagQty.delete(id);
+  const box = $('bulkTagList');
+  const q = bulkTagSearch.trim().toLowerCase();
+  const list = items.filter((it) => !q || it.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+  box.innerHTML = '';
+  for (const it of list) {
+    const row = document.createElement('div'); row.className = 'ev-item-row';
+    row.innerHTML = `<label class="chk-field" style="margin-top:0;flex:1"><input type="checkbox"><span></span></label><input type="number" class="in-tiny ev-item-qty" min="1" step="1" placeholder="qty">`;
+    const chk = row.querySelector('input[type="checkbox"]');
+    const qtyIn = row.querySelector('.ev-item-qty');
+    const checked = bulkTagQty.has(it.id);
+    chk.checked = checked;
+    row.querySelector('span').textContent = `${it.name} · ${money(it.price)}`;
+    qtyIn.disabled = !checked;
+    qtyIn.value = checked ? bulkTagQty.get(it.id) : '';
+    chk.onchange = () => {
+      if (chk.checked) { qtyIn.disabled = false; qtyIn.value = qtyIn.value || 1; bulkTagQty.set(it.id, num(qtyIn.value) || 1); }
+      else { bulkTagQty.delete(it.id); qtyIn.disabled = true; qtyIn.value = ''; }
+      updateBulkTagCount();
+    };
+    qtyIn.oninput = () => { if (chk.checked) bulkTagQty.set(it.id, Math.max(1, Math.round(num(qtyIn.value)) || 1)); };
+    box.appendChild(row);
+  }
+  if (!list.length) box.innerHTML = '<div class="hint">No items match.</div>';
+  updateBulkTagCount();
+}
+function updateBulkTagCount() {
+  const n = bulkTagQty.size;
+  const total = [...bulkTagQty.values()].reduce((a, b) => a + b, 0);
+  $('bulkTagCount').textContent = n ? `${n} item${n === 1 ? '' : 's'} selected · ${total} label${total === 1 ? '' : 's'} total` : 'No items selected yet.';
+}
+$('bulkTagSearch').addEventListener('input', () => { bulkTagSearch = $('bulkTagSearch').value; renderBulkTagList(); });
+$('bulkTagFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('bulkTagFormat').value); } catch {} renderTagsHint('bulkTagFormat', 'bulkTagHint'); };
+$('bulkTagBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('bulkTagBarcode').checked ? '1' : '0'); } catch {} };
+$('bulkTagClear').onclick = () => { bulkTagQty.clear(); renderBulkTagList(); };
+$('bulkTagPrint').onclick = () => {
+  if (!bulkTagQty.size) { toast('Check off at least one item first'); return; }
+  const byId = new Map(items.map((it) => [it.id, it]));
+  const tagItems = [];
+  for (const [id, qty] of bulkTagQty) {
+    const it = byId.get(id);
+    if (!it) continue;
+    for (let i = 0; i < qty; i++) tagItems.push({ name: it.name, price: it.price, itemNo: it.itemNo });
+  }
+  printPriceTags(tagItems, $('bulkTagBarcode').checked, $('bulkTagBooth').value.trim(), $('bulkTagFormat').value);
 };
 $('evEnd').onclick = async () => {
   const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;

@@ -274,11 +274,16 @@ optional booth number, set on the event itself right next to the label picker, p
 tag either way — handy for a consignment shop or a multi-vendor show where more than one
 seller's tags end up in the same display.
 
-A single item doesn't need a whole event for a tag reprint — click the 🏷 button next to any
+A single item doesn't need a whole event for a tag reprint — click "Print labels" next to any
 item on the Items tab for the same label sheet, barcode, and booth number options in a small
 window, plus how many copies to print (handy for restocking a shelf with several of the same
-tag). It remembers your last-used label sheet and barcode choice between the two entry points,
-and pre-fills the booth number from the currently open event if one has it set.
+tag). It remembers your last-used label sheet and barcode choice between entry points, and
+pre-fills the booth number from the currently open event if one has it set.
+
+For more than one item at a time, there's a "Print labels" section at the bottom of the Items
+tab: check off any number of items, set how many of each, and print them all as one batch —
+same label sheet/barcode/booth options, filling sheets across the whole selection rather than
+one item at a time.
 
 Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
 carries a small "Powered by Craftium" line at the bottom, independent of whatever business
