@@ -13,6 +13,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.13.1',
+    date: '2026-10-31',
+    notes: [
+      'The Items tab\'s row of buttons (qty, Make, Sell, Open, Print labels, delete) now always stays on one line — sized down a bit, and on a narrow phone it scrolls sideways instead of wrapping or spilling off-screen.',
+    ],
+  },
+  {
     version: '1.13.0',
     date: '2026-10-31',
     notes: [

@@ -84,11 +84,20 @@ tr.linked .lib-chk-wrap { display: none; }
    onto a second line instead of overflowing. */
 .user-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; white-space: normal; }
 .user-acts select { width: auto; min-width: 110px; }
-/* The Items row packs a quantity control plus up to five buttons into .acts — too many to force
-   onto one nowrap line on anything but a wide desktop (that's how a lone icon button like
-   "Print labels" ended up effectively invisible, needing a horizontal scroll to reach). Same
-   flex-wrap fix as .user-acts above. */
-.items-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: flex-end; white-space: normal; }
+/* The Items row packs a quantity control plus up to five buttons into .acts — more than fits
+   on one line at every card width even once sized down. Keep it on one line (no wrap — a
+   wrapped row read as messy) by sizing everything in it down a notch and, as a last resort on
+   narrow screens, letting the row itself scroll sideways rather than spilling into the next
+   column or getting clipped. */
+/* justify-content must stay flex-start, not flex-end: with overflow-x:auto, flex-end pushes
+   overflow onto the row's start edge, which a LTR scroll container can't actually scroll to
+   (only end-side overflow is reachable) — the first button or two would silently clip with no
+   way to reach them, worse than not scrolling at all. */
+.items-acts { display: flex; flex-wrap: nowrap; gap: 4px; align-items: center; justify-content: flex-start; overflow-x: auto; padding-bottom: 2px; min-width: 0; max-width: 100%; }
+.items-acts .btn.sm { padding: 4px 7px; font-size: 12px; flex-shrink: 0; }
+.items-acts .icon-btn { flex-shrink: 0; }
+.items-acts .qty-ctrl { flex-shrink: 0; gap: 3px; }
+.items-acts .qty-ctrl input { width: 30px; padding: 4px 2px; }
 .lib-chk-wrap { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); cursor: pointer; vertical-align: middle; margin-right: 6px; user-select: none; }
 .lib-chk-wrap input { width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
 .icon-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 17px; padding: 4px 8px; border-radius: 6px; line-height: 1; }
