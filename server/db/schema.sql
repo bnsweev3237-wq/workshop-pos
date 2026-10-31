@@ -170,7 +170,11 @@ CREATE TABLE IF NOT EXISTS events (
   state TEXT,
   -- Free text (e.g. "Booth 12") — printed on price tags for this event when set, so a
   -- consignment host can tell at a glance whose tag is whose. Not used anywhere else.
-  booth_number TEXT
+  booth_number TEXT,
+  -- Percent applied to every item's catalog price while this event is open (positive marks up,
+  -- negative discounts) — affects what's charged at the Sell page and what prints on this
+  -- event's labels. NULL (default) means no adjustment, same as before this column existed.
+  price_adjust_pct REAL
 );
 
 CREATE TABLE IF NOT EXISTS event_items (

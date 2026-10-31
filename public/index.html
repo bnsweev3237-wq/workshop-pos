@@ -264,7 +264,7 @@
 
     <div class="card">
       <h2>Print labels</h2>
-      <div class="help">Check off any items below and how many of each, then print them all as one batch — on plain paper or a real Avery sheet.</div>
+      <div class="help">Type how many labels to print for any item below — leave it blank to skip that item — then print them all as one batch, on plain paper or a real Avery sheet.</div>
       <input id="bulkTagSearch" placeholder="Search items…" style="margin-bottom:10px">
       <div id="bulkTagList" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
       <div class="hint" id="bulkTagCount" style="margin-top:6px"></div>
@@ -409,6 +409,11 @@
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedOther"><span>Card / Other: tax included in price</span></label>
         <label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTaxIncludedCash"><span>Cash: tax included in price</span></label>
       </div>
+      <div class="row r2" style="margin-top:12px">
+        <div><label for="evPriceAdjustPct">Price adjustment for this event (%, optional)</label><input id="evPriceAdjustPct" type="number" step="0.1" placeholder="e.g. 10 marks up, -15 discounts"></div>
+        <div></div>
+      </div>
+      <div class="hint" style="margin-top:-6px">Applied to every item's price while this event is open — positive marks prices up, negative marks them down. Doesn't touch the catalog price itself; it changes what's charged on the Sell page and what prints on this event's labels below. Leave blank for no change.</div>
       <div id="evCharitySection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
         <label style="margin-bottom:6px">Charity giving for this event</label>
         <div class="hint" style="margin-top:-2px;margin-bottom:10px">Donate a % of profit from sales at this event — either from a specific item category, or from every sale at the event. Add as many rules as you need.</div>
@@ -440,8 +445,18 @@
           <div id="evItemCheckList" style="max-height:220px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
           <div class="hint" id="evItemPickCount" style="margin-top:6px"></div>
         </div>
-        <div class="row r3" style="margin-top:10px">
-          <div><label for="evTagsFormat">Price tag label sheet</label>
+        <div class="btn-row" style="margin-top:10px;align-items:center">
+          <button class="btn sm" id="evPrintPacking">Print packing list</button>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+        <label style="margin-bottom:6px">Print labels for this event</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Type how many labels to print for any item below — leave it blank to skip that item. Uses this event's price adjustment (if any, set above) and its booth number.</div>
+        <input id="evTagSearch" placeholder="Search items…" style="margin-bottom:10px">
+        <div id="evTagList" style="max-height:280px;overflow-y:auto;border:1px solid var(--line);border-radius:10px;padding:10px"></div>
+        <div class="hint" id="evTagCount" style="margin-top:6px"></div>
+        <div class="row r3" style="margin-top:12px">
+          <div><label for="evTagsFormat">Label sheet</label>
             <select id="evTagsFormat">
               <option value="plain">Plain paper (cut out) — any size</option>
               <option value="5160">Avery 5160/8160 — 1" × 2⅝" (30/sheet)</option>
@@ -456,9 +471,9 @@
           <div style="display:flex;align-items:flex-end"><label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTagsBarcode" checked><span>Include barcode</span></label></div>
         </div>
         <div class="hint" id="evTagsHint" style="margin-top:4px"></div>
-        <div class="btn-row" style="margin-top:10px;align-items:center">
-          <button class="btn sm" id="evPrintPacking">Print packing list</button>
-          <button class="btn sm" id="evPrintTags">Print price tags</button>
+        <div class="btn-row" style="margin-top:10px">
+          <button class="btn primary sm" id="evPrintTags">Print labels</button>
+          <button class="btn sm" id="evTagClear">Clear quantities</button>
         </div>
       </div>
       <div class="btn-row">

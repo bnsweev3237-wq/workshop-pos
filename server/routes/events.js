@@ -11,6 +11,7 @@ const selectedItems = (eventId) => db.prepare('SELECT item_id, qty_brought FROM 
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,
   taxRate: r.tax_rate, cashTaxRate: r.cash_tax_rate, state: r.state || '', boothNumber: r.booth_number || '',
+  priceAdjustPct: r.price_adjust_pct,
   taxIncludedCash: !!r.tax_included_cash, taxIncludedOther: !!r.tax_included_other,
   test: !!r.test, itemScope: r.item_scope || 'all',
   // Only worth the extra query when it actually matters — 'all' (the common case) doesn't
@@ -52,6 +53,7 @@ router.post('/', requireEventManage, (req, res) => {
     cash_tax_rate: b.cashTaxRate === '' || b.cashTaxRate == null ? null : Number(b.cashTaxRate),
     state: (b.state || '').trim() || null,
     booth_number: (b.boothNumber || '').trim() || null,
+    price_adjust_pct: b.priceAdjustPct === '' || b.priceAdjustPct == null ? null : Number(b.priceAdjustPct),
     tax_included_cash: b.taxIncludedCash ? 1 : 0,
     tax_included_other: b.taxIncludedOther ? 1 : 0,
     test,
@@ -60,10 +62,10 @@ router.post('/', requireEventManage, (req, res) => {
     ended_at: b.endedAt || null,
   };
   db.prepare(`
-    INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, booth_number, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
-    VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @booth_number, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
+    INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, booth_number, price_adjust_pct, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+    VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @booth_number, @price_adjust_pct, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
     ON CONFLICT(id) DO UPDATE SET name=@name, start=@start, days=@days, cost=@cost, status=@status,
-      tax_rate=@tax_rate, cash_tax_rate=@cash_tax_rate, state=@state, booth_number=@booth_number, tax_included_cash=@tax_included_cash,
+      tax_rate=@tax_rate, cash_tax_rate=@cash_tax_rate, state=@state, booth_number=@booth_number, price_adjust_pct=@price_adjust_pct, tax_included_cash=@tax_included_cash,
       tax_included_other=@tax_included_other, item_scope=@item_scope, ended_at=@ended_at
   `).run(row);
   res.json(toPublic(db.prepare('SELECT * FROM events WHERE id = ?').get(row.id)));
@@ -89,6 +91,7 @@ router.post('/:id/clone', requireEventManage, (req, res) => {
     tax_rate: src.tax_rate,
     cash_tax_rate: src.cash_tax_rate,
     state: src.state,
+    price_adjust_pct: src.price_adjust_pct,
     tax_included_cash: src.tax_included_cash,
     tax_included_other: src.tax_included_other,
     test: src.test,
@@ -98,8 +101,8 @@ router.post('/:id/clone', requireEventManage, (req, res) => {
   };
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
-      VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
+      INSERT INTO events (id, name, start, days, cost, status, tax_rate, cash_tax_rate, state, price_adjust_pct, tax_included_cash, tax_included_other, test, item_scope, created_at, ended_at)
+      VALUES (@id, @name, @start, @days, @cost, @status, @tax_rate, @cash_tax_rate, @state, @price_adjust_pct, @tax_included_cash, @tax_included_other, @test, @item_scope, @created_at, @ended_at)
     `).run(row);
     const insertItem = db.prepare('INSERT OR IGNORE INTO event_items (event_id, item_id, qty_brought) VALUES (?, ?, ?)');
     for (const it of db.prepare('SELECT item_id, qty_brought FROM event_items WHERE event_id = ?').all(src.id)) {

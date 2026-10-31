@@ -178,6 +178,19 @@ discounts. All of these are enforced server-side (see `server/routes/sales.js` a
 has the submitted value silently corrected or stripped) even on a direct API request, not
 just a missing button.
 
+## Event price adjustment
+
+An event can carry its own price adjustment (Sell page → the event's gear icon → "Price
+adjustment for this event"): a single percentage, positive to mark every item's price up or
+negative to discount it. It only takes effect while that event is open — the catalog price
+itself is never touched, so it reverts automatically once the event ends. It affects two
+things: what's shown and charged at the Sell page (the item grid, search results, barcode
+scans, and the resulting ticket line all use the adjusted price), and what prints on that
+event's own labels (see Packing lists and price tags, below) — the label picker's prices
+update live as you type the percentage, so what you see there always matches what will print.
+It does not apply to custom (off-catalog) ticket items, custom orders, or anything printed
+from the Items tab's own label tools, which always use the plain catalog price.
+
 ## Charity giving
 
 Charity rules live on the **event**, not the item (Sell page → the event's gear icon →
@@ -254,10 +267,11 @@ regardless of the source event's own status.
 From an event's item picker: "Print packing list" gives a plain list of exactly what to bring
 and how many of each (the per-item quantities if the event is scoped to "Selected items", or
 every sellable item's current stock if it's open to the whole catalog — a "not for shows" item
-never appears either way). "Print price tags" makes one tag per item in that same set, with
-name, price, and — unless you uncheck "Include barcode" — a scannable Code128 barcode encoding
-the item's own item number. Both use the browser's print dialog (no bundled PDF library, same
-as Reports' PDF export), and a USB barcode scanner, which types out a barcode's digits like a
+never appears either way). Below it, "Print labels for this event" prints to actual price tags:
+type how many labels you want for any item — leave it blank to skip that item — with name,
+price, and — unless you uncheck "Include barcode" — a scannable Code128 barcode encoding the
+item's own item number. Both use the browser's print dialog (no bundled PDF library, same as
+Reports' PDF export), and a USB barcode scanner, which types out a barcode's digits like a
 keyboard, reads those tags straight into the Sell page's search box: scan one there and it's
 added to the ticket directly, instead of just filtering the grid the way typing normally does.
 
@@ -280,10 +294,11 @@ window, plus how many copies to print (handy for restocking a shelf with several
 tag). It remembers your last-used label sheet and barcode choice between entry points, and
 pre-fills the booth number from the currently open event if one has it set.
 
-For more than one item at a time, there's a "Print labels" section at the bottom of the Items
-tab: check off any number of items, set how many of each, and print them all as one batch —
-same label sheet/barcode/booth options, filling sheets across the whole selection rather than
-one item at a time.
+For more than one item at a time, there's also a "Print labels" section at the bottom of the
+Items tab: same idea — type how many of each item to print, blank skips it — with its own
+label sheet/barcode/booth options, filling sheets across the whole selection rather than one
+item at a time. It always uses catalog price, not any event's adjustment (see below); print
+from the event itself for event-adjusted pricing.
 
 Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
 carries a small "Powered by Craftium" line at the bottom, independent of whatever business

@@ -13,6 +13,15 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.14.0',
+    date: '2026-10-31',
+    notes: [
+      'Events can now carry their own price adjustment (%) — a markup or discount applied to every item\'s price while that event is open, on both the Sell page and that event\'s own printed labels.',
+      'Reworked how an event prints labels: instead of one tag per item in scope, type how many labels you want for any item — leave it blank to skip. Uses the same Avery sheet options as everywhere else, plus the event\'s price adjustment and booth number.',
+      'The Items tab\'s bulk "Print labels" list no longer needs a checkbox — typing a quantity is what includes an item; leave it blank to skip it.',
+    ],
+  },
+  {
     version: '1.13.1',
     date: '2026-10-31',
     notes: [

@@ -1320,7 +1320,7 @@ function renderPosItems() {
     const low = remaining == null && isLow(it.stock, it.low);
     const stLabel = remaining != null ? `${remaining} bringing here` : `${num(it.stock)} in stock`;
     const btn = document.createElement('button'); btn.className = 'pos-item' + (outOfStock ? ' out' : '');
-    btn.innerHTML = `<span class="nm"></span><span class="pr">${money(num(it.price))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${stLabel}</span>`;
+    btn.innerHTML = `<span class="nm"></span><span class="pr">${money(eventAdjustedPrice(it.price, ev))}</span><span class="st${low ? ' low' : ''}">${it.itemNo ? `#${it.itemNo} · ` : ''}${stLabel}</span>`;
     btn.querySelector('.nm').textContent = it.name;
     btn.onclick = () => addToTicket(it);
     grid.appendChild(btn);
@@ -1338,6 +1338,15 @@ function defaultLineTaxRate(forTender) {
 function eventTaxIncluded(ev, forTender) {
   if (!ev) return false;
   return forTender === 'cash' ? !!ev.taxIncludedCash : !!ev.taxIncludedOther;
+}
+// An event's price adjustment (set on the event itself) scales a catalog item's own price up or
+// down for the duration of that event — the catalog price is never touched, this only changes
+// what's shown/charged while the event is open (and what prints on its own labels). No event,
+// or no adjustment set, just returns the price unchanged.
+function eventAdjustedPrice(basePrice, ev) {
+  const pct = ev && ev.priceAdjustPct;
+  if (pct == null || pct === '') return num(basePrice);
+  return Math.round(num(basePrice) * (1 + num(pct) / 100) * 100) / 100;
 }
 // Discount is applied to the line's pre-tax extended total (price × qty), before splitting
 // off tax — so tax is charged on what was actually paid, not the undiscounted price. 'pct' is
@@ -1357,7 +1366,7 @@ function lineTaxSplit(l, included) {
 function addToTicket(it) {
   const line = ticket.find(l => l.itemId === it.id);
   if (line) line.qty++;
-  else ticket.push({ id: cid(), itemId: it.id, name: it.name, price: num(it.price), qty: 1, taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null });
+  else ticket.push({ id: cid(), itemId: it.id, name: it.name, price: eventAdjustedPrice(it.price, openEvent()), qty: 1, taxRate: defaultLineTaxRate(tender), taxOverridden: false, discountType: null, discountValue: null });
   renderTicket();
 }
 function recalcTicketTotals() {
@@ -1775,6 +1784,7 @@ function fillEventForm(ev) {
   $('evName').value = ev?.name || ''; $('evCost').value = ev?.cost || ''; $('evStart').value = ev?.start || ''; $('evDays').value = ev?.days || 1;
   $('evTax').value = ev?.taxRate ?? ''; $('evCashTax').value = ev?.cashTaxRate ?? ''; $('evState').value = ev?.state || '';
   $('evTagsBooth').value = ev?.boothNumber || '';
+  $('evPriceAdjustPct').value = ev?.priceAdjustPct ?? '';
   $('evTaxIncludedCash').checked = !!ev?.taxIncludedCash; $('evTaxIncludedOther').checked = !!ev?.taxIncludedOther;
   const isOpenEvent = !!ev && ev.status === 'open';
   $('evEnd').hidden = !isOpenEvent;
@@ -1809,9 +1819,10 @@ async function loadEventFormExtras(ev) {
   evItemScope = ev?.itemScope || 'all';
   evSelectedItems = new Map((ev?.selectedItems || []).map(s => [s.itemId, s.qtyBrought]));
   evItemSearch = ''; $('evItemSearch').value = '';
+  evTagQty = new Map(); evTagSearch = ''; $('evTagSearch').value = '';
   if (!ev) {
     evCharityRules = []; $('evCharityList').innerHTML = '';
-    evPickerItems = []; renderEvItemScope();
+    evPickerItems = []; renderEvItemScope(); renderEvTagList();
     return;
   }
   const [rules, fullItems] = await Promise.all([
@@ -1828,6 +1839,7 @@ async function loadEventFormExtras(ev) {
   // something) would just be misleading.
   evPickerItems = fullItems.filter((it) => !it.notForShows);
   renderEvItemScope();
+  renderEvTagList();
 }
 function renderEvItemScope() {
   document.querySelectorAll('#evItemScopeSeg button').forEach(b => b.classList.toggle('on', b.dataset.scope === evItemScope));
@@ -1928,7 +1940,7 @@ $('evSave').onclick = async () => {
   try {
     saved = await api('POST', '/api/events', {
       id: existing?.id, name: $('evName').value.trim(), cost: $('evCost').value, start: $('evStart').value, days: $('evDays').value,
-      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, state: $('evState').value.trim(), boothNumber: $('evTagsBooth').value.trim(), taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
+      taxRate: $('evTax').value, cashTaxRate: $('evCashTax').value, state: $('evState').value.trim(), boothNumber: $('evTagsBooth').value.trim(), priceAdjustPct: $('evPriceAdjustPct').value, taxIncludedCash: $('evTaxIncludedCash').checked, taxIncludedOther: $('evTaxIncludedOther').checked,
       status, test: testMode, itemScope: existing ? evItemScope : 'all',
     });
   } catch (e) { toast(e.message || 'Could not save event'); return; }
@@ -1991,16 +2003,6 @@ $('evPrintPacking').onclick = () => {
     $('packingListRows').innerHTML = rows.map((r) => `<tr><td>${esc(r.name)}</td><td class="r">${r.qty === '' || r.qty == null ? '—' : num(r.qty)}</td></tr>`).join('');
   });
 };
-// Same item set as the packing list (minus quantities, which tags don't need) — barcoded with
-// the item's own existing number via the vendored Code128 renderer (see public/vendor), which
-// a USB scanner reads back as plain keystrokes at checkout (see the posSearch lookup above).
-function buildTagItems() {
-  const byId = new Map(evPickerItems.map((it) => [it.id, it]));
-  const chosen = evItemScope === 'selected'
-    ? [...evSelectedItems.keys()].map((id) => byId.get(id)).filter(Boolean)
-    : evPickerItems;
-  return chosen.map((it) => ({ name: it.name, price: it.price, itemNo: it.itemNo })).sort((a, b) => a.name.localeCompare(b.name));
-}
 // Real Avery template specs (inches) — label size, sheet margins, and grid pitch — verified
 // against Avery's own published layouts for each product number, so tags land inside each
 // sticker's actual edges rather than drifting sheet to sheet. 'plain' keeps the original
@@ -2069,9 +2071,54 @@ function printPriceTags(tagItems, rawWithBarcode, booth, templateId) {
     }
   });
 }
+// Event setup: a qty-only item picker for printing labels — no checkbox, typing a quantity is
+// what includes an item (blank/0 skips it). evTagQty is keyed by item id so it survives
+// re-renders from searching; it's reset to empty each time a different event is opened for
+// editing (loadEventFormExtras), and self-prunes ids no longer in evPickerItems.
+let evTagQty = new Map(); // itemId -> qty
+let evTagSearch = '';
+function renderEvTagList() {
+  for (const id of [...evTagQty.keys()]) if (!evPickerItems.some((it) => it.id === id)) evTagQty.delete(id);
+  const box = $('evTagList');
+  const q = evTagSearch.trim().toLowerCase();
+  const list = evPickerItems.filter((it) => !q || it.name.toLowerCase().includes(q)).sort((a, b) => a.name.localeCompare(b.name));
+  box.innerHTML = '';
+  for (const it of list) {
+    const row = document.createElement('div'); row.className = 'ev-item-row';
+    row.innerHTML = `<span style="flex:1"></span><input type="number" class="in-tiny ev-item-qty" min="1" step="1" placeholder="qty">`;
+    row.querySelector('span').textContent = `${it.name} · ${money(eventAdjustedPrice(it.price, { priceAdjustPct: $('evPriceAdjustPct').value }))}`;
+    const qtyIn = row.querySelector('.ev-item-qty');
+    qtyIn.value = evTagQty.has(it.id) ? evTagQty.get(it.id) : '';
+    qtyIn.oninput = () => {
+      const v = Math.max(0, Math.round(num(qtyIn.value)) || 0);
+      if (v > 0) evTagQty.set(it.id, v); else evTagQty.delete(it.id);
+      updateEvTagCount();
+    };
+    box.appendChild(row);
+  }
+  if (!list.length) box.innerHTML = '<div class="hint">No items match.</div>';
+  updateEvTagCount();
+}
+function updateEvTagCount() {
+  const n = evTagQty.size;
+  const total = [...evTagQty.values()].reduce((a, b) => a + b, 0);
+  $('evTagCount').textContent = n ? `${n} item${n === 1 ? '' : 's'} · ${total} label${total === 1 ? '' : 's'} total` : 'No items selected yet.';
+}
+$('evTagSearch').addEventListener('input', () => { evTagSearch = $('evTagSearch').value; renderEvTagList(); });
+$('evTagClear').onclick = () => { evTagQty.clear(); renderEvTagList(); };
+// Keep the list's shown prices in sync with the adjustment field as it's typed, so what you see
+// here always matches what will actually print — no need to save first.
+$('evPriceAdjustPct').addEventListener('input', renderEvTagList);
 $('evPrintTags').onclick = () => {
-  const tagItems = buildTagItems();
-  if (!tagItems.length) { toast('No items to print tags for in this event'); return; }
+  if (!evTagQty.size) { toast('Type a quantity for at least one item first'); return; }
+  const byId = new Map(evPickerItems.map((it) => [it.id, it]));
+  const evForPricing = { priceAdjustPct: $('evPriceAdjustPct').value };
+  const tagItems = [];
+  for (const [id, qty] of evTagQty) {
+    const it = byId.get(id);
+    if (!it) continue;
+    for (let i = 0; i < qty; i++) tagItems.push({ name: it.name, price: eventAdjustedPrice(it.price, evForPricing), itemNo: it.itemNo });
+  }
   printPriceTags(tagItems, $('evTagsBarcode').checked, $('evTagsBooth').value.trim(), $('evTagsFormat').value);
 };
 // Items tab: print one item's tag — same options as the event flow (format/barcode/booth
@@ -2119,20 +2166,15 @@ function renderBulkTagList() {
   box.innerHTML = '';
   for (const it of list) {
     const row = document.createElement('div'); row.className = 'ev-item-row';
-    row.innerHTML = `<label class="chk-field" style="margin-top:0;flex:1"><input type="checkbox"><span></span></label><input type="number" class="in-tiny ev-item-qty" min="1" step="1" placeholder="qty">`;
-    const chk = row.querySelector('input[type="checkbox"]');
-    const qtyIn = row.querySelector('.ev-item-qty');
-    const checked = bulkTagQty.has(it.id);
-    chk.checked = checked;
+    row.innerHTML = `<span style="flex:1"></span><input type="number" class="in-tiny ev-item-qty" min="1" step="1" placeholder="qty">`;
     row.querySelector('span').textContent = `${it.name} · ${money(it.price)}`;
-    qtyIn.disabled = !checked;
-    qtyIn.value = checked ? bulkTagQty.get(it.id) : '';
-    chk.onchange = () => {
-      if (chk.checked) { qtyIn.disabled = false; qtyIn.value = qtyIn.value || 1; bulkTagQty.set(it.id, num(qtyIn.value) || 1); }
-      else { bulkTagQty.delete(it.id); qtyIn.disabled = true; qtyIn.value = ''; }
+    const qtyIn = row.querySelector('.ev-item-qty');
+    qtyIn.value = bulkTagQty.has(it.id) ? bulkTagQty.get(it.id) : '';
+    qtyIn.oninput = () => {
+      const v = Math.max(0, Math.round(num(qtyIn.value)) || 0);
+      if (v > 0) bulkTagQty.set(it.id, v); else bulkTagQty.delete(it.id);
       updateBulkTagCount();
     };
-    qtyIn.oninput = () => { if (chk.checked) bulkTagQty.set(it.id, Math.max(1, Math.round(num(qtyIn.value)) || 1)); };
     box.appendChild(row);
   }
   if (!list.length) box.innerHTML = '<div class="hint">No items match.</div>';
@@ -2148,7 +2190,7 @@ $('bulkTagFormat').onchange = () => { try { localStorage.setItem('workshopPos.ta
 $('bulkTagBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('bulkTagBarcode').checked ? '1' : '0'); } catch {} };
 $('bulkTagClear').onclick = () => { bulkTagQty.clear(); renderBulkTagList(); };
 $('bulkTagPrint').onclick = () => {
-  if (!bulkTagQty.size) { toast('Check off at least one item first'); return; }
+  if (!bulkTagQty.size) { toast('Type a quantity for at least one item first'); return; }
   const byId = new Map(items.map((it) => [it.id, it]));
   const tagItems = [];
   for (const [id, qty] of bulkTagQty) {

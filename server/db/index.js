@@ -76,6 +76,7 @@ ensureColumn('items', 'created_at', 'INTEGER');
 ensureColumn('items', 'not_for_shows', 'INTEGER NOT NULL DEFAULT 0');
 ensureColumn('events', 'state', 'TEXT');
 ensureColumn('events', 'booth_number', 'TEXT');
+ensureColumn('events', 'price_adjust_pct', 'REAL');
 ensureColumn('custom_orders', 'fulfillment', "TEXT NOT NULL DEFAULT 'pickup'");
 ensureColumn('custom_orders', 'shipping_address', 'TEXT');
 ensureColumn('custom_orders', 'shipping_cost', 'REAL');
