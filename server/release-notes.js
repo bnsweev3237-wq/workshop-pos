@@ -13,6 +13,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '1.14.4',
+    date: '2026-10-31',
+    notes: [
+      'Actually found and fixed the Items row border bug this time — the Actions cell\'s bottom divider line was sitting well above the rest of the row\'s, making the whole row look split in two. The cause was the horizontal-scroll fallback I\'d put directly on the table cell, which broke its normal full-row-height sizing; it now lives on an inner wrapper instead.',
+      'Also tightened the Sales price column — "your price," "suggested," and "margin" now sit on one line instead of two.',
+    ],
+  },
+  {
     version: '1.14.3',
     date: '2026-10-31',
     notes: [

@@ -88,7 +88,11 @@ tr.linked .lib-chk-wrap { display: none; }
    on one line at every card width even once sized down. Keep it on one line (no wrap — a
    wrapped row read as messy) by sizing everything in it down a notch and, as a last resort on
    narrow screens, letting the row itself scroll sideways rather than spilling into the next
-   column or getting clipped. */
+   column or getting clipped. This lives on an INNER div, not the <td class="acts"> itself —
+   putting overflow-x:auto directly on a table cell breaks its normal full-row-height stretch in
+   Chrome/Edge (the cell's box and border collapse to just its own short content instead of the
+   row's height), which left that cell's bottom border sitting well above the rest of the row's
+   — a wrapper div keeps the <td> a plain, normally-stretching cell. */
 /* justify-content must stay flex-start, not flex-end: with overflow-x:auto, flex-end pushes
    overflow onto the row's start edge, which a LTR scroll container can't actually scroll to
    (only end-side overflow is reachable) — the first button or two would silently clip with no

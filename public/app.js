@@ -795,17 +795,19 @@ function renderItems() {
     tr.innerHTML = `
       <td><div class="item-name-cell">${it.photo ? `<img class="item-thumb" src="${it.photo}">` : ''}<div><div class="iname"></div><div class="meta">${it.itemNo ? `#${it.itemNo} · ` : ''}${typeLabel} · saved ${it.savedAt ? new Date(it.savedAt).toLocaleDateString() : 'earlier'}${catBadge}${notForShowsBadge}${notesBadge}</div></div></div></td>
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
-      <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>${c.overridden ? `<small>your price · suggested ${money(c.suggested)}</small>` : moved ? '<small>price unchanged after rounding</small>' : ''}`}
-        <small class="${c.price - c.cost < 0 ? 'neg' : ''}">margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
+      <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>`}
+        <small class="${c.price - c.cost < 0 ? 'neg' : ''}">${!priceMoved && c.overridden ? `your price · suggested ${money(c.suggested)} · ` : !priceMoved && moved ? 'price unchanged after rounding · ' : ''}margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
       <td class="num" data-l="Stock"><div class="stock-cell${low ? ' low' : ''}"><input type="number" class="in-tiny stockIn" min="0" step="1"><span class="stock-badge"${low ? '' : ' hidden'}>LOW</span></div></td>
-      <td class="acts items-acts">
-        <div class="qty-ctrl"><input type="number" class="qty" min="1" step="1" value="1">
-          <button class="btn sm make" title="Log a batch made — deducts materials">+ Make</button>
-          <button class="btn sm sell" title="Log a sale — reduces stock">− Sell</button></div>
-        ${moved ? '<button class="btn sm accept">Accept</button>' : ''}
-        <button class="btn sm open">Open</button>
-        <button class="btn sm tag" title="Print price labels for this item">Labels</button>
-        <button class="icon-btn del" title="Delete item">×</button>
+      <td class="acts">
+        <div class="items-acts">
+          <div class="qty-ctrl"><input type="number" class="qty" min="1" step="1" value="1">
+            <button class="btn sm make" title="Log a batch made — deducts materials">+ Make</button>
+            <button class="btn sm sell" title="Log a sale — reduces stock">− Sell</button></div>
+          ${moved ? '<button class="btn sm accept">Accept</button>' : ''}
+          <button class="btn sm open">Open</button>
+          <button class="btn sm tag" title="Print price labels for this item">Labels</button>
+          <button class="icon-btn del" title="Delete item">×</button>
+        </div>
       </td>`;
     tr.querySelector('.iname').textContent = it.name;
     tr.querySelector('.iname').onclick = tr.querySelector('.open').onclick = () => { restore(it); showTab('calc'); window.scrollTo({ top: 0 }); };
