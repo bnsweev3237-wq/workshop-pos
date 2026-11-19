@@ -92,9 +92,9 @@ async function api(method, path, body) {
 //   lead:    Sell + Reports
 //   cashier: Sell only (and a restricted Sell — see the POS section below)
 const ROLE_TABS = {
-  admin: ['pos', 'calc', 'lib', 'items', 'orders', 'reports', 'settings'],
-  manager: ['pos', 'calc', 'lib', 'items', 'orders', 'reports'],
-  lead: ['pos', 'orders', 'reports'],
+  admin: ['pos', 'calc', 'lib', 'items', 'orders', 'consignment', 'reports', 'settings'],
+  manager: ['pos', 'calc', 'lib', 'items', 'orders', 'consignment', 'reports'],
+  lead: ['pos', 'orders', 'consignment', 'reports'],
   cashier: ['pos'],
 };
 const ROLE_LABEL = { admin: 'Admin', manager: 'Manager', lead: 'Lead', cashier: 'Cashier' };
@@ -253,11 +253,12 @@ function showTab(t) {
   if (!(ROLE_TABS[me.role] || ['pos']).includes(t)) t = 'pos';
   currentTab = t;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
-  ['calc', 'lib', 'items', 'orders', 'pos', 'reports', 'settings'].forEach(x => $('tab-' + x).hidden = x !== t);
+  ['calc', 'lib', 'items', 'orders', 'consignment', 'pos', 'reports', 'settings'].forEach(x => $('tab-' + x).hidden = x !== t);
   if (t === 'calc') calc();
   if (t === 'lib') loadMaterials();
   if (t === 'items') loadItems();
   if (t === 'orders') loadCustomOrders();
+  if (t === 'consignment') loadConsignment();
   if (t === 'reports') renderReports();
   if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); loadMailSettings(); loadLicenseStatus(); fillBrandingForm(); }
 }
@@ -1496,17 +1497,19 @@ $('checkout').onclick = async () => {
   const ev = openEvent();
   const total = num($('tTotal').textContent.replace(/[^0-9.-]/g, ''));
   const received = tender === 'cash' ? num($('received').value) : total;
+  const customerEmail = $('posCustomerEmail').value.trim();
   const payload = {
     eventId: ev?.id || null, test: testMode, taxIncluded: eventTaxIncluded(ev, tender),
     lines: ticket.map(l => ({ itemId: l.itemId, name: l.name, price: l.price, qty: l.qty, taxRate: num(l.taxRate), discountType: l.discountType || null, discountValue: l.discountValue || null })),
     tender, received,
     cardProcessorId: tender !== 'cash' ? ($('cardProcessor').value || null) : null,
     customOrderId: checkoutOrderId,
+    customerEmail: customerEmail || undefined,
   };
   const wasOrderCheckout = !!checkoutOrderId;
   try {
     const sale = await api('POST', '/api/sales', payload);
-    ticket = []; $('received').value = ''; checkoutOrderId = null; renderTicket();
+    ticket = []; $('received').value = ''; $('posCustomerEmail').value = ''; checkoutOrderId = null; renderTicket();
     setMobileCartOpen(false);
     setOnlineStatus(true);
     toast(wasOrderCheckout ? `Order paid — sale complete, ${money(sale.total)}` : `${testMode ? 'Test sale' : 'Sale'} complete — ${money(sale.total)}`);
@@ -1514,7 +1517,7 @@ $('checkout').onclick = async () => {
   } catch (e) {
     if (isNetworkError(e)) {
       await completeOfflineSale(payload);
-      ticket = []; $('received').value = ''; checkoutOrderId = null; renderTicket();
+      ticket = []; $('received').value = ''; $('posCustomerEmail').value = ''; checkoutOrderId = null; renderTicket();
       setMobileCartOpen(false);
       renderEventWidget();
     } else {
@@ -1704,7 +1707,7 @@ function renderEventWidget() {
   bar.hidden = false;
   gear.hidden = restricted;
   const { startMs, days } = eventWindow(ev);
-  const cost = num(ev.cost);
+  const cost = num(ev.cost) + num(ev.expensesTotal || 0);
   const evSalesList = eventSales(ev);
   const revenue = evSalesList.reduce((s, x) => s + num(x.total), 0);
   const met = revenue >= cost; // using revenue here since public sales carry no profit figure
@@ -1725,12 +1728,13 @@ function renderEventHistory() {
     const { days } = eventWindow(ev);
     const evSalesList = eventSales(ev).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     const revenue = evSalesList.reduce((s, x) => s + num(x.total), 0);
+    const totalCost = num(ev.cost) + num(ev.expensesTotal || 0);
     const row = document.createElement('div'); row.className = 'ev-row';
     row.innerHTML = `<div class="ev-top"><b></b><span class="ev-net"></span></div><div class="ev-meta"></div><button class="ev-view-btn"></button><button class="ev-view-btn ev-clone">Clone as new draft</button><button class="ev-del">Delete</button><div class="ev-sales" hidden></div>`;
     row.querySelector('.ev-top b').textContent = ev.name || 'Event';
-    const netEl = row.querySelector('.ev-net'); const net = revenue - num(ev.cost);
+    const netEl = row.querySelector('.ev-net'); const net = revenue - totalCost;
     netEl.textContent = (net >= 0 ? '+' : '−') + money(Math.abs(net)); netEl.classList.add(net >= 0 ? 'pos' : 'neg');
-    row.querySelector('.ev-meta').textContent = `${new Date(ev.start + 'T00:00:00').toLocaleDateString()} · ${days} day${days > 1 ? 's' : ''} · ${evSalesList.length} sale${evSalesList.length === 1 ? '' : 's'} · ${money(revenue)} revenue − ${money(num(ev.cost))} space`;
+    row.querySelector('.ev-meta').textContent = `${new Date(ev.start + 'T00:00:00').toLocaleDateString()} · ${days} day${days > 1 ? 's' : ''} · ${evSalesList.length} sale${evSalesList.length === 1 ? '' : 's'} · ${money(revenue)} revenue − ${money(totalCost)} cost`;
     const viewBtn = row.querySelector('.ev-view-btn'), salesBox = row.querySelector('.ev-sales');
     viewBtn.hidden = evSalesList.length === 0; viewBtn.textContent = `View sales (${evSalesList.length})`;
     let built = false;
@@ -1807,6 +1811,7 @@ document.querySelectorAll('#evWhenSeg button').forEach(b => b.onclick = () => { 
 // event management). Both need an eventId to attach to, so — like charity rules already did —
 // neither section is usable until the event has been saved at least once.
 let evCharityRules = [];
+let evExpenses = [];
 let evItemScope = 'all';
 let evSelectedItems = new Map(); // itemId -> qtyBrought (number or null = no limit set)
 let evPickerItems = [];
@@ -1816,6 +1821,7 @@ async function loadEventFormExtras(ev) {
   // brand-new event too, before it's ever been saved.
   loadTaxPresets().catch(() => {});
   $('evCharitySection').hidden = !ev;
+  $('evExpensesSection').hidden = !ev;
   $('evItemsSection').hidden = !ev;
   $('evCharityAllSales').checked = false; $('evCharityCategory').disabled = false;
   evItemScope = ev?.itemScope || 'all';
@@ -1824,14 +1830,18 @@ async function loadEventFormExtras(ev) {
   evTagQty = new Map(); evTagSearch = ''; $('evTagSearch').value = '';
   if (!ev) {
     evCharityRules = []; $('evCharityList').innerHTML = '';
+    evExpenses = []; $('evExpensesList').innerHTML = '';
     evPickerItems = []; renderEvItemScope(); renderEvTagList();
     return;
   }
-  const [rules, fullItems] = await Promise.all([
+  const [rules, expenses, fullItems] = await Promise.all([
     api('GET', `/api/charity-rules?eventId=${encodeURIComponent(ev.id)}`),
+    api('GET', `/api/event-expenses?eventId=${encodeURIComponent(ev.id)}`),
     api('GET', `/api/items/full?test=${ev.test ? 1 : 0}`),
   ]);
   evCharityRules = rules;
+  evExpenses = expenses;
+  renderEvExpensesList();
   const cats = [...new Set(fullItems.flatMap(it => it.categories || []))].sort();
   $('categoryList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
   $('evItemCatSelect').innerHTML = '<option value="">Choose a category…</option>' + cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -1930,6 +1940,38 @@ $('evCharityAdd').onclick = async () => {
     renderEvCharityList();
     toast('Charity rule added');
   } catch (e) { toast(e.message || 'Could not add rule'); }
+};
+
+// ---------- Event expenses (additional to the event's space-cost field) ----------
+function renderEvExpensesList() {
+  const box = $('evExpensesList');
+  if (!evExpenses.length) { box.innerHTML = '<div class="hint">No extra expenses logged for this event.</div>'; return; }
+  box.innerHTML = '';
+  for (const x of evExpenses) {
+    const row = document.createElement('div'); row.className = 'ev-charity-row';
+    row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="icon-btn del" title="Remove expense">×</button>`;
+    row.querySelector('.ev-charity-name').textContent = x.label;
+    row.querySelector('.ev-charity-pct').textContent = money(x.amount);
+    row.querySelector('.del').onclick = async () => {
+      try { await api('DELETE', `/api/event-expenses/${x.id}`); evExpenses = evExpenses.filter(e => e !== x); renderEvExpensesList(); toast('Expense removed'); await loadEvents(); }
+      catch (e) { toast(e.message || 'Could not remove expense'); }
+    };
+    box.appendChild(row);
+  }
+}
+$('evExpenseAdd').onclick = async () => {
+  if (!editingEventId) return;
+  const label = $('evExpenseLabel').value.trim();
+  const amount = $('evExpenseAmount').value;
+  if (!label || num(amount) <= 0) { toast('Give the expense a name and an amount above $0'); return; }
+  try {
+    const saved = await api('POST', '/api/event-expenses', { eventId: editingEventId, label, amount: num(amount) });
+    evExpenses.push(saved);
+    $('evExpenseLabel').value = ''; $('evExpenseAmount').value = '';
+    renderEvExpensesList();
+    toast('Expense added');
+    await loadEvents();
+  } catch (e) { toast(e.message || 'Could not add expense'); }
 };
 $('eventSetupLink').onclick = () => { fillEventForm(null); $('eventForm').hidden = false; $('evStart').focus(); };
 $('eventGear').onclick = () => { fillEventForm(openEvent()); $('eventForm').hidden = !$('eventForm').hidden; };
@@ -2273,6 +2315,99 @@ $('testModeOffKeepLink').onclick = () => {
   toast('Exited test mode — test data kept for next time');
 };
 
+// ---------- Consignment tracking (requireFeature('consignment') server-side — see
+// server/lib/license.js; default-allowed on an unlicensed install, same as every feature
+// flag before any tier exists to turn one off) ----------
+let consignPartners = [];
+async function loadConsignment() {
+  try {
+    consignPartners = await api('GET', '/api/consignment/partners');
+  } catch (e) {
+    if (e.code === 'feature_not_licensed') {
+      $('cnPartnerList').innerHTML = '';
+      $('cnPartnerEmpty').hidden = false;
+      $('cnPartnerEmpty').textContent = 'Consignment tracking isn’t included on this install’s current plan.';
+      return;
+    }
+    throw e;
+  }
+  renderConsignPartners();
+}
+function renderConsignPartners() {
+  const box = $('cnPartnerList'); box.innerHTML = '';
+  $('cnPartnerEmpty').hidden = consignPartners.length > 0;
+  $('cnPartnerEmpty').textContent = 'No consignment partners yet.';
+  for (const p of consignPartners) box.appendChild(buildPartnerCard(p));
+}
+function buildPartnerCard(p) {
+  const card = document.createElement('div'); card.className = 'card';
+  card.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+      <h2 style="margin:0"></h2>
+      <button class="icon-btn del" title="Delete partner">×</button>
+    </div>
+    <div class="hint" style="margin-top:-4px"></div>
+    <div class="cn-items" style="margin-top:10px"></div>
+    <div class="row r3" style="margin-top:10px">
+      <div><label>Item name</label><input class="cnItemName" placeholder="e.g. Earrings"></div>
+      <div><label>Qty sent</label><input class="cnItemQty" type="number" min="1" step="1" value="1"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn sm cnItemAdd" style="width:100%">+ Send inventory</button></div>
+    </div>`;
+  card.querySelector('h2').textContent = p.name || 'Unnamed partner';
+  card.querySelector('.hint').textContent = `${p.commissionPct}% commission to them${p.contact ? ' · ' + p.contact : ''}`;
+  card.querySelector('.del').onclick = async () => {
+    if (!await askConfirm(`Delete “${p.name || 'this partner'}” and its whole inventory/sales history?`, 'Delete partner')) return;
+    await api('DELETE', '/api/consignment/partners/' + p.id); toast('Partner deleted'); await loadConsignment();
+  };
+  const itemsBox = card.querySelector('.cn-items');
+  refreshPartnerItems(p, itemsBox);
+  card.querySelector('.cnItemAdd').onclick = async () => {
+    const name = card.querySelector('.cnItemName').value.trim();
+    const qty = Math.max(1, Math.round(num(card.querySelector('.cnItemQty').value)) || 1);
+    if (!name) { toast('Give the item a name'); return; }
+    await api('POST', '/api/consignment/items', { partnerId: p.id, name, qtySent: qty });
+    card.querySelector('.cnItemName').value = ''; card.querySelector('.cnItemQty').value = '1';
+    toast('Inventory sent'); refreshPartnerItems(p, itemsBox);
+  };
+  return card;
+}
+async function refreshPartnerItems(p, box) {
+  const items = await api('GET', `/api/consignment/partners/${p.id}/items`);
+  box.innerHTML = '';
+  if (!items.length) { box.innerHTML = '<div class="hint">No inventory sent yet.</div>'; return; }
+  for (const it of items) {
+    const row = document.createElement('div'); row.className = 'ev-charity-row';
+    row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="btn sm cnSoldBtn">Log a sale</button><button class="icon-btn del" title="Remove">×</button><div class="cn-sold-form" hidden style="flex-basis:100%;margin-top:8px"></div>`;
+    row.querySelector('.ev-charity-name').textContent = `${it.name} — ${it.qtyOut} out of ${it.qtySent}`;
+    row.querySelector('.ev-charity-pct').textContent = `${money(it.owed)} owed`;
+    row.querySelector('.del').onclick = async () => { await api('DELETE', '/api/consignment/items/' + it.id); refreshPartnerItems(p, box); };
+    const form = row.querySelector('.cn-sold-form');
+    row.querySelector('.cnSoldBtn').onclick = () => {
+      form.hidden = !form.hidden;
+      if (!form.hidden) {
+        form.innerHTML = `<div class="row r3"><div><label>Qty sold</label><input class="cnSoldQty" type="number" min="1" step="1" value="1"></div><div><label>Sale price each ($)</label><input class="cnSoldPrice" type="number" min="0" step="0.01"></div><div style="display:flex;align-items:flex-end"><button class="btn sm primary cnSoldSave" style="width:100%">Save</button></div></div>`;
+        form.querySelector('.cnSoldSave').onclick = async () => {
+          const qty = Math.max(1, Math.round(num(form.querySelector('.cnSoldQty').value)) || 1);
+          const salePrice = num(form.querySelector('.cnSoldPrice').value);
+          await api('POST', `/api/consignment/items/${it.id}/sold`, { qty, salePrice });
+          toast('Sale logged'); refreshPartnerItems(p, box);
+        };
+      }
+    };
+    box.appendChild(row);
+  }
+}
+$('cnPartnerAdd').onclick = async () => {
+  const name = $('cnPartnerName').value.trim();
+  if (!name) { toast('Give the partner a name'); return; }
+  try {
+    await api('POST', '/api/consignment/partners', { name, contact: $('cnPartnerContact').value.trim(), commissionPct: num($('cnPartnerPct').value) });
+    $('cnPartnerName').value = ''; $('cnPartnerContact').value = ''; $('cnPartnerPct').value = '';
+    toast('Partner added');
+    await loadConsignment();
+  } catch (e) { toast(e.message || 'Could not add partner'); }
+};
+
 // ---------- Reports (core: stats, chart, top items, payment type) ----------
 let rptRange = '7';
 let rptTab = 'overview';
@@ -2330,7 +2465,9 @@ async function renderReports() {
   renderRptTender(inRange, revenue);
   renderRptCost(inRange);
   renderRptEvents();
+  renderRptEventTrend();
   renderRptByUser(inRange);
+  renderRptSubscribers().catch(() => {});
   renderRptInventory();
   renderRptTax(inRange, start, end);
   renderRptVoids(start, end);
@@ -2491,7 +2628,7 @@ function renderRptEvents() {
     const grossProfit = evSalesList.reduce((n, s) => n + num(s.profit), 0);
     const charityDue = evSalesList.reduce((n, s) => n + num(s.charityDue), 0);
     const cardFees = evSalesList.reduce((n, s) => n + num(s.cardFee), 0);
-    const cost = num(ev.cost);
+    const cost = num(ev.cost) + num(ev.expensesTotal || 0);
     const net = grossProfit - cost - cardFees;
     const row = document.createElement('div'); row.className = 'rpt-ev-row';
     row.innerHTML = `
@@ -2512,12 +2649,12 @@ function renderRptEvents() {
       <div class="rpt-ev-stats">
         <div><span>Revenue</span><b>${money(revenue)}</b></div>
         <div><span>Gross profit</span><b>${money(grossProfit)}</b></div>
-        <div><span>Booth / event cost</span><b>−${money(cost)}</b></div>
+        <div><span>Cost (booth + expenses)</span><b>−${money(cost)}</b></div>
         ${cardFees > 0 ? `<div><span>Card processing fees</span><b style="color:var(--danger)">−${money(cardFees)}</b></div>` : ''}
         <div><span>True profit</span><b class="${net >= 0 ? 'pos' : 'neg'}">${net >= 0 ? '+' : '−'}${money(Math.abs(net))}</b></div>
         ${charityDue > 0 ? `<div><span>Owed to charity</span><b style="color:var(--warn)">${money(charityDue)}</b></div>` : ''}
       </div>
-      <div class="hint">True profit is this event's sales profit minus its booth/space cost${cardFees > 0 ? ' and card processing fees' : ''} — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>
+      <div class="hint">True profit is this event's sales profit minus its booth/space cost, any expenses logged for it,${cardFees > 0 ? ' and card processing fees' : ''} — use it when splitting proceeds among partners.${charityDue > 0 ? ' "Owed to charity" is already included in both profit figures above, not an extra deduction — it’s the share of that profit set aside to donate.' : ''}</div>
       ${charityRows.length ? `<div style="margin-top:12px"><h3 style="margin:0 0 6px;font-size:13px">Charity wrap-up</h3>${charityRows.map(r => `<div class="ev-charity-row"><span class="ev-charity-name">${esc(r.label)}</span><span class="ev-charity-pct">${money(r.amt)}</span></div>`).join('')}</div>` : ''}`;
     const itemRows = buildItemBreakdown(evSalesList);
     if (itemRows.length) {
@@ -2529,6 +2666,34 @@ function renderRptEvents() {
     box.appendChild(row);
   }
 }
+
+// Across-season view, not limited by the date-range selector above (same as the Events card)
+// — true profit per ended event, in the order they happened, so a maker can see which
+// recurring fairs are actually worth the booth fee.
+function renderRptEventTrend() {
+  const box = $('rptEventTrend');
+  const evs = events.filter(e => !e.test && e.status === 'ended').slice().sort((a, b) => (a.start || '').localeCompare(b.start || ''));
+  $('rptEventTrendEmpty').hidden = evs.length > 0; box.hidden = evs.length === 0;
+  if (!evs.length) { box.innerHTML = ''; return; }
+  const rows = evs.map(ev => {
+    const evSalesList = fullSales.filter(s => s.eventId === ev.id && !s.test);
+    const revenue = evSalesList.reduce((n, s) => n + num(s.total), 0);
+    const grossProfit = evSalesList.reduce((n, s) => n + num(s.profit), 0);
+    const cardFees = evSalesList.reduce((n, s) => n + num(s.cardFee), 0);
+    const cost = num(ev.cost) + num(ev.expensesTotal || 0);
+    return { name: ev.name || 'Event', date: ev.start, revenue, cost, net: grossProfit - cost - cardFees };
+  });
+  const max = Math.max(1, ...rows.map(r => Math.abs(r.net)));
+  box.innerHTML = rows.map(r => {
+    const h = Math.max(3, Math.round(Math.abs(r.net) / max * 130));
+    return `<div class="rpt-bar-col"><div class="rpt-bar-tip">${esc(r.name)}<br>${r.date ? new Date(r.date + 'T00:00:00').toLocaleDateString() : ''}<br>Revenue ${money(r.revenue)}<br>Cost ${money(r.cost)}<br>True profit ${money(r.net)}</div><div class="rpt-bar" style="height:${h}px;background:${r.net >= 0 ? 'var(--accent)' : 'var(--danger)'}"></div><div class="rpt-bar-label">${esc(r.name)}</div></div>`;
+  }).join('');
+}
+async function renderRptSubscribers() {
+  const subs = await api('GET', '/api/subscribers');
+  $('rptSubscriberStats').innerHTML = `<div class="stat-tile highlight"><div class="lbl">Subscribed</div><div class="val">${subs.length}</div></div>`;
+}
+$('rptSubscriberExport').onclick = () => { window.open('/api/subscribers/export', '_blank'); };
 
 // PDF export: the browser's own print-to-PDF, not a bundled PDF library — this app needs to
 // keep working fully offline on a standalone install, so it can't depend on a CDN script.
@@ -3501,6 +3666,27 @@ function renderReleaseNotes() {
 $('whatsNewLink').onclick = () => { renderReleaseNotes(); $('releaseNotesModal').hidden = false; };
 $('releaseNotesClose').onclick = () => { $('releaseNotesModal').hidden = true; };
 $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('releaseNotesModal')) $('releaseNotesModal').hidden = true; });
+
+// ---------- Help ----------
+// Keep this in sync with what the app actually does — update it in the same commit as any
+// release that changes a workflow, the same discipline server/release-notes.js already gets.
+const HELP_SECTIONS = [
+  { title: 'Calculator', body: 'Price an item from its materials, labor, and overhead, plus a markup/margin/multiplier. "Resale" items (bought ready-made) skip straight to a cost and sale price instead. Save an item here before it can be sold.' },
+  { title: 'Materials', body: 'Your material library — enter a price once and every item using it recalculates when the price changes. Keep stock here up to date for low-stock warnings.' },
+  { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event.' },
+  { title: 'Custom Orders', body: 'Made-to-order or custom pieces tracked from request to pickup (or shipment), separate from the regular catalog and event inventory. Its "Check out this order" button loads the order onto the Sell page ticket to ring up the actual sale.' },
+  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, separate from the regular catalog. Send inventory to a partner, then log a sale whenever they report one back — it tracks what’s still out and what’s owed to you after their commission. May not be included on every plan.' },
+  { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
+  { title: 'Events', body: 'Set up an event (space cost, dates, tax rates, item scope, a price adjustment) to track break-even live. Add expenses beyond the space cost, and charity-giving rules, from the event’s own edit panel. Draft events can be cloned for a recurring market.' },
+  { title: 'Reports', body: 'Revenue, profit, and tax over a date range; cost/profit by item and by salesperson; every event’s "true profit" and a trend of it over time; inventory value; voids and returns; and your mailing-list signups, exportable as a CSV.' },
+  { title: 'Settings', body: 'Admin-only: accounts and roles, branding, email alerts (used for receipt emails and the low-stock digest), card processors, tax presets, backups, and license status.' },
+];
+function renderHelp() {
+  $('helpList').innerHTML = HELP_SECTIONS.map(s => `<div class="rn-entry"><div class="rn-head"><b>${esc(s.title)}</b></div><p style="margin:4px 0 0">${esc(s.body)}</p></div>`).join('');
+}
+$('helpLink').onclick = () => { renderHelp(); $('helpModal').hidden = false; };
+$('helpClose').onclick = () => { $('helpModal').hidden = true; };
+$('helpModal').addEventListener('click', e => { if (e.target === $('helpModal')) $('helpModal').hidden = true; });
 
 // ---------- Image lightbox — click any item/material photo to see it bigger ----------
 function openImageLightbox(src) { $('imageLightboxImg').src = src; $('imageLightbox').hidden = false; }

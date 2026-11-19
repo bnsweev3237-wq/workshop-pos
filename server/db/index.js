@@ -94,6 +94,7 @@ ensureColumn('card_processors', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
 ensureColumn('custom_orders', 'sale_id', 'TEXT');
 ensureColumn('items', 'photo', 'TEXT');
 ensureColumn('materials', 'photo', 'TEXT');
+ensureColumn('sales', 'customer_email', 'TEXT');
 
 // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
 // unconditional (idempotent) statement to reach installs that already had a sales table before

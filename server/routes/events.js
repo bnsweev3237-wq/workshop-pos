@@ -8,6 +8,12 @@ const router = express.Router();
 const selectedItems = (eventId) => db.prepare('SELECT item_id, qty_brought FROM event_items WHERE event_id = ?').all(eventId)
   .map((r) => ({ itemId: r.item_id, qtyBrought: r.qty_brought }));
 
+// Additional to `cost` (which stays the booth/space-cost field it always was) — the sum of
+// this event's line-item expenses (server/routes/eventExpenses.js), so Reports' "true
+// profit" and the Sell page's event history can deduct cost + expensesTotal instead of
+// treating booth cost as the only expense.
+const expensesTotalStmt = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM event_expenses WHERE event_id = ?');
+
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,
   taxRate: r.tax_rate, cashTaxRate: r.cash_tax_rate, state: r.state || '', boothNumber: r.booth_number || '',
@@ -17,6 +23,7 @@ const toPublic = (r) => ({
   // Only worth the extra query when it actually matters — 'all' (the common case) doesn't
   // restrict anything, so the Sell page never needs this list for those events.
   selectedItems: r.item_scope === 'selected' ? selectedItems(r.id) : [],
+  expensesTotal: expensesTotalStmt.get(r.id).total,
   createdAt: r.created_at, endedAt: r.ended_at,
 });
 
@@ -153,6 +160,7 @@ router.delete('/:id', requireEventManage, (req, res) => {
   const tx = db.transaction(() => {
     db.prepare('DELETE FROM event_charity_rules WHERE event_id = ?').run(req.params.id);
     db.prepare('DELETE FROM event_items WHERE event_id = ?').run(req.params.id);
+    db.prepare('DELETE FROM event_expenses WHERE event_id = ?').run(req.params.id);
     db.prepare('UPDATE sales SET event_id = NULL WHERE event_id = ?').run(req.params.id);
     db.prepare('UPDATE voided_sales SET event_id = NULL WHERE event_id = ?').run(req.params.id);
     db.prepare('UPDATE returns SET event_id = NULL WHERE event_id = ?').run(req.params.id);

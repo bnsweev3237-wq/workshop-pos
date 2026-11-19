@@ -1,8 +1,10 @@
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db');
 const { uid } = require('../lib/ids');
 const { requireReports, requireLogin } = require('../middleware/auth');
-const { getBool } = require('../lib/settings');
+const { getBool, getSetting } = require('../lib/settings');
+const { sendMail } = require('../lib/mail');
 
 const router = express.Router();
 
@@ -194,13 +196,14 @@ router.post('/', requireLogin, (req, res) => {
   // for an ordinary online checkout, so there's no way to otherwise backdate a sale's figures
   // into a different reporting window.
   const createdAt = clientSaleId && Number(b.createdAt) > 0 ? Number(b.createdAt) : Date.now();
+  const customerEmail = typeof b.customerEmail === 'string' ? b.customerEmail.trim() : '';
   const row = {
     id: uid(), event_id: b.eventId || null, test: test ? 1 : 0, tax_included: included ? 1 : 0,
     lines_json: JSON.stringify(finalLines),
     subtotal, tax, total, tender: b.tender || 'cash', received, change, profit, charity_due: charityDue,
     card_processor: cardProcessorName, card_fee: cardFee,
     user_id: trackAttribution ? req.user.id : null, user_name: trackAttribution ? req.user.name : null,
-    client_sale_id: clientSaleId, created_at: createdAt,
+    client_sale_id: clientSaleId, customer_email: customerEmail || null, created_at: createdAt,
   };
 
   let saleId = row.id;
@@ -213,8 +216,8 @@ router.post('/', requireLogin, (req, res) => {
       if (raced) { saleId = raced.id; return; }
     }
     db.prepare(`
-      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, card_processor, card_fee, user_id, user_name, client_sale_id, created_at)
-      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @card_processor, @card_fee, @user_id, @user_name, @client_sale_id, @created_at)
+      INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, card_processor, card_fee, user_id, user_name, client_sale_id, customer_email, created_at)
+      VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @card_processor, @card_fee, @user_id, @user_name, @client_sale_id, @customer_email, @created_at)
     `).run(row);
     for (const c of stockChanges) {
       db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);
@@ -235,8 +238,45 @@ router.post('/', requireLogin, (req, res) => {
   });
   tx();
 
-  res.json(toPublicSale(db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId)));
+  const saved = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
+  // Best-effort: an unconfigured or failing mail server never fails the checkout that just
+  // succeeded. Not awaited into the response — the receipt lands a moment after "Sale
+  // complete" rather than holding up the register.
+  if (customerEmail && !test) emailReceipt(req, saved, customerEmail).catch(() => {});
+  res.json(toPublicSale(saved));
 });
+
+// Sends the receipt (via the shop's own configured SMTP — server/lib/mail.js, Settings →
+// Email alerts) and, separately, a one-click opt-in link for the maker's own mailing list —
+// never silently adding anyone. A subscriber row starts 'pending' and only becomes
+// 'confirmed' if the link is actually clicked (see server/routes/subscribers.js).
+async function emailReceipt(req, sale, email) {
+  const business = getSetting('brandingName', '') || 'Craftium';
+  const lines = JSON.parse(sale.lines_json);
+  const itemRows = lines.map((l) => `<tr><td>${l.qty} × ${escapeHtml(l.name)}</td><td style="text-align:right">$${(Number(l.price) * Number(l.qty)).toFixed(2)}</td></tr>`).join('');
+
+  let existing = db.prepare('SELECT * FROM subscribers WHERE email = ? COLLATE NOCASE').get(email);
+  if (!existing) {
+    existing = {
+      id: uid(), email, status: 'pending', source_sale_id: sale.id,
+      confirm_token: crypto.randomBytes(24).toString('hex'), created_at: Date.now(), confirmed_at: null,
+    };
+    db.prepare(`
+      INSERT INTO subscribers (id, email, status, source_sale_id, confirm_token, created_at, confirmed_at)
+      VALUES (@id, @email, @status, @source_sale_id, @confirm_token, @created_at, @confirmed_at)
+    `).run(existing);
+  }
+  const base = `${req.protocol}://${req.get('host')}`;
+  const optInHtml = existing.status === 'confirmed' ? '' : `<p><a href="${base}/api/subscribers/confirm/${existing.confirm_token}">Want updates on upcoming fairs and new items from ${escapeHtml(business)}? Click here to stay posted.</a></p>`;
+
+  await sendMail({
+    to: email,
+    subject: `Your receipt from ${business}`,
+    html: `<h2>Thanks for your purchase!</h2><table>${itemRows}</table><p><b>Total: $${Number(sale.total).toFixed(2)}</b></p>${optInHtml}`,
+    text: `Thanks for your purchase from ${business}! Total: $${Number(sale.total).toFixed(2)}`,
+  });
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 // Void a sale (Sell page), restoring stock atomically.
 router.delete('/:id', requireLogin, (req, res) => {

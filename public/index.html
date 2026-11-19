@@ -41,6 +41,7 @@
     <button data-tab="lib">Materials <span class="count" id="libCount"></span></button>
     <button data-tab="items">Items <span class="count" id="itemCount"></span></button>
     <button data-tab="orders">Custom Orders <span class="count" id="ordersCount"></span></button>
+    <button data-tab="consignment">Consignment</button>
     <button data-tab="reports">Reports</button>
     <button data-tab="settings">Settings</button>
   </nav>
@@ -428,6 +429,16 @@
           <span>Apply to all sales at this event <small style="color:var(--muted);font-weight:400">(ignores the category above)</small></span>
         </label>
       </div>
+      <div id="evExpensesSection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
+        <label style="margin-bottom:6px">Expenses</label>
+        <div class="hint" style="margin-top:-2px;margin-bottom:10px">Beyond the space cost above — travel, table rental, supplies. Added into "true profit" in Reports, alongside booth cost and any card processing fees.</div>
+        <div id="evExpensesList"></div>
+        <div class="row r2" style="margin-top:8px">
+          <div><label for="evExpenseLabel">What for</label><input id="evExpenseLabel" placeholder="e.g. Travel"></div>
+          <div><label for="evExpenseAmount">Amount ($)</label><input id="evExpenseAmount" type="number" min="0" step="0.01"></div>
+        </div>
+        <div class="btn-row"><button class="btn sm" id="evExpenseAdd">+ Add expense</button></div>
+      </div>
       <div id="evItemsSection" hidden style="margin-top:16px;padding-top:14px;border-top:1px solid var(--line)">
         <label style="margin-bottom:6px">Items available at this event</label>
         <div class="hint" style="margin-top:-2px;margin-bottom:10px">By default every item in your catalog can be sold at this event. Restrict it to a chosen few if you're only bringing a subset — e.g. a smaller pop-up or a themed table.</div>
@@ -539,6 +550,7 @@
             <label for="cardProcessor">Card processor</label>
             <select id="cardProcessor"></select>
           </div>
+          <div style="margin-top:12px"><label for="posCustomerEmail">Email a receipt (optional)</label><input id="posCustomerEmail" type="email" placeholder="customer@example.com" autocomplete="off"></div>
 
           <div class="btn-row">
             <button class="btn primary" id="checkout">Complete sale</button>
@@ -553,6 +565,22 @@
       <span id="mobileCartTotal">$0.00</span>
       <span class="chev">▲</span>
     </button>
+  </section>
+
+  <!-- ===== Consignment ===== -->
+  <section id="tab-consignment" hidden>
+    <div class="card">
+      <h2>New consignment partner</h2>
+      <div class="help">Inventory placed with a shop or gallery — separate from the regular catalog. Consignment sales aren't rung up live; log one whenever the shop reports it back.</div>
+      <div class="row r3">
+        <div><label for="cnPartnerName">Shop / gallery name</label><input id="cnPartnerName" placeholder="e.g. Maple St Gallery"></div>
+        <div><label for="cnPartnerContact">Contact (optional)</label><input id="cnPartnerContact" placeholder="email or phone"></div>
+        <div><label for="cnPartnerPct">Their commission (%)</label><input id="cnPartnerPct" type="number" min="0" max="100" step="1"></div>
+      </div>
+      <div class="btn-row"><button class="btn primary sm" id="cnPartnerAdd">+ Add partner</button></div>
+    </div>
+    <div id="cnPartnerList"></div>
+    <div class="empty" id="cnPartnerEmpty" hidden>No consignment partners yet.</div>
   </section>
 
   <!-- ===== Reports ===== -->
@@ -610,6 +638,12 @@
             <h2>By card processor</h2>
             <div class="stat-grid" id="rptCardProcessors"></div>
           </div>
+          <div class="card">
+            <h2>Mailing list</h2>
+            <div class="hint" style="margin-top:-8px;margin-bottom:4px">Customers who asked to hear about future fairs and new items, from the opt-in link on their receipt email. Your list, not Craftium's.</div>
+            <div class="stat-grid" id="rptSubscriberStats" style="margin-bottom:10px"></div>
+            <button class="btn sm" id="rptSubscriberExport">⤓ Export list (CSV)</button>
+          </div>
         </aside>
       </div>
     </div>
@@ -641,9 +675,15 @@
     <div id="rpt-tab-events" hidden>
       <div class="card">
         <h2>Events</h2>
-        <div class="hint" style="margin-top:-8px;margin-bottom:4px">Every event you've run, with "true profit" after deducting booth/space cost — useful when splitting proceeds among partners. Not limited by the date range above.</div>
+        <div class="hint" style="margin-top:-8px;margin-bottom:4px">Every event you've run, with "true profit" after deducting booth/space cost, any expenses logged for it, and card processing fees — useful when splitting proceeds among partners. Not limited by the date range above.</div>
         <div id="rptEventsList"></div>
         <div class="empty" id="rptEventsEmpty" hidden>No events yet.</div>
+      </div>
+      <div class="card">
+        <h2>Event trend</h2>
+        <div class="hint" style="margin-top:-8px;margin-bottom:4px">True profit per event over time — which recurring fairs are actually worth the booth fee. Not limited by the date range above.</div>
+        <div class="rpt-chart" id="rptEventTrend"></div>
+        <div class="empty" id="rptEventTrendEmpty" hidden>No ended events yet.</div>
       </div>
     </div>
 
@@ -951,7 +991,7 @@
   <footer class="app-footer">
     <span class="craftium-credit"><img src="/icons/icon-192.png" alt=""><span>Craftium</span></span>
     · © <span id="footYear"></span> · standalone edition
-    · <span id="appVersion"></span> · <button class="link" id="whatsNewLink">What's new</button>
+    · <span id="appVersion"></span> · <button class="link" id="helpLink">Help</button> · <button class="link" id="whatsNewLink">What's new</button>
   </footer>
 
   <div class="modal" id="releaseNotesModal" hidden>
@@ -961,6 +1001,16 @@
         <button class="icon-btn" id="releaseNotesClose" title="Close">×</button>
       </div>
       <div id="releaseNotesList" style="max-height:60vh;overflow-y:auto"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="helpModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" style="max-width:560px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <h2 style="margin:0">Help</h2>
+        <button class="icon-btn" id="helpClose" title="Close">×</button>
+      </div>
+      <div id="helpList" style="max-height:65vh;overflow-y:auto"></div>
     </div>
   </div>
 

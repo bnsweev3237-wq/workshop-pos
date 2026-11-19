@@ -1,6 +1,8 @@
 // Hand-maintained changelog shown in the app's "What's new" viewer. Add a new entry at the
 // top each time package.json's version is bumped — keep it short, user-facing language,
 // what changed and why it matters to someone running the shop, not commit-message detail.
+// If the release changes how a workflow works, also update HELP_SECTIONS in public/app.js
+// (the in-app Help menu) in the same commit — it's a separate, hand-maintained list too.
 //
 // Versioning standard (semver — bump package.json's version to match):
 //   - PATCH (x.y.Z+1): bug fixes, copy/polish tweaks only — nothing a user would call a new
@@ -12,6 +14,17 @@
 //     an incompatible data format) or a deliberate milestone — never bumped without calling
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
+  {
+    version: '1.15.0',
+    date: '2026-11-19',
+    notes: [
+      'Sell: optionally email a receipt at checkout — the customer also gets a one-click link to opt into hearing about future fairs and new items, added to your own mailing list (exportable from Reports → Mailing list). Sent through whatever SMTP server is set up under Settings → Email alerts.',
+      'Added consignment tracking (new Consignment tab): track inventory placed with a shop or gallery and what\'s owed back after their commission, from a periodic sold-log you fill in as the shop reports sales. May not be included on every plan.',
+      'Events can now log expenses beyond the space cost (travel, table rental, supplies) from the event\'s own edit panel — "true profit" in Reports and the Sell page\'s event history include them alongside booth cost and card processing fees.',
+      'Reports → Events: added an event-trend chart showing true profit per event over time, so it\'s easy to see which recurring fairs are actually worth the booth fee.',
+      'Added an in-app Help menu in the footer, next to What\'s new.',
+    ],
+  },
   {
     version: '1.14.4',
     date: '2026-10-31',
