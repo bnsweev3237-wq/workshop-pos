@@ -76,7 +76,10 @@ function createApp() {
   app.use('/api/custom-orders', require('./routes/customOrders'));
   app.use('/api/items', require('./routes/items'));
   app.use('/api/events', require('./routes/events'));
+  app.use('/api/event-expenses', require('./routes/eventExpenses'));
   app.use('/api/sales', require('./routes/sales'));
+  app.use('/api/subscribers', require('./routes/subscribers'));
+  app.use('/api/consignment', require('./routes/consignment'));
   app.use('/api/charity-rules', require('./routes/charityRules'));
   app.use('/api/maintenance', require('./routes/maintenance'));
   app.use('/api/test-data', require('./routes/testData'));

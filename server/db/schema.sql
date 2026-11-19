@@ -310,6 +310,64 @@ CREATE TABLE IF NOT EXISTS returns (
 CREATE INDEX IF NOT EXISTS idx_returns_sale ON returns(sale_id);
 CREATE INDEX IF NOT EXISTS idx_returns_created ON returns(created_at);
 
+-- A customer's opt-in to hear about future fairs/new items — never added silently. A row is
+-- created 'pending' the moment someone gives an email at checkout (server/routes/sales.js),
+-- and only becomes 'confirmed' if they click the opt-in link in their receipt email.
+-- source_sale_id is kept for context, not read anywhere else.
+CREATE TABLE IF NOT EXISTS subscribers (
+  id TEXT PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  status TEXT NOT NULL DEFAULT 'pending',
+  source_sale_id TEXT REFERENCES sales(id),
+  confirm_token TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  confirmed_at INTEGER
+);
+
+-- Line-item expenses for an event, additive to events.cost (which stays the booth/space cost
+-- field it already was) — travel, table rental, supplies, etc. Reports' "true profit" sums
+-- these in alongside events.cost and card processing fees.
+CREATE TABLE IF NOT EXISTS event_expenses (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id),
+  label TEXT NOT NULL DEFAULT '',
+  amount REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+-- Consignment: an ongoing relationship with a shop/gallery, not a dated event. A partner's
+-- inventory (what's been sent) and its sold log (what the shop reports back, periodically —
+-- consignment sales aren't rung up live) are separate tables so "what's still out" is just
+-- qty_sent minus qty_sold. Gated server-side by requireFeature('consignment') (see
+-- server/lib/license.js) — default-allowed today since no tier restricts it yet, same as
+-- every other feature flag before any tier exists to turn one off.
+CREATE TABLE IF NOT EXISTS consignment_partners (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL DEFAULT '',
+  contact TEXT,
+  commission_pct REAL NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS consignment_items (
+  id TEXT PRIMARY KEY,
+  partner_id TEXT NOT NULL REFERENCES consignment_partners(id),
+  item_id TEXT REFERENCES items(id),
+  name TEXT NOT NULL DEFAULT '',
+  qty_sent INTEGER NOT NULL DEFAULT 0,
+  qty_sold INTEGER NOT NULL DEFAULT 0,
+  date_sent INTEGER NOT NULL,
+  notes TEXT
+);
+CREATE TABLE IF NOT EXISTS consignment_sales (
+  id TEXT PRIMARY KEY,
+  partner_id TEXT NOT NULL REFERENCES consignment_partners(id),
+  consignment_item_id TEXT NOT NULL REFERENCES consignment_items(id),
+  qty INTEGER NOT NULL DEFAULT 1,
+  sale_price REAL NOT NULL DEFAULT 0,
+  date_reported INTEGER NOT NULL,
+  notes TEXT
+);
+
 -- Small key/value store for app-wide preferences that don't warrant their own table.
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
