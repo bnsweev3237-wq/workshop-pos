@@ -1,4 +1,5 @@
 const { getSetting, setSetting } = require('./settings');
+const { isMultiTenant } = require('../mode');
 
 // Groundwork for a future licensing/tiers system — see licensing/README.md for the server
 // side of this. Deliberately inert today: with no key (and/or no LICENSE_SERVER_URL)
@@ -6,6 +7,14 @@ const { getSetting, setSetting } = require('./settings');
 // of this existed. Nothing in the shipped app calls hasFeature()/checkUsageCap() yet — no
 // tiers have been decided — but the plumbing (phone-home, caching, grace period, the
 // middleware) is real and ready for routes to start using once they do.
+//
+// This whole phone-home scheme is for SELF-HOSTED installs checking in with the vendor's own
+// licensing/ service (a separate thing the vendor runs, not shipped to customers). In
+// multi-tenant mode there's nothing to phone home for — the tenant and its plan both already
+// live in this same process's control-plane database — so getLicenseStatus() takes a
+// completely different, synchronous path below. hasFeature()/checkUsageCap()/requireFeature()
+// are unchanged either way: every call site (e.g. requireFeature('consignment') in
+// routes/consignment.js) keeps working without modification.
 const LICENSE_SERVER_URL = process.env.LICENSE_SERVER_URL || '';
 const GRACE_MS = 30 * 24 * 60 * 60 * 1000; // how long a cached license stays valid with no successful recheck
 const CHECK_TIMEOUT_MS = 10_000;
@@ -36,10 +45,36 @@ function getCachedResult() {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
+// Multi-tenant mode's entitlement source: the current request's tenant (resolved from
+// AsyncLocalStorage, the same context the db Proxy reads — see server/tenancy/context.js and
+// server/db/index.js), read fresh from the control db on every call so an operator's plan
+// change (scripts/tenant-admin.js set-plan) takes effect on the very next request, no caching
+// or re-check needed. Shaped to match the self-hosted path's return value exactly, so every
+// caller (hasFeature, checkUsageCap, the Settings UI) works unmodified either way.
+function getMultiTenantLicenseStatus() {
+  const { tenantContext } = require('../tenancy/context');
+  const store = tenantContext.getStore();
+  if (!store) {
+    // No tenant context (e.g. a background job not run through pool.withTenant, or the
+    // platform host) — nothing to be entitled to; default-deny rather than default-allow,
+    // since "no tenant" is never a legitimate state to grant tenant-scoped features in.
+    return { configured: true, status: 'no_tenant', tier: '', featureFlags: {}, usageCaps: {}, licensedTo: '', checkedAt: Date.now(), lastGoodAt: Date.now(), degraded: true };
+  }
+  const { getTenantById } = require('../control/db');
+  const { resolveEntitlements } = require('./plans');
+  const tenant = getTenantById(store.tenantId);
+  if (!tenant || tenant.status !== 'active') {
+    return { configured: true, status: tenant ? tenant.status : 'unknown', tier: '', featureFlags: {}, usageCaps: {}, licensedTo: '', checkedAt: Date.now(), lastGoodAt: Date.now(), degraded: true };
+  }
+  const { featureFlags, usageCaps } = resolveEntitlements(tenant);
+  return { configured: true, status: 'active', tier: tenant.plan, featureFlags, usageCaps, licensedTo: tenant.business_name, checkedAt: Date.now(), lastGoodAt: Date.now(), degraded: false };
+}
+
 // The one function routes/UI actually read. Normalizes "no key", "never checked yet", "a
 // cached result that's aged past the grace window", etc. into one shape so callers don't
 // each have to reconstruct this logic.
 function getLicenseStatus() {
+  if (isMultiTenant) return getMultiTenantLicenseStatus();
   const key = getLicenseKey();
   if (!key) {
     return { configured: false, status: 'unlicensed', tier: '', featureFlags: {}, usageCaps: {}, licensedTo: '', checkedAt: null, lastGoodAt: null, degraded: false };
@@ -58,6 +93,7 @@ function getLicenseStatus() {
 // successfully even when there's nothing to check (no key, or no server configured) since
 // that's this app's normal, supported state today, not a failure.
 async function checkLicense() {
+  if (isMultiTenant) return getLicenseStatus(); // nothing to phone home for — see getMultiTenantLicenseStatus above
   const key = getLicenseKey();
   if (!key) return getLicenseStatus();
   if (!LICENSE_SERVER_URL) return getLicenseStatus();
