@@ -11,8 +11,11 @@ const selectedItems = (eventId) => db.prepare('SELECT item_id, qty_brought FROM 
 // Additional to `cost` (which stays the booth/space-cost field it always was) — the sum of
 // this event's line-item expenses (server/routes/eventExpenses.js), so Reports' "true
 // profit" and the Sell page's event history can deduct cost + expensesTotal instead of
-// treating booth cost as the only expense.
-const expensesTotalStmt = db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM event_expenses WHERE event_id = ?');
+// treating booth cost as the only expense. Prepared fresh on each call, not cached at module
+// scope — in multi-tenant mode `db` resolves to a different connection per request, and a
+// Statement prepared once would stay bound to whichever one happened to be active at import
+// time (see server/db/index.js).
+const expensesTotal = (eventId) => db.prepare('SELECT COALESCE(SUM(amount), 0) AS total FROM event_expenses WHERE event_id = ?').get(eventId).total;
 
 const toPublic = (r) => ({
   id: r.id, name: r.name, start: r.start, days: r.days, cost: r.cost, status: r.status,
@@ -23,7 +26,7 @@ const toPublic = (r) => ({
   // Only worth the extra query when it actually matters — 'all' (the common case) doesn't
   // restrict anything, so the Sell page never needs this list for those events.
   selectedItems: r.item_scope === 'selected' ? selectedItems(r.id) : [],
-  expensesTotal: expensesTotalStmt.get(r.id).total,
+  expensesTotal: expensesTotal(r.id),
   createdAt: r.created_at, endedAt: r.ended_at,
 });
 

@@ -5,23 +5,31 @@ const db = require('../db');
 // Lives next to the live database, in the same data directory (so it follows WORKSHOP_DATA_DIR
 // overrides automatically) rather than inside the app's own folder, which a re-deploy (git pull,
 // a fresh Electron install) could wipe or replace.
-const BACKUP_DIR = path.join(path.dirname(db.name), 'backups');
+//
+// Computed fresh on each call, not cached at module scope — in multi-tenant mode `db` resolves
+// to a different connection per request (see server/db/index.js), so `db.name` has to be read
+// inside an active tenant context, not once at require() time.
+function backupDir() {
+  return path.join(path.dirname(db.name), 'backups');
+}
 const KEEP = 5;
 
 function listBackups() {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
-  return fs.readdirSync(BACKUP_DIR)
+  const dir = backupDir();
+  fs.mkdirSync(dir, { recursive: true });
+  return fs.readdirSync(dir)
     .filter((f) => f.endsWith('.db'))
     .map((f) => {
-      const stat = fs.statSync(path.join(BACKUP_DIR, f));
+      const stat = fs.statSync(path.join(dir, f));
       return { file: f, size: stat.size, createdAt: stat.mtimeMs };
     })
     .sort((a, b) => b.createdAt - a.createdAt);
 }
 
 function pruneOldBackups() {
+  const dir = backupDir();
   for (const b of listBackups().slice(KEEP)) {
-    try { fs.unlinkSync(path.join(BACKUP_DIR, b.file)); } catch {}
+    try { fs.unlinkSync(path.join(dir, b.file)); } catch {}
   }
 }
 
@@ -29,10 +37,11 @@ function pruneOldBackups() {
 // backup, for an admin who's short on disk space and wants it back now rather than waiting
 // for backups to age past the keep-5 window on their own.
 function clearOldBackups() {
+  const dir = backupDir();
   const all = listBackups();
   let freedBytes = 0, removed = 0;
   for (const b of all.slice(1)) {
-    try { fs.unlinkSync(path.join(BACKUP_DIR, b.file)); freedBytes += b.size; removed++; } catch {}
+    try { fs.unlinkSync(path.join(dir, b.file)); freedBytes += b.size; removed++; } catch {}
   }
   return { removed, freedBytes };
 }
@@ -41,9 +50,10 @@ function clearOldBackups() {
 // the file directly — safe to run while the database is live and being written to (WAL mode),
 // which a plain file copy isn't guaranteed to be consistent under.
 async function runBackup() {
-  fs.mkdirSync(BACKUP_DIR, { recursive: true });
+  const dir = backupDir();
+  fs.mkdirSync(dir, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const dest = path.join(BACKUP_DIR, `craftium-${stamp}.db`);
+  const dest = path.join(dir, `craftium-${stamp}.db`);
   try {
     await db.backup(dest);
   } catch (err) {
@@ -89,7 +99,7 @@ function finishRestore(match) {
   for (const suffix of ['-wal', '-shm']) {
     try { fs.unlinkSync(dbPath + suffix); } catch {}
   }
-  fs.copyFileSync(path.join(BACKUP_DIR, match.file), dbPath);
+  fs.copyFileSync(path.join(backupDir(), match.file), dbPath);
 }
 
 // Runs once a day. On startup, backs up immediately only if the most recent backup is more
@@ -106,4 +116,4 @@ function scheduleDailyBackups() {
   }, delay);
 }
 
-module.exports = { runBackup, beginRestore, finishRestore, listBackups, pruneOldBackups, clearOldBackups, scheduleDailyBackups, BACKUP_DIR, KEEP };
+module.exports = { runBackup, beginRestore, finishRestore, listBackups, pruneOldBackups, clearOldBackups, scheduleDailyBackups, backupDir, KEEP };

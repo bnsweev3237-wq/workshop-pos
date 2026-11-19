@@ -3452,9 +3452,13 @@ async function loadServerBackups() {
   const tb = $('backupRows'); tb.innerHTML = '';
   for (const b of backups) {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td></td><td>${formatBytes(b.size)}</td><td class="acts"><a class="btn sm" href="/api/maintenance/backups/${encodeURIComponent(b.file)}/download">Download</a><button class="btn sm danger restore-backup">Restore</button></td>`;
+    // Restore is disabled outright in multi-tenant mode (server/routes/maintenance.js) — a
+    // tenant admin downloads a backup and contacts support instead of restoring in place.
+    const restoreBtn = appMode === 'multi-tenant' ? '' : '<button class="btn sm danger restore-backup">Restore</button>';
+    tr.innerHTML = `<td></td><td>${formatBytes(b.size)}</td><td class="acts"><a class="btn sm" href="/api/maintenance/backups/${encodeURIComponent(b.file)}/download">Download</a>${restoreBtn}</td>`;
     tr.querySelector('td').textContent = new Date(b.createdAt).toLocaleString();
-    tr.querySelector('.restore-backup').onclick = () => restoreBackup(b);
+    const restoreEl = tr.querySelector('.restore-backup');
+    if (restoreEl) restoreEl.onclick = () => restoreBackup(b);
     tb.appendChild(tr);
   }
   $('backupsEmpty').hidden = backups.length > 0;
@@ -3484,11 +3488,19 @@ $('backupNowBtn').onclick = async () => {
 async function loadDiskUsage() {
   try {
     const d = await api('GET', '/api/maintenance/disk');
-    const pct = d.total > 0 ? Math.min(100, Math.round((d.used / d.total) * 100)) : 0;
-    const fill = $('diskGaugeFill');
-    fill.style.width = pct + '%';
-    fill.className = 'disk-gauge-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
-    $('diskStatusLine').textContent = `${formatBytes(d.used)} used of ${formatBytes(d.total)} (${pct}%) — ${formatBytes(d.free)} free`;
+    // Multi-tenant mode's /api/maintenance/disk omits total/used/free — host-wide numbers
+    // would both leak infra info and not mean what a tenant admin would assume ("my disk").
+    const hasHostWide = typeof d.total === 'number';
+    $('diskGaugeFill').closest('.disk-gauge').hidden = !hasHostWide;
+    if (hasHostWide) {
+      const pct = d.total > 0 ? Math.min(100, Math.round((d.used / d.total) * 100)) : 0;
+      const fill = $('diskGaugeFill');
+      fill.style.width = pct + '%';
+      fill.className = 'disk-gauge-fill' + (pct >= 90 ? ' danger' : pct >= 70 ? ' warn' : '');
+      $('diskStatusLine').textContent = `${formatBytes(d.used)} used of ${formatBytes(d.total)} (${pct}%) — ${formatBytes(d.free)} free`;
+    } else {
+      $('diskStatusLine').textContent = '';
+    }
     $('diskBreakdownLine').textContent = `Craftium's own data: database ${formatBytes(d.dbBytes)} (of which ${formatBytes(d.photoBytes)} is item/material photos), backups ${formatBytes(d.backupBytes)}`;
   } catch (e) {
     $('diskStatusLine').textContent = 'Could not check disk space.';
@@ -3651,10 +3663,20 @@ function toast(msg) { $('toast').textContent = msg; $('toast').classList.add('sh
 
 // ---------- Version / release notes ----------
 let releaseNotes = [];
+// Set from /api/meta/version at boot. Hides UI that's meaningless or unavailable on a hosted
+// multi-tenant tenant — self-update and restore are an operator's job for the whole platform,
+// not one tenant's; license key entry doesn't exist (plan is assigned by the operator) — see
+// server/mode.js and server/lib/license.js.
+let appMode = 'single-tenant';
 async function loadVersionInfo() {
-  const { version, releaseNotes: notes } = await api('GET', '/api/meta/version');
+  const { version, releaseNotes: notes, mode } = await api('GET', '/api/meta/version');
   releaseNotes = notes;
+  appMode = mode || 'single-tenant';
   $('appVersion').textContent = `v${version}`;
+  if (appMode === 'multi-tenant') {
+    $('licenseCard').hidden = true;
+    $('updateCard').hidden = true;
+  }
 }
 function renderReleaseNotes() {
   $('releaseNotesList').innerHTML = releaseNotes.map(r => `

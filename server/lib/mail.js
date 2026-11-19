@@ -1,5 +1,6 @@
 const nodemailer = require('nodemailer');
 const { getSetting, setSetting, getBool, setBool } = require('./settings');
+const { isMultiTenant } = require('../mode');
 
 // All email-related config lives in the generic settings k/v table, same as branding/the
 // default card processor — this is the one place it's actually assembled/used. The SMTP
@@ -7,7 +8,35 @@ const { getSetting, setSetting, getBool, setBool } = require('./settings');
 // encryption-at-rest for anything, including user data already in the database), but it's
 // never read back out through the API — getMailConfig below only ever reports whether one is
 // set, not its value, so the Settings page can show "unchanged" instead of re-displaying it.
+//
+// Multi-tenant mode is different on purpose: the SMTP host/port/credentials come from the
+// platform's own environment variables, never from a tenant's own settings. Letting a tenant
+// point the shared server at an arbitrary SMTP host would be a server-side request forgery
+// surface (the platform process making outbound connections to wherever a tenant names,
+// including internal/private addresses) — the same class of risk server/lib/priceFetch.js
+// already guards against for "Check price" requests. A tenant still chooses its own `from`
+// name/address and alert recipient; it just can't choose where the mail actually routes through.
+function platformSmtpConfig() {
+  return {
+    host: process.env.CRAFTIUM_SMTP_HOST || '',
+    port: Number(process.env.CRAFTIUM_SMTP_PORT) || 587,
+    secure: process.env.CRAFTIUM_SMTP_SECURE === 'true',
+    user: process.env.CRAFTIUM_SMTP_USER || '',
+    pass: process.env.CRAFTIUM_SMTP_PASS || '',
+  };
+}
+
 function getMailConfig() {
+  if (isMultiTenant) {
+    const platform = platformSmtpConfig();
+    return {
+      host: platform.host, port: platform.port, secure: platform.secure, user: platform.user,
+      hasPassword: !!platform.pass, platformManaged: true,
+      from: getSetting('mailFrom', ''),
+      alertRecipient: getSetting('mailAlertRecipient', ''),
+      lowStockEnabled: getBool('mailLowStockEnabled', false),
+    };
+  }
   return {
     host: getSetting('mailSmtpHost', ''),
     port: Number(getSetting('mailSmtpPort', '587')) || 587,
@@ -23,12 +52,17 @@ function getMailConfig() {
 // `password` is only ever written when it's a non-empty string — omitting it (or sending '')
 // from the client leaves whatever's already stored untouched, so updating the other fields
 // never requires re-typing a password that's already working.
+//
+// In multi-tenant mode, host/port/secure/user/password are silently ignored — see
+// platformSmtpConfig() above for why a tenant never gets to choose the SMTP host.
 function setMailConfig(b) {
-  if (typeof b.host === 'string') setSetting('mailSmtpHost', b.host.trim());
-  if (b.port !== undefined && b.port !== '') setSetting('mailSmtpPort', String(Number(b.port) || 587));
-  if (typeof b.secure === 'boolean') setBool('mailSmtpSecure', b.secure);
-  if (typeof b.user === 'string') setSetting('mailSmtpUser', b.user.trim());
-  if (typeof b.password === 'string' && b.password !== '') setSetting('mailSmtpPass', b.password);
+  if (!isMultiTenant) {
+    if (typeof b.host === 'string') setSetting('mailSmtpHost', b.host.trim());
+    if (b.port !== undefined && b.port !== '') setSetting('mailSmtpPort', String(Number(b.port) || 587));
+    if (typeof b.secure === 'boolean') setBool('mailSmtpSecure', b.secure);
+    if (typeof b.user === 'string') setSetting('mailSmtpUser', b.user.trim());
+    if (typeof b.password === 'string' && b.password !== '') setSetting('mailSmtpPass', b.password);
+  }
   if (typeof b.from === 'string') setSetting('mailFrom', b.from.trim());
   if (typeof b.alertRecipient === 'string') setSetting('mailAlertRecipient', b.alertRecipient.trim());
   if (typeof b.lowStockEnabled === 'boolean') setBool('mailLowStockEnabled', b.lowStockEnabled);
@@ -41,11 +75,12 @@ function isMailConfigured() {
 }
 
 function buildTransport() {
-  const host = getSetting('mailSmtpHost', '');
-  const port = Number(getSetting('mailSmtpPort', '587')) || 587;
-  const secure = getBool('mailSmtpSecure', false);
-  const user = getSetting('mailSmtpUser', '');
-  const pass = getSetting('mailSmtpPass', '');
+  const platform = isMultiTenant ? platformSmtpConfig() : null;
+  const host = platform ? platform.host : getSetting('mailSmtpHost', '');
+  const port = platform ? platform.port : (Number(getSetting('mailSmtpPort', '587')) || 587);
+  const secure = platform ? platform.secure : getBool('mailSmtpSecure', false);
+  const user = platform ? platform.user : getSetting('mailSmtpUser', '');
+  const pass = platform ? platform.pass : getSetting('mailSmtpPass', '');
   // No TLS override — nodemailer's own default (reject an invalid/self-signed certificate)
   // stays on. Most installs point this at a real provider (Gmail, Office365, a transactional
   // SMTP relay) with a properly-signed cert, where that default is exactly what you want; a

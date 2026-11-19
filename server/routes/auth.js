@@ -2,8 +2,9 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const rateLimit = require('express-rate-limit');
 const db = require('../db');
-const { uid } = require('../lib/ids');
 const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
+const { createUserRow } = require('../lib/users');
+const { isMultiTenant } = require('../mode');
 
 const router = express.Router();
 
@@ -22,30 +23,49 @@ const toPublic = (row) => ({ id: row.id, name: row.name, username: row.username,
 
 // Whether any account exists yet — a fresh install has none, so the very first account is
 // created through a one-time "setup" flow instead of a normal login, and is always an admin
-// (someone has to be able to add everyone else from Settings).
+// (someone has to be able to add everyone else from Settings). In multi-tenant mode there is
+// no first-run concept per tenant at all — signup (server/routes/platform.js) always creates
+// the first admin as part of provisioning a tenant, so needsSetup is always false there and
+// /setup below is disabled outright.
 router.get('/status', (req, res) => {
-  const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
-  const loggedIn = !!(req.session && req.session.userId);
+  const needsSetup = isMultiTenant ? false : db.prepare('SELECT COUNT(*) AS n FROM users').get().n === 0;
+  const loggedIn = !req.sessionTenantMismatch && !!(req.session && req.session.userId);
   let me = null;
   if (loggedIn) {
     const row = db.prepare('SELECT * FROM users WHERE id = ?').get(req.session.userId);
     if (row) me = toPublic(row);
     else req.session.userId = null; // stale session pointing at a deleted user
   }
-  res.json({ needsSetup: count === 0, loggedIn: !!me, me });
+  res.json({ needsSetup, loggedIn: !!me, me });
 });
 
+// A session cookie issued before/after an id's login must stop pointing at whatever session
+// existed under the old id — regenerate() swaps the store's session id while keeping express-
+// session's in-memory req.session object (and whatever's already been set on it) intact, which
+// is what stops a session fixation attack (an attacker who got a victim to adopt a session id
+// before they logged in could otherwise reuse that same id to ride along as them afterward).
+function loginAs(req, userRow, cb) {
+  req.session.regenerate((err) => {
+    if (err) return cb(err);
+    req.session.userId = userRow.id;
+    if (req.tenant) req.session.tenantId = req.tenant.id;
+    cb(null);
+  });
+}
+
 router.post('/setup', (req, res) => {
+  if (isMultiTenant) return res.status(404).json({ error: 'not_found' });
   const count = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
   if (count > 0) return res.status(409).json({ error: 'already_set_up' });
   const { name, username, password } = req.body || {};
   if (!name || !username || !password || password.length < 8) {
     return res.status(400).json({ error: 'invalid_input', message: 'Name, username, and a password of at least 8 characters are required.' });
   }
-  const row = { id: uid(), name, username: username.trim(), password_hash: bcrypt.hashSync(password, 12), role: 'admin', created_at: Date.now() };
-  db.prepare('INSERT INTO users (id, name, username, password_hash, role, created_at) VALUES (@id, @name, @username, @password_hash, @role, @created_at)').run(row);
-  req.session.userId = row.id;
-  res.json({ ok: true, me: toPublic(row) });
+  const row = createUserRow(db, { name, username: username.trim(), password, role: 'admin' });
+  loginAs(req, row, (err) => {
+    if (err) return res.status(500).json({ error: 'session_error' });
+    res.json({ ok: true, me: toPublic(row) });
+  });
 });
 
 router.post('/login', loginLimiter, (req, res) => {
@@ -56,8 +76,10 @@ router.post('/login', loginLimiter, (req, res) => {
   if (!row || !bcrypt.compareSync(password, row.password_hash)) {
     return res.status(401).json({ error: 'invalid_credentials' });
   }
-  req.session.userId = row.id;
-  res.json({ ok: true, me: toPublic(row) });
+  loginAs(req, row, (err) => {
+    if (err) return res.status(500).json({ error: 'session_error' });
+    res.json({ ok: true, me: toPublic(row) });
+  });
 });
 
 router.post('/logout', (req, res) => {
@@ -92,10 +114,9 @@ router.post('/users', requireAdmin, (req, res) => {
   }
   const existing = db.prepare('SELECT 1 FROM users WHERE username = ?').get(username.trim());
   if (existing) return res.status(409).json({ error: 'username_taken' });
-  // must_change_password = 1: the admin picked this password, not the account's owner, so
+  // must_change_password: the admin picked this password, not the account's owner, so
   // they're forced to set their own the moment they first sign in with it.
-  const row = { id: uid(), name, username: username.trim(), password_hash: bcrypt.hashSync(password, 12), role, must_change_password: 1, created_at: Date.now() };
-  db.prepare('INSERT INTO users (id, name, username, password_hash, role, must_change_password, created_at) VALUES (@id, @name, @username, @password_hash, @role, @must_change_password, @created_at)').run(row);
+  const row = createUserRow(db, { name, username: username.trim(), password, role, mustChangePassword: true });
   res.json(toPublic(row));
 });
 

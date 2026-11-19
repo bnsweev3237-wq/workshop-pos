@@ -4,9 +4,10 @@ const fs = require('fs');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
 const { requireAdmin } = require('../middleware/auth');
-const { runBackup, beginRestore, finishRestore, listBackups, clearOldBackups, BACKUP_DIR, KEEP } = require('../lib/backup');
+const { runBackup, beginRestore, finishRestore, listBackups, clearOldBackups, backupDir, KEEP } = require('../lib/backup');
 const { getDiskUsage } = require('../lib/diskUsage');
 const { photoBytes, purgeAllPhotos } = require('../lib/photos');
+const { isMultiTenant } = require('../mode');
 
 const router = express.Router();
 router.use(requireAdmin);
@@ -33,13 +34,27 @@ router.post('/backups/clear-old', (req, res) => {
 router.get('/backups/:file/download', (req, res) => {
   const match = listBackups().find((b) => b.file === req.params.file);
   if (!match) return res.status(404).json({ error: 'not_found' });
-  res.download(path.join(BACKUP_DIR, match.file), match.file);
+  res.download(path.join(backupDir(), match.file), match.file);
 });
 
 // Replaces every bit of live data with what's in this backup file — items, materials, sales,
 // settings, everything, since it's a full database snapshot rather than a business-data-only
 // restore. Filename is matched against the real backup list the same way /download is, never
 // taken from the request directly.
+//
+// Single-tenant mode only. finishRestore() closes the one global `db` and exits the process —
+// exactly right for one install, but a shared multi-tenant process serves every other tenant
+// too; closing the process-wide handle and exiting would take all of them down over one
+// tenant's restore. In-process per-tenant restore (closing just that tenant's pooled
+// connection, swapping its file, reopening it) is a reasonable fast-follow, deliberately left
+// out of this phase — see the plan doc's "explicitly out of scope" section. For now,
+// multi-tenant mode offers backup download only; an admin restores by downloading a backup and
+// asking the platform operator to apply it.
+if (isMultiTenant) {
+  router.post('/backups/:file/restore', (req, res) => {
+    res.status(404).json({ error: 'not_available', message: 'Restoring in place isn’t available on this plan yet — download the backup and contact support.' });
+  });
+} else {
 let restoring = false;
 router.post('/backups/:file/restore', async (req, res) => {
   if (restoring) return res.status(409).json({ error: 'already_restoring' });
@@ -59,15 +74,21 @@ router.post('/backups/:file/restore', async (req, res) => {
     try { finishRestore(match); } finally { process.exit(0); }
   }, 300);
 });
+}
 
+// Host-wide free/total disk space is meaningful (and safe to show) on a single-tenant install
+// — it's that business's own server. On a shared multi-tenant host it would both leak
+// infrastructure information to a tenant admin and not mean what they'd assume ("my disk" vs.
+// "the host's disk"), so multi-tenant mode reports only this tenant's own usage.
 router.get('/disk', (req, res) => {
   try {
+    const dbBytes = (() => { try { return fs.statSync(db.name).size; } catch { return 0; } })();
+    const backupBytes = listBackups().reduce((sum, b) => sum + b.size, 0);
+    const usage = { dbBytes, backupBytes, photoBytes: photoBytes(db) };
+    if (isMultiTenant) return res.json(usage);
     const dataDir = path.dirname(db.name);
     const disk = getDiskUsage(dataDir);
-    const backupBytes = listBackups().reduce((sum, b) => sum + b.size, 0);
-    let dbBytes = 0;
-    try { dbBytes = fs.statSync(db.name).size; } catch {}
-    res.json({ ...disk, dbBytes, backupBytes, photoBytes: photoBytes(db) });
+    res.json({ ...disk, ...usage });
   } catch (err) {
     res.status(502).json({ error: 'disk_check_failed', message: err.message });
   }

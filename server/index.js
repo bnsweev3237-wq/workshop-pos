@@ -8,15 +8,21 @@ const { getSessionSecret } = require('./lib/secret');
 const { scheduleDailyBackups } = require('./lib/backup');
 const { scheduleDailyLowStockCheck } = require('./lib/lowStockAlert');
 const { scheduleDailyLicenseCheck } = require('./lib/license');
+const { isMultiTenant } = require('./mode');
 
 function createApp() {
   const app = express();
-  // Trust the first hop only (the reverse proxy in front of it, e.g. nginx on the VPS deploy)
-  // so req.ip and req.secure reflect the real visitor/connection instead of the proxy's own
-  // loopback address — needed for both the login rate limiter below and the cookie's `secure`
-  // flag to work correctly. A direct, un-proxied install (plain `node server/index.js`, no
-  // nginx in front) is unaffected: there's no X-Forwarded-* header to trust in that case, so
-  // Express just falls back to the real connection either way.
+  // Trust the first hop only (the reverse proxy in front of it, e.g. nginx on the VPS deploy,
+  // or in front of the whole multi-tenant platform) so req.ip and req.secure reflect the real
+  // visitor/connection instead of the proxy's own loopback address — needed for both the login
+  // rate limiter below and the cookie's `secure` flag to work correctly. A direct, un-proxied
+  // install (plain `node server/index.js`, no nginx in front) is unaffected: there's no
+  // X-Forwarded-* header to trust in that case, so Express just falls back to the real
+  // connection either way.
+  //
+  // Tenant identity must NEVER be read from req.hostname with this setting on — Express
+  // derives req.hostname from X-Forwarded-Host when trust proxy is enabled, which a client
+  // controls. server/tenancy/resolveTenant.js reads req.headers.host directly for this reason.
   app.set('trust proxy', 1);
 
   // Baseline security headers. The Content-Security-Policy is spelled out explicitly to match
@@ -25,7 +31,8 @@ function createApp() {
   // and the UI relies heavily on inline `style="..."` attributes throughout (hence style-src
   // needs 'unsafe-inline'; there's no inline *script*, so script-src doesn't). Using helmet's
   // defaults blind here would risk silently breaking rendering instead of actually protecting
-  // anything.
+  // anything. Unchanged between modes — the signup page (multi-tenant only) is also same-
+  // origin, so it fits this same policy.
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
@@ -49,6 +56,15 @@ function createApp() {
   // in server/routes/branding.js) fits in the request body.
   app.use(express.json({ limit: '3mb' }));
 
+  if (isMultiTenant) {
+    return createMultiTenantApp(app);
+  }
+  return createSingleTenantApp(app);
+}
+
+// ---------- Single-tenant mode: desktop Electron app, or a self-hosted VPS install ----------
+// Exactly as this file has always behaved — nothing in multi-tenant mode changes this path.
+function createSingleTenantApp(app) {
   app.use(session({
     store: new SqliteStore({ client: db, expired: { clear: true, intervalMs: 15 * 60 * 1000 } }),
     secret: getSessionSecret(),
@@ -65,7 +81,88 @@ function createApp() {
     },
   }));
 
+  mountTenantScopedRoutes(app);
+  app.use('/api/update', require('./routes/update'));
+
+  // index: false — the catch-all below is what decides which HTML shell to serve (it also
+  // picks between index.html and signup.html by host in multi-tenant mode), so static must
+  // not shortcut that decision by auto-serving public/index.html for '/' on its own.
+  app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not_found' });
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  });
+
+  return app;
+}
+
+// ---------- Multi-tenant mode: one process, many isolated tenants ----------
+function createMultiTenantApp(app) {
+  const { resolveTenant } = require('./tenancy/resolveTenant');
+  const { bindSessionToTenant } = require('./tenancy/bindSession');
+  const { tenantDbContext } = require('./tenancy/dbContext');
+  const { getControlDb } = require('./control/db');
+
+  // Runs before everything else, authenticated or not — several routes (signup, login itself,
+  // the public branding GET a login screen needs, a subscriber's confirm-link) have no session
+  // to resolve a tenant from.
+  app.use(resolveTenant);
+
+  // Public on either host, same as single-tenant mode.
   app.use('/api/meta', require('./routes/meta'));
+
+  app.use(session({
+    // One shared, control-plane-backed session store — see server/tenancy/bindSession.js and
+    // server/middleware/auth.js for how a session that doesn't match the current host's
+    // tenant is treated as logged out without ever being destroyed.
+    store: new SqliteStore({ client: getControlDb(), expired: { clear: true, intervalMs: 15 * 60 * 1000 } }),
+    secret: getSessionSecret(),
+    name: 'craftium.sid',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: 'auto',
+      maxAge: 30 * 24 * 60 * 60 * 1000,
+    },
+  }));
+  app.use(bindSessionToTenant);
+  app.use(tenantDbContext); // no-op on the platform host — nothing to attach there
+
+  // Platform-level routes (signup) — the router itself refuses anything not on the platform
+  // host, so mounting it here unconditionally is safe.
+  app.use('/api/platform', require('./routes/platform'));
+
+  // Every router below assumes a resolved tenant (an active AsyncLocalStorage context) — a
+  // request that reached here on the platform host would otherwise fall through into one of
+  // them and crash on its first db access (NoTenantContextError) instead of cleanly 404ing.
+  app.use('/api', (req, res, next) => {
+    if (req.platformHost) return res.status(404).json({ error: 'not_found' });
+    next();
+  });
+
+  mountTenantScopedRoutes(app);
+  // /api/update is never mounted here: a platform-wide deploy (git pull, npm ci, a restart) is
+  // an operator action now, never something one tenant's admin can trigger against a process
+  // every other tenant shares. It falls through to the catch-all's /api/ 404 below.
+
+  // index: false — see the single-tenant branch above; here it also matters for choosing
+  // signup.html vs index.html by host, which static's own auto-index would bypass.
+  app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
+  app.get('*', (req, res) => {
+    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not_found' });
+    if (req.platformHost) return res.sendFile(path.join(__dirname, '..', 'public', 'signup.html'));
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  });
+
+  return app;
+}
+
+// Routers every tenant (single-tenant's one install, or one tenant in multi-tenant mode)
+// reaches the same way — identical mount points in both modes, so nothing in public/app.js or
+// any route file needs to know which mode it's running under.
+function mountTenantScopedRoutes(app) {
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/settings', require('./routes/settings'));
   app.use('/api/branding', require('./routes/branding'));
@@ -83,17 +180,8 @@ function createApp() {
   app.use('/api/charity-rules', require('./routes/charityRules'));
   app.use('/api/maintenance', require('./routes/maintenance'));
   app.use('/api/test-data', require('./routes/testData'));
-  app.use('/api/update', require('./routes/update'));
   app.use('/api/email-settings', require('./routes/email'));
   app.use('/api/license', require('./routes/license'));
-
-  app.use(express.static(path.join(__dirname, '..', 'public')));
-  app.get('*', (req, res) => {
-    if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not_found' });
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-  });
-
-  return app;
 }
 
 // Resolves once the server is actually listening, with the real port — callers (the CLI
@@ -103,7 +191,17 @@ function startServer(port) {
   return new Promise((resolve, reject) => {
     const app = createApp();
     const server = app.listen(port);
-    server.once('listening', () => { scheduleDailyBackups(); scheduleDailyLowStockCheck(); scheduleDailyLicenseCheck(); resolve({ server, port: server.address().port }); });
+    server.once('listening', () => {
+      if (isMultiTenant) {
+        require('./tenancy/pool').startEvictionTimer();
+        require('./tenancy/scheduler').scheduleMultiTenantJobs();
+      } else {
+        scheduleDailyBackups();
+        scheduleDailyLowStockCheck();
+        scheduleDailyLicenseCheck();
+      }
+      resolve({ server, port: server.address().port });
+    });
     server.once('error', reject);
   });
 }

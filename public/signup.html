@@ -1,0 +1,61 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Craftium — Start your shop</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#c1623d">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  body { background: var(--bg); }
+  .login-screen { position: static; min-height: 100vh; }
+  .login-card { max-width: 440px; }
+  .slug-row { display: flex; align-items: center; gap: 8px; }
+  .slug-row input { flex: 1; }
+  .slug-domain { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .slug-status { font-size: 12px; margin-top: 6px; min-height: 16px; }
+  .slug-status.ok { color: var(--accent); }
+  .slug-status.bad { color: #c1623d; }
+</style>
+</head>
+<body>
+
+<div class="login-screen">
+  <div class="login-card">
+    <div class="login-craftium-banner"><img src="/img/craftium-logo.png" alt="Craftium"></div>
+    <h1>Start your shop</h1>
+    <p class="hint">Set up your own Craftium — items, materials, sales, and reports, isolated from every other shop on this platform.</p>
+    <div id="signupError" class="login-error" hidden></div>
+    <div id="signupFields">
+      <label for="businessName">Business name</label>
+      <input id="businessName" autocomplete="organization" placeholder="Maple Street Crafts">
+
+      <label for="slug" style="margin-top:10px">Your address</label>
+      <div class="slug-row">
+        <input id="slug" autocomplete="off" placeholder="maple-street-crafts">
+        <span class="slug-domain" id="slugDomain"></span>
+      </div>
+      <div class="slug-status" id="slugStatus"></div>
+
+      <label for="ownerName" style="margin-top:10px">Your name</label>
+      <input id="ownerName" autocomplete="name">
+
+      <label for="username" style="margin-top:10px">Choose a username</label>
+      <input id="username" autocomplete="username">
+
+      <label for="password" style="margin-top:10px">Choose a password</label>
+      <input id="password" type="password" placeholder="min 8 characters" autocomplete="new-password">
+    </div>
+    <div class="btn-row" style="margin-top:14px">
+      <button class="btn primary" id="signupSubmit">Create my shop</button>
+    </div>
+  </div>
+</div>
+
+<script src="/signup.js"></script>
+</body>
+</html>

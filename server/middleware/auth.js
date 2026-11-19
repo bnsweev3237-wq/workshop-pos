@@ -9,8 +9,13 @@ const ROLES = ['admin', 'manager', 'lead', 'cashier'];
 // Every request re-checks the user still exists and reads their current role from the
 // database, rather than trusting whatever was true when the session cookie was issued —
 // a removed or demoted account loses access on its very next request, not just its next login.
+//
+// req.sessionTenantMismatch (multi-tenant mode only — set by server/tenancy/bindSession.js,
+// absent/falsy in single-tenant mode) means the presented session belongs to a different
+// tenant than the one this request resolved to. Treated as logged-out here, same as no
+// session at all — a session cookie must never grant access on any host but its own tenant's.
 function requireLogin(req, res, next) {
-  const id = req.session && req.session.userId;
+  const id = !req.sessionTenantMismatch && req.session && req.session.userId;
   if (!id) return res.status(401).json({ error: 'not_logged_in' });
   const user = db.prepare('SELECT id, name, username, role FROM users WHERE id = ?').get(id);
   if (!user) {
