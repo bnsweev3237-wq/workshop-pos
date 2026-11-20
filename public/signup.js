@@ -87,7 +87,11 @@
         submitBtn.textContent = 'Create my shop';
         return;
       }
-      window.location.href = data.loginUrl;
+      $('signupFields').hidden = true;
+      $('signupSubmit').hidden = true;
+      $('signupSuccessMessage').textContent = `"${body.businessName}" is ready. Take a quick look at the guide below, or jump straight in.`;
+      $('continueToShopBtn').onclick = () => { window.location.href = data.loginUrl; };
+      $('signupSuccess').hidden = false;
     } catch {
       showError('Could not reach the server. Please try again.');
       submitBtn.disabled = false;

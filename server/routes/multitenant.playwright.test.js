@@ -31,6 +31,10 @@ async function signUp(page, port, { businessName, slug, ownerName, username, pas
   await page.fill('#username', username);
   await page.fill('#password', password);
   await page.click('#signupSubmit');
+  // Signup now shows a success screen (quick-start guide link + a "Continue to your shop"
+  // button) instead of redirecting immediately.
+  await page.waitForSelector('#signupSuccess:not([hidden])', { timeout: 10000 });
+  await page.click('#continueToShopBtn');
   await page.waitForURL((url) => url.hostname === `${slug}.localhost`, { timeout: 10000 });
 }
 
