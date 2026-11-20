@@ -59,7 +59,52 @@ function addAuditLog(tenantId, actor, action, detail) {
     .run(uid(), tenantId, actor || null, action, detail ? JSON.stringify(detail) : null, Date.now());
 }
 
+// ---- Platform staff accounts (server/lib/platformUsers.js inserts rows; these just read/manage) ----
+function getPlatformUserByUsername(username) {
+  return getControlDb().prepare('SELECT * FROM platform_users WHERE username = ? COLLATE NOCASE').get(username);
+}
+function listPlatformUsers() {
+  return getControlDb().prepare('SELECT id, username, role, created_at FROM platform_users ORDER BY created_at').all();
+}
+function deletePlatformUserRow(id) {
+  return getControlDb().prepare('DELETE FROM platform_users WHERE id = ?').run(id);
+}
+
+// ---- Support sessions (the impersonation mechanism — see server/routes/auth.js's
+// /impersonate/:token consume route and server/routes/platformAdmin.js's mint route) ----
+function insertSupportSession(row) {
+  getControlDb().prepare(`
+    INSERT INTO support_sessions (id, tenant_id, platform_user_id, created_at, expires_at)
+    VALUES (@id, @tenant_id, @platform_user_id, @created_at, @expires_at)
+  `).run(row);
+}
+function getSupportSession(id) {
+  return getControlDb().prepare('SELECT * FROM support_sessions WHERE id = ?').get(id);
+}
+function markSupportSessionConsumed(id, consumedAt = Date.now()) {
+  getControlDb().prepare('UPDATE support_sessions SET consumed_at = ? WHERE id = ?').run(consumedAt, id);
+}
+// The "while a support session is active" banner — a safety cap (maxAgeMs) treats a consumed
+// session as ended once it's old enough even if nobody explicitly ended it, so a forgotten tab
+// doesn't show the banner forever.
+function getActiveSupportSessionForTenant(tenantId, maxAgeMs) {
+  return getControlDb().prepare(`
+    SELECT * FROM support_sessions
+    WHERE tenant_id = ? AND consumed_at IS NOT NULL AND ended_at IS NULL AND consumed_at > ?
+    ORDER BY consumed_at DESC LIMIT 1
+  `).get(tenantId, Date.now() - maxAgeMs);
+}
+// Either side (the support agent's own session, or the tenant's real admin) can end it —
+// neither needs to know the token id, just which tenant they're on.
+function endActiveSupportSessionForTenant(tenantId) {
+  getControlDb().prepare('UPDATE support_sessions SET ended_at = ? WHERE tenant_id = ? AND consumed_at IS NOT NULL AND ended_at IS NULL')
+    .run(Date.now(), tenantId);
+}
+
 module.exports = {
   getControlDb, CONTROL_DB_PATH, newTenantId, getTenantBySlug, getTenantById, listTenants,
   insertTenant, updateTenantStatus, updateTenantPlan, deleteTenantRow, addAuditLog,
+  getPlatformUserByUsername, listPlatformUsers, deletePlatformUserRow,
+  insertSupportSession, getSupportSession, markSupportSessionConsumed,
+  getActiveSupportSessionForTenant, endActiveSupportSessionForTenant,
 };

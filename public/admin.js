@@ -1,0 +1,163 @@
+(function () {
+  const $ = (id) => document.getElementById(id);
+  let me = null;
+
+  async function api(method, path, body) {
+    const res = await fetch(path, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* not JSON */ }
+    if (!res.ok) throw Object.assign(new Error((data && data.message) || 'Request failed'), { data, status: res.status });
+    return data;
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  }
+
+  function formatBytes(n) {
+    if (n < 1024) return n + ' B';
+    if (n < 1024 ** 2) return (n / 1024).toFixed(1) + ' KB';
+    if (n < 1024 ** 3) return (n / 1024 ** 2).toFixed(1) + ' MB';
+    return (n / 1024 ** 3).toFixed(1) + ' GB';
+  }
+
+  function showLoginError(msg) {
+    const box = $('loginError');
+    box.textContent = msg;
+    box.hidden = false;
+  }
+
+  $('loginSubmit').onclick = async () => {
+    $('loginError').hidden = true;
+    const username = $('username').value.trim();
+    const password = $('password').value;
+    if (!username || !password) { showLoginError('Enter a username and password.'); return; }
+    try {
+      const data = await api('POST', '/api/platform/admin/login', { username, password });
+      me = data.me;
+      afterLogin();
+    } catch (e) {
+      showLoginError((e.data && e.data.message) || 'Invalid username or password.');
+    }
+  };
+
+  $('logoutBtn').onclick = async () => {
+    try { await api('POST', '/api/platform/admin/logout'); } catch { /* reload either way */ }
+    location.reload();
+  };
+
+  function afterLogin() {
+    $('adminLoginScreen').hidden = true;
+    $('adminApp').hidden = false;
+    $('meLine').textContent = `${me.username} (${me.role})`;
+    const isAdmin = me.role === 'admin';
+    $('updateCard').hidden = !isAdmin;
+    $('staffCard').hidden = !isAdmin;
+    loadTenants();
+    if (isAdmin) { loadUpdateStatus(); loadStaff(); }
+  }
+
+  async function loadTenants() {
+    const tenants = await api('GET', '/api/platform/admin/tenants');
+    const tb = $('tenantRows');
+    tb.innerHTML = '';
+    for (const t of tenants) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${esc(t.slug)}</td>
+        <td>${esc(t.businessName)}</td>
+        <td>${esc(t.status)}</td>
+        <td>${esc(t.plan)}</td>
+        <td>${new Date(t.createdAt).toLocaleDateString()}</td>
+        <td class="r">${formatBytes(t.dbBytes)} db, ${formatBytes(t.backupBytes)} backups <span class="hint">(${formatBytes(t.photoBytes)} photos, included in db)</span></td>
+        <td class="acts"><button class="btn sm open-tenant">Open</button></td>
+      `;
+      tr.querySelector('.open-tenant').onclick = () => openTenant(t.id, t.slug);
+      tb.appendChild(tr);
+    }
+    $('tenantsEmpty').hidden = tenants.length > 0;
+  }
+
+  async function openTenant(id, slug) {
+    try {
+      const { url } = await api('POST', `/api/platform/admin/tenants/${id}/impersonate`, {});
+      window.open(url, '_blank');
+    } catch (e) {
+      alert(e.message || `Could not open ${slug}.`);
+    }
+  }
+
+  async function loadUpdateStatus() {
+    $('updateCheckBtn').disabled = true;
+    try {
+      const s = await api('GET', '/api/platform/admin/update/check');
+      if (s.available) {
+        $('updateStatusLine').textContent = `Update available: v${s.currentVersion} → v${s.latestVersion} (${s.commitsBehind} commit${s.commitsBehind === 1 ? '' : 's'} behind).`;
+        $('updateApplyBtn').hidden = false;
+      } else {
+        $('updateStatusLine').textContent = `Up to date (v${s.currentVersion}).`;
+        $('updateApplyBtn').hidden = true;
+      }
+    } catch {
+      $('updateStatusLine').textContent = 'Could not check for updates.';
+    } finally {
+      $('updateCheckBtn').disabled = false;
+    }
+  }
+  $('updateCheckBtn').onclick = loadUpdateStatus;
+  $('updateApplyBtn').onclick = async () => {
+    if (!confirm('Pull the latest code and restart the platform now? Every tenant will briefly disconnect while it restarts.')) return;
+    $('updateApplyBtn').disabled = true;
+    $('updateCheckBtn').disabled = true;
+    $('updateStatusLine').textContent = 'Updating… this can take a minute.';
+    try {
+      await api('POST', '/api/platform/admin/update/apply');
+      $('updateStatusLine').textContent = 'Restarting…';
+    } catch (e) {
+      alert(e.message || 'Update failed.');
+      $('updateStatusLine').textContent = 'Update failed.';
+      $('updateApplyBtn').disabled = false;
+      $('updateCheckBtn').disabled = false;
+    }
+  };
+
+  async function loadStaff() {
+    const staff = await api('GET', '/api/platform/admin/staff');
+    const tb = $('staffRows');
+    tb.innerHTML = '';
+    for (const s of staff) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${esc(s.username)}</td><td>${esc(s.role)}</td><td>${new Date(s.createdAt).toLocaleDateString()}</td><td class="acts"><button class="btn sm danger remove-staff">Remove</button></td>`;
+      tr.querySelector('.remove-staff').onclick = async () => {
+        if (!confirm(`Remove staff account "${s.username}"?`)) return;
+        try { await api('DELETE', `/api/platform/admin/staff/${s.id}`); loadStaff(); }
+        catch (e) { alert(e.message || 'Could not remove that account.'); }
+      };
+      tb.appendChild(tr);
+    }
+  }
+  $('addStaffBtn').onclick = async () => {
+    const username = $('newStaffUsername').value.trim();
+    const password = $('newStaffPassword').value;
+    const role = $('newStaffRole').value;
+    if (!username || !password) { alert('Enter a username and password.'); return; }
+    try {
+      await api('POST', '/api/platform/admin/staff', { username, password, role });
+      $('newStaffUsername').value = '';
+      $('newStaffPassword').value = '';
+      loadStaff();
+    } catch (e) { alert(e.message || 'Could not create that account.'); }
+  };
+
+  // Already-logged-in on a return visit — pick up the existing session rather than asking again.
+  (async () => {
+    try {
+      const data = await api('GET', '/api/platform/admin/status');
+      if (data.loggedIn) { me = data.me; afterLogin(); }
+    } catch { /* not logged in — show the login screen as-is */ }
+  })();
+})();

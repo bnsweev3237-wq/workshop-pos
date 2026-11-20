@@ -5,6 +5,14 @@ const db = require('../db');
 const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
 const { createUserRow } = require('../lib/users');
 const { isMultiTenant } = require('../mode');
+const {
+  getSupportSession, markSupportSessionConsumed, getActiveSupportSessionForTenant,
+  endActiveSupportSessionForTenant, addAuditLog,
+} = require('../control/db');
+
+// Hard safety cap on how long a consumed support session keeps showing the banner even if
+// nobody explicitly ends it — see server/control/schema.sql's support_sessions table.
+const SUPPORT_SESSION_MAX_AGE_MS = 2 * 60 * 60 * 1000;
 
 const router = express.Router();
 
@@ -36,7 +44,49 @@ router.get('/status', (req, res) => {
     if (row) me = toPublic(row);
     else req.session.userId = null; // stale session pointing at a deleted user
   }
-  res.json({ needsSetup, loggedIn: !!me, me });
+  // supportSessionActive: shown to EVERY session on this tenant (the real admin's own login
+  // included), not just the support agent's — visible disclosure while support is in the
+  // account was the explicit design choice, not a silent backdoor. isSupportSession is true
+  // only for the one session that actually consumed the impersonation link (adds an "end it
+  // now" button on that side too, same as the real admin gets).
+  let supportSessionActive = false;
+  if (isMultiTenant && req.tenant) {
+    supportSessionActive = !!getActiveSupportSessionForTenant(req.tenant.id, SUPPORT_SESSION_MAX_AGE_MS);
+  }
+  res.json({ needsSetup, loggedIn: !!me, me, supportSessionActive, isSupportSession: !!(req.session && req.session.isSupportSession) });
+});
+
+// Consumes a one-time link minted by a platform staff member (server/routes/platformAdmin.js's
+// POST /tenants/:id/impersonate) — never reachable in single-tenant mode, since there's no
+// platform host or staff concept there at all.
+router.get('/impersonate/:token', (req, res) => {
+  if (!isMultiTenant) return res.status(404).json({ error: 'not_found' });
+  const row = getSupportSession(req.params.token);
+  // The tenant check is the one that actually matters: a token minted for a different tenant
+  // must never work here, even though it's a real, unexpired, platform-staff-minted token —
+  // this is the one deliberate exception to tenant isolation in the whole system, so it's
+  // scoped as tightly as the thing it's an exception to.
+  if (!row || row.consumed_at || row.expires_at < Date.now() || row.tenant_id !== req.tenant.id) {
+    return res.status(404).send('This support link is invalid or has expired.');
+  }
+  const admin = db.prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").get();
+  if (!admin) return res.status(404).send('This business has no admin account to assist.');
+  markSupportSessionConsumed(row.id);
+  loginAs(req, admin, (err) => {
+    if (err) return res.status(500).send('Could not start the support session.');
+    req.session.isSupportSession = true;
+    addAuditLog(req.tenant.id, row.platform_user_id, 'support_impersonation', { targetUserId: admin.id });
+    res.redirect('/');
+  });
+});
+
+// Either side can end an active support session — the agent who started it, or the tenant's
+// own admin who'd rather it ended now. Neither needs to know the token; just being logged in
+// to this tenant (any role) is enough.
+router.post('/end-support-session', requireLogin, (req, res) => {
+  if (!isMultiTenant || !req.tenant) return res.status(404).json({ error: 'not_found' });
+  endActiveSupportSessionForTenant(req.tenant.id);
+  res.json({ ok: true });
 });
 
 // A session cookie issued before/after an id's login must stop pointing at whatever session

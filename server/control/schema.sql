@@ -32,5 +32,35 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_log_tenant ON audit_log(tenant_id);
 
+-- Platform staff (operator/support) — separate from any tenant's own `users` table, since
+-- these accounts aren't tied to any one tenant. Logs into the admin console at /admin on the
+-- platform host, never any tenant subdomain.
+CREATE TABLE IF NOT EXISTS platform_users (
+  id TEXT PRIMARY KEY,
+  username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL CHECK(role IN ('admin', 'support')),
+  created_at INTEGER NOT NULL
+);
+
+-- A support-session grant: minted when a platform staff member clicks "open tenant", consumed
+-- (at most once) by server/routes/auth.js's GET /api/auth/impersonate/:token on that exact
+-- tenant's own host. `id` is the one-time token itself. `consumed_at` set means the link was
+-- actually used to log in; `ended_at` set (by either the agent or the tenant's own admin, via
+-- /api/auth/end-support-session) or a hard age cap means the access window is over. While a row
+-- exists for a tenant with consumed_at set and ended_at not set, every session on that tenant
+-- (the real tenant admin's own included) sees a "support is assisting this account" banner —
+-- visible disclosure was the explicit design choice here, not a silent backdoor.
+CREATE TABLE IF NOT EXISTS support_sessions (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  platform_user_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL,
+  consumed_at INTEGER,
+  ended_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_support_sessions_tenant ON support_sessions(tenant_id);
+
 -- better-sqlite3-session-store creates its own `sessions` table here on first use (see
 -- server/index.js) — nothing to declare for it up front.
