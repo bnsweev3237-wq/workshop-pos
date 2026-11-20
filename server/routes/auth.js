@@ -54,7 +54,10 @@ router.get('/status', (req, res) => {
   if (isMultiTenant && req.tenant) {
     supportSessionActive = !!getActiveSupportSessionForTenant(req.tenant.id, SUPPORT_SESSION_MAX_AGE_MS);
   }
-  res.json({ needsSetup, loggedIn: !!me, me, supportSessionActive, isSupportSession: !!(req.session && req.session.isSupportSession) });
+  // plan: null in single-tenant mode (no plan concept there) — req.tenant is already the full
+  // control-plane row resolveTenant() looked up, so this is free, no extra query.
+  const plan = isMultiTenant && req.tenant ? req.tenant.plan : null;
+  res.json({ needsSetup, loggedIn: !!me, me, supportSessionActive, isSupportSession: !!(req.session && req.session.isSupportSession), plan });
 });
 
 // Consumes a one-time link minted by a platform staff member (server/routes/platformAdmin.js's

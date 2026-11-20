@@ -122,6 +122,7 @@ async function refreshAuthStatus() {
   if (me) Offline.saveSnapshot('me', me);
   updateAuthUI();
   updateSupportSessionBanner(s);
+  $('trialPlanBanner').hidden = s.plan !== 'trial';
   return s;
 }
 
