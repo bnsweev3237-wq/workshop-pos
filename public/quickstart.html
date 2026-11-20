@@ -1,0 +1,116 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Craftium — Quick start</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="apple-touch-icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#c1623d">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<style>
+  body { background: var(--bg); }
+  .qs-wrap { max-width: 640px; margin: 0 auto; padding: 32px 16px 60px; }
+  .qs-hero { text-align: center; margin-bottom: 28px; }
+  .qs-hero img { width: 140px; margin-bottom: 14px; }
+  .qs-hero h1 { font-family: var(--font-display); font-size: 30px; margin: 0 0 8px; }
+  .qs-hero p { color: var(--muted); margin: 0; }
+  .qs-steps { display: flex; flex-direction: column; gap: 14px; }
+  .qs-step { display: flex; gap: 14px; align-items: flex-start; }
+  .qs-num {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); color: #fffcf6; font-family: var(--font-display);
+    font-weight: 600; font-size: 14px; display: flex; align-items: center; justify-content: center;
+  }
+  .qs-step-body { flex: 1; min-width: 0; }
+  .qs-step-title { font-family: var(--font-display); font-size: 17px; font-weight: 600; margin: 0 0 6px; }
+  .qs-where {
+    display: inline-block; font-size: 12px; font-weight: 600; color: var(--accent);
+    background: var(--accent-soft); border-radius: 7px; padding: 2px 8px; margin-bottom: 8px;
+  }
+  .qs-next dl { display: grid; gap: 12px; grid-template-columns: repeat(2, 1fr); margin: 0; }
+  @media (max-width: 480px) { .qs-next dl { grid-template-columns: 1fr; } }
+  .qs-next dt { font-family: var(--font-display); font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+  .qs-next dd { margin: 0; color: var(--muted); font-size: 13.5px; }
+  .qs-footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 28px; }
+</style>
+</head>
+<body>
+
+<div class="qs-wrap">
+  <div class="qs-hero">
+    <img src="/img/craftium-logo.png" alt="Craftium">
+    <h1>Welcome to your shop</h1>
+    <p>The fastest path from an empty shop to your first real sale — about fifteen minutes, start to finish.</p>
+  </div>
+
+  <div class="qs-steps">
+    <div class="qs-step">
+      <div class="qs-num">1</div>
+      <div class="qs-step-body">
+        <div class="qs-where">Settings → Branding</div>
+        <h2 class="qs-step-title">Make it yours</h2>
+        <p class="help">Add your business name, upload a logo, and pick an accent color. This shows up in the app header, your sign-in screen, and on every printed packing list and price tag.</p>
+      </div>
+    </div>
+
+    <div class="qs-step">
+      <div class="qs-num">2</div>
+      <div class="qs-step-body">
+        <div class="qs-where">Calculator, or Items</div>
+        <h2 class="qs-step-title">Add your first items</h2>
+        <p class="help">If you make what you sell, use the <b>Calculator</b>: enter your materials, labor time, and a markup or margin, and it works out your price for you. If you buy things ready-made to resell, add them straight from the <b>Items</b> tab with a cost and sale price. Either way, saving an item there is what makes it sellable.</p>
+      </div>
+    </div>
+
+    <div class="qs-step">
+      <div class="qs-num">3</div>
+      <div class="qs-step-body">
+        <div class="qs-where">Settings → Users</div>
+        <h2 class="qs-step-title">Bring in your team</h2>
+        <p class="help">Add an account for anyone else ringing up sales. <b>Cashier</b> accounts are locked to the Sell page only — no pricing, no reports. Skip this entirely if it's just you.</p>
+      </div>
+    </div>
+
+    <div class="qs-step">
+      <div class="qs-num">4</div>
+      <div class="qs-step-body">
+        <div class="qs-where">Sell</div>
+        <h2 class="qs-step-title">Ring up your first sale</h2>
+        <p class="help">Tap an item, tender it by cash or card, and you're done. Add a customer's email at checkout to send a receipt and offer them your mailing list. The Sell page works offline too — a sale made with no connection queues up and syncs once you're back online.</p>
+      </div>
+    </div>
+
+    <div class="qs-step">
+      <div class="qs-num">5</div>
+      <div class="qs-step-body">
+        <div class="qs-where">Reports</div>
+        <h2 class="qs-step-title">Know your numbers</h2>
+        <p class="help">Revenue, profit, and cost broken down by item and by who rang it up. Running a market or fair? Set it up as an <b>Event</b> first (Sell page) and Reports shows its "true profit" after booth cost, card fees, and anything else it took to be there.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="card qs-next" style="margin-top:28px">
+    <h2>Worth knowing about, when you need it</h2>
+    <dl>
+      <div><dt>Custom Orders</dt><dd>Track a made-to-order piece from request to pickup, separate from your regular catalog.</dd></div>
+      <div><dt>Consignment</dt><dd>Inventory placed with a shop or gallery — what's out, what sold, what's owed back after their commission.</dd></div>
+      <div><dt>Automatic backups</dt><dd>A full backup is taken daily with no setup needed from you.</dd></div>
+      <div><dt>Email alerts</dt><dd>Turn on a low-stock digest in Settings so you hear about it before you're out.</dd></div>
+    </dl>
+  </div>
+
+  <div class="help" style="margin-top:20px">
+    ⏳ <b>You're currently on a trial plan.</b> You'll see a banner reminding you at the top of the app. It covers everything you need to try Craftium for real — a staff account and up to 100 items — and when you're ready to go further, just reach out to upgrade.
+  </div>
+
+  <div class="qs-footer">
+    <p>Stuck on something? Open the Help menu in the footer of the app, next to What's New.</p>
+  </div>
+</div>
+
+</body>
+</html>
