@@ -15,6 +15,16 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.0.0',
+    date: '2026-11-20',
+    notes: [
+      'Craftium can now also run as a hosted, multi-tenant platform — sign up for your own isolated shop at a shared domain, alongside the existing desktop app and self-hosted VPS deploy. This is a new, separate way to run Craftium — it changes nothing about an existing desktop or VPS install.',
+      '(Hosted platform) Added a staff-only admin console: see every tenant and its disk usage, trigger a platform-wide update, manage staff accounts, and securely open a tenant\'s account to help with a support request — always visibly disclosed to that account while it\'s happening, never silent.',
+      '(Hosted platform) Plans (trial / basic / pro) now have real limits on staff accounts and catalog size, with a clear message to upgrade instead of a silent failure, and a banner while on a trial plan. Consignment tracking (see 1.15.0) is gated by plan the same way, with an upgrade page shown in place of the feature.',
+      'Routine under-the-hood dependency and security updates.',
+    ],
+  },
+  {
     version: '1.15.0',
     date: '2026-11-19',
     notes: [
