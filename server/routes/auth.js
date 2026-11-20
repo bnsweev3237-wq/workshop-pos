@@ -5,7 +5,7 @@ const db = require('../db');
 const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
 const { createUserRow } = require('../lib/users');
 const { isMultiTenant } = require('../mode');
-const { checkUsageCap } = require('../lib/license');
+const { checkUsageCap, hasFeature } = require('../lib/license');
 const {
   getSupportSession, markSupportSessionConsumed, getActiveSupportSessionForTenant,
   endActiveSupportSessionForTenant, addAuditLog,
@@ -57,7 +57,10 @@ router.get('/status', (req, res) => {
   // plan: null in single-tenant mode (no plan concept there) — req.tenant is already the full
   // control-plane row resolveTenant() looked up, so this is free, no extra query.
   const plan = isMultiTenant && req.tenant ? req.tenant.plan : null;
-  res.json({ needsSetup, loggedIn: !!me, me, supportSessionActive, isSupportSession: !!(req.session && req.session.isSupportSession), plan });
+  // hasConsignment: the same source of truth the API itself enforces (requireFeature in
+  // consignment.js) — lets the UI show an upgrade page instead of a tab that looks real but
+  // 403s on every call. Always true in single-tenant mode (unconfigured licenses default-allow).
+  res.json({ needsSetup, loggedIn: !!me, me, supportSessionActive, isSupportSession: !!(req.session && req.session.isSupportSession), plan, hasConsignment: hasFeature('consignment') });
 });
 
 // Consumes a one-time link minted by a platform staff member (server/routes/platformAdmin.js's
