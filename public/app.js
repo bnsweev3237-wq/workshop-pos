@@ -108,6 +108,7 @@ let needsSetup = false;
 let forceChangePassword = false;
 let pendingTab = null;
 let currentTab = 'pos';
+let hasConsignment = true; // overwritten by refreshAuthStatus; defaults open so a slow/offline load never looks broken
 
 function onUnauthorized() {
   me = null;
@@ -119,6 +120,7 @@ async function refreshAuthStatus() {
   const s = await api('GET', '/api/auth/status');
   needsSetup = s.needsSetup;
   me = s.me;
+  hasConsignment = s.hasConsignment !== false;
   if (me) Offline.saveSnapshot('me', me);
   updateAuthUI();
   updateSupportSessionBanner(s);
@@ -2339,13 +2341,26 @@ $('testModeOffKeepLink').onclick = () => {
 // flag before any tier exists to turn one off) ----------
 let consignPartners = [];
 async function loadConsignment() {
+  // Gated by plan (hasConsignment, from /api/auth/status — same source of truth the API
+  // itself enforces server-side) rather than by role: a tab that looked real but 403'd on
+  // every call was confusing, and hiding the tab entirely would bury a feature worth
+  // upgrading for. Showing the upgrade panel is the point, not an afterthought.
+  if (!hasConsignment) {
+    $('consignmentUpgradePanel').hidden = false;
+    $('consignmentContent').hidden = true;
+    return;
+  }
+  $('consignmentUpgradePanel').hidden = true;
+  $('consignmentContent').hidden = false;
   try {
     consignPartners = await api('GET', '/api/consignment/partners');
   } catch (e) {
     if (e.code === 'feature_not_licensed') {
+      // Defensive fallback — shouldn't normally be reached since the check above already
+      // gates on the same flag, but covers a plan downgrade that happened after page load.
       $('cnPartnerList').innerHTML = '';
       $('cnPartnerEmpty').hidden = false;
-      $('cnPartnerEmpty').textContent = 'Consignment tracking isn’t included on this install’s current plan.';
+      $('cnPartnerEmpty').textContent = 'Consignment tracking isn’t included on this account’s current plan.';
       return;
     }
     throw e;

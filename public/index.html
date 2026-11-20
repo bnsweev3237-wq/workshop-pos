@@ -581,18 +581,25 @@
 
   <!-- ===== Consignment ===== -->
   <section id="tab-consignment" hidden>
-    <div class="card">
-      <h2>New consignment partner</h2>
-      <div class="help">Inventory placed with a shop or gallery — separate from the regular catalog. Consignment sales aren't rung up live; log one whenever the shop reports it back.</div>
-      <div class="row r3">
-        <div><label for="cnPartnerName">Shop / gallery name</label><input id="cnPartnerName" placeholder="e.g. Maple St Gallery"></div>
-        <div><label for="cnPartnerContact">Contact (optional)</label><input id="cnPartnerContact" placeholder="email or phone"></div>
-        <div><label for="cnPartnerPct">Their commission (%)</label><input id="cnPartnerPct" type="number" min="0" max="100" step="1"></div>
-      </div>
-      <div class="btn-row"><button class="btn primary sm" id="cnPartnerAdd">+ Add partner</button></div>
+    <div class="card" id="consignmentUpgradePanel" hidden>
+      <h2>Consignment tracking</h2>
+      <div class="help">Track inventory placed with a shop or gallery — what's out, what's sold, and what's owed back after their commission — separate from your regular catalog.</div>
+      <p class="hint">This feature isn't included on your current plan. Reach out when you're ready to upgrade and unlock it.</p>
     </div>
-    <div id="cnPartnerList"></div>
-    <div class="empty" id="cnPartnerEmpty" hidden>No consignment partners yet.</div>
+    <div id="consignmentContent">
+      <div class="card">
+        <h2>New consignment partner</h2>
+        <div class="help">Inventory placed with a shop or gallery — separate from the regular catalog. Consignment sales aren't rung up live; log one whenever the shop reports it back.</div>
+        <div class="row r3">
+          <div><label for="cnPartnerName">Shop / gallery name</label><input id="cnPartnerName" placeholder="e.g. Maple St Gallery"></div>
+          <div><label for="cnPartnerContact">Contact (optional)</label><input id="cnPartnerContact" placeholder="email or phone"></div>
+          <div><label for="cnPartnerPct">Their commission (%)</label><input id="cnPartnerPct" type="number" min="0" max="100" step="1"></div>
+        </div>
+        <div class="btn-row"><button class="btn primary sm" id="cnPartnerAdd">+ Add partner</button></div>
+      </div>
+      <div id="cnPartnerList"></div>
+      <div class="empty" id="cnPartnerEmpty" hidden>No consignment partners yet.</div>
+    </div>
   </section>
 
   <!-- ===== Reports ===== -->
