@@ -12,11 +12,12 @@ const { createPlatformUserRow } = require('../lib/platformUsers');
 const { requirePlatformStaff, requirePlatformAdmin, loginPlatformUser } = require('../control/adminAuth');
 const {
   getControlDb, listTenants, getTenantById, getPlatformUserByUsername, listPlatformUsers,
-  deletePlatformUserRow, insertSupportSession,
+  deletePlatformUserRow, insertSupportSession, updateTenantPlan, addAuditLog,
 } = require('../control/db');
 const { baseDomain } = require('../tenancy/resolveTenant');
 const pool = require('../tenancy/pool');
 const { checkForUpdate, applyUpdate } = require('../lib/selfUpdate');
+const { PLANS } = require('../lib/plans');
 
 const router = express.Router();
 
@@ -81,6 +82,10 @@ function fileDiskUsage(tenantId) {
   return { dbBytes, backupBytes };
 }
 
+router.get('/plans', requirePlatformStaff, (req, res) => {
+  res.json(Object.keys(PLANS));
+});
+
 router.get('/tenants', requirePlatformStaff, async (req, res) => {
   const tenants = listTenants();
   const out = await Promise.all(tenants.map(async (t) => {
@@ -95,6 +100,21 @@ router.get('/tenants', requirePlatformStaff, async (req, res) => {
     };
   }));
   res.json(out);
+});
+
+// Changing what a tenant pays for is an admin-only action — support staff can view plans
+// (visible in the /tenants response) but not change them, same split as staff management
+// and platform updates. See server/lib/plans.js for the actual plan content.
+router.post('/tenants/:id/plan', requirePlatformAdmin, (req, res) => {
+  const tenant = getTenantById(req.params.id);
+  if (!tenant) return res.status(404).json({ error: 'not_found' });
+  const { plan } = req.body || {};
+  if (!Object.keys(PLANS).includes(plan)) {
+    return res.status(400).json({ error: 'invalid_input', message: `Plan must be one of: ${Object.keys(PLANS).join(', ')}.` });
+  }
+  updateTenantPlan(tenant.id, plan);
+  addAuditLog(tenant.id, req.platformUser.username, 'plan_changed', { plan });
+  res.json({ ok: true, plan });
 });
 
 // Mints a one-time, short-lived, single-tenant-scoped link — consumed by

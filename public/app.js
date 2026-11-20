@@ -512,35 +512,39 @@ $('reset').onclick = () => {
 $('save').onclick = async () => {
   const s = readForm();
   if (!s.name) { $('itemName').focus(); toast('Give the item a name first'); return; }
-  const added = [];
-  for (let idx = 0; idx < s.materials.length; idx++) {
-    const row = s.materials[idx];
-    if (row.libId || !row.addToLib) { delete row.addToLib; continue; }
-    const name = (row.name || '').trim();
-    delete row.addToLib;
-    if (!name) continue;
-    let entry = libByName(name);
-    if (!entry) {
-      entry = await api('POST', '/api/materials', { name, price: row.price, yield: row.yield || 1, stock: 0, test: testMode });
-      lib.push(entry);
-      added.push(name);
+  try {
+    const added = [];
+    for (let idx = 0; idx < s.materials.length; idx++) {
+      const row = s.materials[idx];
+      if (row.libId || !row.addToLib) { delete row.addToLib; continue; }
+      const name = (row.name || '').trim();
+      delete row.addToLib;
+      if (!name) continue;
+      let entry = libByName(name);
+      if (!entry) {
+        entry = await api('POST', '/api/materials', { name, price: row.price, yield: row.yield || 1, stock: 0, test: testMode });
+        lib.push(entry);
+        added.push(name);
+      }
+      row.libId = entry.id; row.name = entry.name; row.price = entry.price; row.yield = entry.yield;
+      const tr = $('mats').children[idx];
+      if (tr) link(tr, entry);
     }
-    row.libId = entry.id; row.name = entry.name; row.price = entry.price; row.yield = entry.yield;
-    const tr = $('mats').children[idx];
-    if (tr) link(tr, entry);
+    const r = computeItem(s);
+    const existing = currentEditId ? items.find(x => x.id === currentEditId) : items.find(x => x.name.toLowerCase() === s.name.toLowerCase());
+    const saved = await api('POST', '/api/items', { ...s, id: existing ? existing.id : undefined, price: r.price, cost: r.cost, photo: currentItemPhoto, test: testMode });
+    currentEditId = saved.id;
+    $('itemNoHint').hidden = false;
+    $('itemNoHint').textContent = `Item #${saved.itemNo}`;
+    toast((existing ? `Updated “${s.name}”` : `Saved “${s.name}”`) + (added.length ? ` · added ${added.join(', ')} to library` : ''));
+    // Also refresh the public Sell-page list — otherwise a newly saved (or price/stock-edited)
+    // item wouldn't show up there until the next 20s poll tick.
+    await Promise.all([loadItems(), loadPosItems()]);
+    if (added.length) renderLib();
+    showTab('items');
+  } catch (e) {
+    toast(e.message || 'Could not save item');
   }
-  const r = computeItem(s);
-  const existing = currentEditId ? items.find(x => x.id === currentEditId) : items.find(x => x.name.toLowerCase() === s.name.toLowerCase());
-  const saved = await api('POST', '/api/items', { ...s, id: existing ? existing.id : undefined, price: r.price, cost: r.cost, photo: currentItemPhoto, test: testMode });
-  currentEditId = saved.id;
-  $('itemNoHint').hidden = false;
-  $('itemNoHint').textContent = `Item #${saved.itemNo}`;
-  toast((existing ? `Updated “${s.name}”` : `Saved “${s.name}”`) + (added.length ? ` · added ${added.join(', ')} to library` : ''));
-  // Also refresh the public Sell-page list — otherwise a newly saved (or price/stock-edited)
-  // item wouldn't show up there until the next 20s poll tick.
-  await Promise.all([loadItems(), loadPosItems()]);
-  if (added.length) renderLib();
-  showTab('items');
 };
 
 // ---------- Material library ----------

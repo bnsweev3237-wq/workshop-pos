@@ -4,6 +4,7 @@ const { uid, genItemNo } = require('../lib/ids');
 const { requireManageItems, requireReports, requireLogin } = require('../middleware/auth');
 const { toCsv, parseCsvObjects } = require('../lib/csv');
 const { validatePhoto } = require('../lib/photos');
+const { checkUsageCap } = require('../lib/license');
 
 const router = express.Router();
 
@@ -171,6 +172,16 @@ router.post('/', requireManageItems, (req, res) => {
   let photo;
   try { photo = validatePhoto(b.photo); } catch { return res.status(400).json({ error: 'invalid_photo' }); }
   const isUpdate = !!b.id;
+  // Only a genuinely new item counts against the cap — editing an existing one (even once
+  // already over a since-lowered limit) must keep working. Real catalog only; practice items
+  // in test mode don't count toward it.
+  if (!isUpdate && !b.test) {
+    const itemCount = db.prepare('SELECT COUNT(*) AS n FROM items WHERE test = 0').get().n;
+    const cap = checkUsageCap('items', itemCount);
+    if (!cap.ok) {
+      return res.status(403).json({ error: 'usage_cap_reached', cap: 'items', limit: cap.limit, message: `Your plan allows up to ${cap.limit} items. Upgrade to add more.` });
+    }
+  }
   const itemNo = isUpdate
     ? (db.prepare('SELECT item_no FROM items WHERE id = ?').get(b.id)?.item_no || genItemNo(db))
     : genItemNo(db);

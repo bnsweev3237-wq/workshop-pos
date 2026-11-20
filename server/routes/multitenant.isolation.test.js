@@ -110,7 +110,28 @@ async function main() {
   assert(betaSignup.status === 200 && betaSignup.data.ok, 'beta tenant signed up');
 
   const gammaSignup = await platform.post('/api/platform/signup', { businessName: 'Gamma Studio', slug: 'gamma', ownerName: 'Gia', username: 'gia', password: 'gammapass123' });
-  assert(gammaSignup.status === 200 && gammaSignup.data.ok, 'gamma tenant signed up (used for scheduler-isolation only)');
+  assert(gammaSignup.status === 200 && gammaSignup.data.ok, 'gamma tenant signed up (used for plan-cap enforcement + scheduler-isolation)');
+
+  // ===================================================================================
+  // Plan usage caps — gamma stays on its default 'trial' plan for this, so alpha/beta's
+  // later upgrade to 'pro' (for the heavy seeding/concurrency sections below) doesn't mask it.
+  // ===================================================================================
+  const gamma = new Client(port, 'gamma.localhost');
+  const gammaLogin = await gamma.post('/api/auth/login', { username: 'gia', password: 'gammapass123' });
+  assert(gammaLogin.status === 200, 'gamma owner logs in');
+  // trial's staffAccounts cap is 1 — gia's own admin account (created at signup) already uses it.
+  const secondStaff = await gamma.post('/api/auth/users', { name: 'Helper', username: 'gamma-helper', password: 'password123', role: 'cashier' });
+  assert(secondStaff.status === 403 && secondStaff.data.error === 'usage_cap_reached' && secondStaff.data.cap === 'staffAccounts', 'trial plan\'s 1-staff-account cap blocks a second account');
+  // Tighten gamma's item cap via a per-tenant override (the same mechanism a one-off grant
+  // would use) to exercise the cap without creating 100 real items.
+  controlDb.getControlDb().prepare('UPDATE tenants SET usage_caps_override_json = ? WHERE slug = ?').run(JSON.stringify({ items: 1 }), 'gamma');
+  const firstItem = await gamma.post('/api/items', { name: 'GAMMA-ITEM-one', price: 5, cost: 2, stock: 1 });
+  assert(firstItem.status === 200, 'the first item is under the (overridden) cap of 1 and succeeds');
+  const secondItem = await gamma.post('/api/items', { name: 'GAMMA-ITEM-two', price: 5, cost: 2, stock: 1 });
+  assert(secondItem.status === 403 && secondItem.data.error === 'usage_cap_reached' && secondItem.data.cap === 'items', 'a second item is over the overridden cap of 1 and is rejected');
+  const updateExisting = await gamma.post('/api/items', { id: firstItem.data.id, name: 'GAMMA-ITEM-one-renamed', price: 5, cost: 2, stock: 1 });
+  assert(updateExisting.status === 200, 'editing the existing item (not creating a new one) is unaffected by the cap');
+  controlDb.getControlDb().prepare('UPDATE tenants SET usage_caps_override_json = NULL WHERE slug = ?').run('gamma');
 
   // ===================================================================================
   // Login + basic session/mode guards
@@ -122,6 +143,13 @@ async function main() {
   assert(alphaLogin.status === 200, 'alpha owner logs in on alpha.localhost');
   const betaLogin = await beta.post('/api/auth/login', { username: 'bo', password: 'betapass123' });
   assert(betaLogin.status === 200, 'beta owner logs in on beta.localhost');
+
+  // Everything below is about isolation and correctness under load, not plan-limit enforcement
+  // (covered separately) — upgrade both to the uncapped 'pro' plan so the heavy seeding and
+  // 400-request concurrency stress run aren't themselves throttled by server/lib/plans.js's
+  // trial-plan staffAccounts/items caps.
+  controlDb.updateTenantPlan(controlDb.getTenantBySlug('alpha').id, 'pro');
+  controlDb.updateTenantPlan(controlDb.getTenantBySlug('beta').id, 'pro');
 
   const platformSetup = await platform.post('/api/auth/setup', { name: 'X', username: 'x', password: 'password123' });
   assert(platformSetup.status === 404, '/api/auth/setup 404s on the platform host (no per-tenant first-run in multi-tenant mode)');
@@ -385,7 +413,7 @@ async function main() {
   // Plan gating — flip a tenant's plan, confirm requireFeature reflects it immediately
   // ===================================================================================
   const consignmentAsTrialOrPro = await alpha.get('/api/consignment/partners');
-  assert(consignmentAsTrialOrPro.status === 200, 'alpha (trial plan) can reach consignment by default');
+  assert(consignmentAsTrialOrPro.status === 200, 'alpha (pro plan, upgraded above) can reach consignment');
   controlDb.updateTenantPlan(alphaTenant.id, 'basic');
   const consignmentAsBasic = await alpha.get('/api/consignment/partners');
   assert(consignmentAsBasic.status === 403, 'downgrading alpha to the basic plan immediately 403s consignment, same request cycle, no re-login');
