@@ -97,6 +97,16 @@ function addAuditLog(tenantId, actor, action, detail) {
     .run(uid(), tenantId, actor || null, action, detail ? JSON.stringify(detail) : null, Date.now());
 }
 
+// ---- Platform settings (currently just outgoing mail config — server/lib/platformMail.js) —
+// same key/value shape as server/lib/settings.js, just at the control-plane level. ----
+function getPlatformSetting(key, fallback) {
+  const row = getControlDb().prepare('SELECT value FROM platform_settings WHERE key = ?').get(key);
+  return row ? row.value : fallback;
+}
+function setPlatformSetting(key, value) {
+  getControlDb().prepare('INSERT INTO platform_settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(key, value);
+}
+
 // ---- Platform staff accounts (server/lib/platformUsers.js inserts rows; these just read/manage) ----
 function getPlatformUserByUsername(username) {
   return getControlDb().prepare('SELECT * FROM platform_users WHERE username = ? COLLATE NOCASE').get(username);
@@ -143,6 +153,7 @@ module.exports = {
   getControlDb, CONTROL_DB_PATH, newTenantId, getTenantBySlug, getTenantById, listTenants,
   insertTenant, updateTenantStatus, updateTenantPlan, deleteTenantRow, addAuditLog,
   setTenantEmailVerification, markTenantEmailVerified,
+  getPlatformSetting, setPlatformSetting,
   getPlatformUserByUsername, listPlatformUsers, deletePlatformUserRow,
   insertSupportSession, getSupportSession, markSupportSessionConsumed,
   getActiveSupportSessionForTenant, endActiveSupportSessionForTenant,

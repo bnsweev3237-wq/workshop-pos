@@ -102,12 +102,17 @@ function createMultiTenantApp(app) {
   const { bindSessionToTenant } = require('./tenancy/bindSession');
   const { tenantDbContext } = require('./tenancy/dbContext');
   const { getControlDb } = require('./control/db');
-  const { assertPlatformMailConfigured } = require('./lib/platformMail');
+  const { isPlatformMailConfigured } = require('./lib/platformMail');
 
-  // Fails loud at boot rather than discovered the first time a real signup gets stuck unable
-  // to log in — account verification email is load-bearing now (POST /login in routes/auth.js
-  // blocks until it's clicked), same reasoning as getSessionSecret()'s own requirement below.
-  assertPlatformMailConfigured();
+  // A warning, not a boot-time failure: platform email can be configured from the admin
+  // console (/admin → Platform email settings) after boot, with no env vars or redeploy
+  // required — refusing to boot without it would make that console unreachable on a fresh
+  // install with nothing set yet. Account verification is load-bearing without it (POST
+  // /login in routes/auth.js blocks until a tenant verifies), so this is still worth a loud
+  // note in the logs rather than discovering it silently the first time a signup gets stuck.
+  if (!isPlatformMailConfigured()) {
+    console.warn('Platform email isn’t configured yet (no CRAFTIUM_SMTP_HOST/CRAFTIUM_PLATFORM_FROM and nothing saved in the admin console) — account verification emails won’t send until it is.');
+  }
 
   // Runs before everything else, authenticated or not — several routes (signup, login itself,
   // the public branding GET a login screen needs, a subscriber's confirm-link) have no session

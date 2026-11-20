@@ -71,5 +71,15 @@ CREATE TABLE IF NOT EXISTS support_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_support_sessions_tenant ON support_sessions(tenant_id);
 
+-- Platform-level settings — a handful of configurable values, same key/value shape as a
+-- tenant's own `settings` table (server/lib/settings.js), just at the control-plane level.
+-- Currently just the platform's outgoing mail config (server/lib/platformMail.js), editable
+-- from the admin console (/admin → Platform email settings) without redeploying or touching
+-- env vars — changing providers later is meant to be a settings change, not a deploy.
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
+
 -- better-sqlite3-session-store creates its own `sessions` table here on first use (see
 -- server/index.js) — nothing to declare for it up front.

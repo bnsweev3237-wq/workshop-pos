@@ -119,6 +119,41 @@ async function main() {
   const adminStaffList = await admin.get('/api/platform/admin/staff');
   assert(adminStaffList.status === 200 && adminStaffList.data.length === 2, 'admin can list staff');
 
+  // ===================================================================================
+  // Platform email settings — admin-only, DB-saved values override the env-var fallback
+  // this test process booted with (CRAFTIUM_SMTP_HOST/CRAFTIUM_PLATFORM_FROM, set above).
+  // ===================================================================================
+  const supportMailGet = await support.get('/api/platform/admin/mail-settings');
+  assert(supportMailGet.status === 403, 'support cannot read platform mail settings');
+  const supportMailSave = await support.post('/api/platform/admin/mail-settings', { host: 'evil.example.com' });
+  assert(supportMailSave.status === 403, 'support cannot change platform mail settings');
+
+  const mailBefore = await admin.get('/api/platform/admin/mail-settings');
+  assert(mailBefore.status === 200 && mailBefore.data.host === 'localhost' && mailBefore.data.configured === true, 'before any save, mail settings reflect the env-var fallback this process booted with');
+
+  const badFrom = await admin.post('/api/platform/admin/mail-settings', { from: 'not-an-email' });
+  assert(badFrom.status === 400, 'saving an invalid "from" address is rejected');
+
+  const mailSave = await admin.post('/api/platform/admin/mail-settings', {
+    host: 'mail.smtp2go.com', port: 2525, secure: false, user: 'smtpuser', password: 'smtppass', from: 'Craftium <noreply@example.com>',
+  });
+  assert(mailSave.status === 200 && mailSave.data.host === 'mail.smtp2go.com' && mailSave.data.hasPassword === true, 'admin can save platform mail settings');
+  assert(!('password' in mailSave.data) && !('pass' in mailSave.data), 'the saved password is never echoed back');
+
+  const mailAfter = await admin.get('/api/platform/admin/mail-settings');
+  assert(mailAfter.data.host === 'mail.smtp2go.com', 'the DB-saved host now wins over the env-var fallback');
+
+  const resaveNoPassword = await admin.post('/api/platform/admin/mail-settings', { host: 'mail.smtp2go.com', port: 2525, secure: false, user: 'smtpuser', password: '', from: 'Craftium <noreply@example.com>' });
+  assert(resaveNoPassword.data.hasPassword === true, 'saving again with a blank password keeps the previously-saved one, same convention as tenant mail settings');
+
+  const badTestRecipient = await admin.post('/api/platform/admin/mail-settings/test', { to: 'not-an-email' });
+  assert(badTestRecipient.status === 400, 'test-send rejects an invalid recipient address');
+  const realTestSend = await admin.post('/api/platform/admin/mail-settings/test', { to: 'someone@example.com' });
+  // This test process has no real SMTP server to actually deliver to — the point here is that
+  // it genuinely attempted to connect (service unavailable / send_failed), not a validation
+  // error, proving it reads through to a real transport rather than short-circuiting.
+  assert(realTestSend.status === 502 && realTestSend.data.error === 'send_failed', 'test-send attempts a real connection (expected to fail — no real mail server in this test run)');
+
   const unauthTenants = await request(port, { path: '/api/platform/admin/tenants', host: 'localhost' });
   assert(unauthTenants.status === 401, 'an unauthenticated request to /tenants is rejected');
 
