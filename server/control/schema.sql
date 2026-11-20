@@ -18,6 +18,15 @@ CREATE TABLE IF NOT EXISTS tenants (
   feature_flags_override_json TEXT,
   usage_caps_override_json TEXT,
   owner_contact TEXT,
+  -- Captured at signup. email_verified_at is null until the owner clicks the link sent to
+  -- owner_email (server/routes/auth.js's GET /verify-email/:token) — login is blocked until
+  -- then (see that route's POST /login). email_verify_token/_expires_at back that one link;
+  -- cleared once consumed. A CLI-created tenant (scripts/tenant-admin.js, operator-vetted) skips
+  -- all of this and is created already verified.
+  owner_email TEXT,
+  email_verified_at INTEGER,
+  email_verify_token TEXT,
+  email_verify_expires_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -61,6 +70,16 @@ CREATE TABLE IF NOT EXISTS support_sessions (
   ended_at INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_support_sessions_tenant ON support_sessions(tenant_id);
+
+-- Platform-level settings — a handful of configurable values, same key/value shape as a
+-- tenant's own `settings` table (server/lib/settings.js), just at the control-plane level.
+-- Currently just the platform's outgoing mail config (server/lib/platformMail.js), editable
+-- from the admin console (/admin → Platform email settings) without redeploying or touching
+-- env vars — changing providers later is meant to be a settings change, not a deploy.
+CREATE TABLE IF NOT EXISTS platform_settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
 
 -- better-sqlite3-session-store creates its own `sessions` table here on first use (see
 -- server/index.js) — nothing to declare for it up front.

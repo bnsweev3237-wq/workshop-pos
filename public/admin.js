@@ -58,8 +58,9 @@
     const isAdmin = me.role === 'admin';
     $('updateCard').hidden = !isAdmin;
     $('staffCard').hidden = !isAdmin;
+    $('mailCard').hidden = !isAdmin;
     loadTenants();
-    if (isAdmin) { loadUpdateStatus(); loadStaff(); }
+    if (isAdmin) { loadUpdateStatus(); loadStaff(); loadMailSettings(); }
   }
 
   async function loadTenants() {
@@ -169,6 +170,40 @@
       $('newStaffPassword').value = '';
       loadStaff();
     } catch (e) { alert(e.message || 'Could not create that account.'); }
+  };
+
+  async function loadMailSettings() {
+    try {
+      const c = await api('GET', '/api/platform/admin/mail-settings');
+      $('mailHost').value = c.host || '';
+      $('mailPort').value = c.port || '';
+      $('mailSecure').checked = !!c.secure;
+      $('mailUser').value = c.user || '';
+      $('mailFrom').value = c.from || '';
+      $('mailNotConfiguredHint').hidden = !!c.configured;
+    } catch { /* leave fields as-is */ }
+  }
+  $('mailSaveBtn').onclick = async () => {
+    const body = {
+      host: $('mailHost').value, port: $('mailPort').value, secure: $('mailSecure').checked,
+      user: $('mailUser').value, password: $('mailPass').value, from: $('mailFrom').value,
+    };
+    try {
+      const c = await api('POST', '/api/platform/admin/mail-settings', body);
+      $('mailPass').value = '';
+      $('mailNotConfiguredHint').hidden = !!c.configured;
+      $('mailStatusHint').textContent = 'Saved.';
+    } catch (e) { $('mailStatusHint').textContent = e.message || 'Could not save email settings.'; }
+  };
+  $('mailTestBtn').onclick = async () => {
+    const to = $('mailTestTo').value.trim();
+    if (!to) { alert('Enter a recipient address first.'); return; }
+    $('mailTestBtn').disabled = true;
+    try {
+      await api('POST', '/api/platform/admin/mail-settings/test', { to });
+      $('mailStatusHint').textContent = `Test email sent to ${to}.`;
+    } catch (e) { $('mailStatusHint').textContent = e.message || 'Could not send the test email.'; }
+    $('mailTestBtn').disabled = false;
   };
 
   // Already-logged-in on a return visit — pick up the existing session rather than asking again.

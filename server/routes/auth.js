@@ -6,10 +6,25 @@ const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
 const { createUserRow } = require('../lib/users');
 const { isMultiTenant } = require('../mode');
 const { checkUsageCap, hasFeature } = require('../lib/license');
+const { uid } = require('../lib/ids');
+const { sendPlatformMail } = require('../lib/platformMail');
+const { baseDomain } = require('../tenancy/resolveTenant');
 const {
   getSupportSession, markSupportSessionConsumed, getActiveSupportSessionForTenant,
-  endActiveSupportSessionForTenant, addAuditLog,
+  endActiveSupportSessionForTenant, addAuditLog, setTenantEmailVerification, markTenantEmailVerified,
 } = require('../control/db');
+
+const EMAIL_VERIFY_TTL_MS = 48 * 60 * 60 * 1000;
+
+// Tight — this sends real email to an address someone else typed in, not just gating a login
+// attempt. Keyed by IP, same reasoning as loginLimiter below.
+const resendVerificationLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 3,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_attempts', message: 'Too many resend attempts. Wait a while and try again.' },
+});
 
 // Hard safety cap on how long a consumed support session keeps showing the banner even if
 // nobody explicitly ends it — see server/control/schema.sql's support_sessions table.
@@ -87,6 +102,60 @@ router.get('/impersonate/:token', (req, res) => {
   });
 });
 
+// Consumes the verification link sent to the owner's email at signup (server/tenancy/
+// provision.js). Clicking it is treated as sufficient proof of owning the shop — same trust
+// model as a password-reset email, and the same auto-login pattern /impersonate/:token above
+// already uses, so there's no separate "now go type your password" step right after proving
+// you control the inbox it was sent to.
+router.get('/verify-email/:token', (req, res) => {
+  if (!isMultiTenant) return res.status(404).json({ error: 'not_found' });
+  const t = req.tenant;
+  // Checked against req.tenant's own row directly — the token only ever lived on this one
+  // tenant's record, so it's implicitly scoped to the host the link was for, the same
+  // cross-tenant safety /impersonate/:token gets from its own explicit tenant_id check.
+  if (!t.email_verify_token || t.email_verify_token !== req.params.token || !t.email_verify_expires_at || t.email_verify_expires_at < Date.now()) {
+    return res.status(404).send('This verification link is invalid or has expired. Request a new one from the sign-in screen.');
+  }
+  const admin = db.prepare("SELECT * FROM users WHERE role = 'admin' ORDER BY created_at ASC LIMIT 1").get();
+  if (!admin) return res.status(404).send('No admin account found to verify.');
+  markTenantEmailVerified(t.id);
+  loginAs(req, admin, async (err) => {
+    if (err) return res.status(500).send('Could not verify your email.');
+    addAuditLog(t.id, admin.username, 'email_verified', {});
+    const shopUrl = `https://${t.slug}.${baseDomain()}`;
+    sendPlatformMail({
+      to: t.owner_email,
+      subject: 'Welcome to Craftium — here\'s how to get started',
+      text: `You're verified and all set! Here's a quick-start guide to get your shop going: ${shopUrl}/quickstart.html`,
+      html: `<p>You're verified and all set!</p><p><a href="${shopUrl}/quickstart.html">Here's a quick-start guide</a> to get your shop going.</p>`,
+    }).catch(() => {}); // fire-and-forget — the owner is already logged in regardless of whether this send succeeds
+    res.redirect('/');
+  });
+});
+
+// The customer's path back when a verification email never arrives (spam filter, a mistyped
+// address that still happened to pass format validation, or they just lost it). No auth
+// required — by definition they can't log in yet — so this is scoped to req.tenant alone and
+// rate-limited (resendVerificationLimiter) rather than gated behind any credential.
+router.post('/resend-verification', resendVerificationLimiter, (req, res) => {
+  if (!isMultiTenant || !req.tenant) return res.status(404).json({ error: 'not_found' });
+  const t = req.tenant;
+  if (t.email_verified_at) return res.json({ ok: true, alreadyVerified: true });
+  const token = uid();
+  const expiresAt = Date.now() + EMAIL_VERIFY_TTL_MS;
+  setTenantEmailVerification(t.id, token, expiresAt);
+  const verifyUrl = `https://${t.slug}.${baseDomain()}/api/auth/verify-email/${token}`;
+  sendPlatformMail({
+    to: t.owner_email,
+    subject: 'Verify your email to activate your Craftium shop',
+    text: `Click the link below to verify your email and activate "${t.business_name}":\n\n${verifyUrl}\n\nThis link expires in 48 hours.`,
+    html: `<p>Click the link below to verify your email and activate <b>${t.business_name}</b>:</p><p><a href="${verifyUrl}">${verifyUrl}</a></p><p>This link expires in 48 hours.</p>`,
+  }).then((result) => {
+    if (!result.ok) console.error(`Resend verification email failed for tenant ${t.slug}:`, result.error);
+  });
+  res.json({ ok: true });
+});
+
 // Either side can end an active support session — the agent who started it, or the tenant's
 // own admin who'd rather it ended now. Neither needs to know the token; just being logged in
 // to this tenant (any role) is enough.
@@ -132,6 +201,11 @@ router.post('/login', loginLimiter, (req, res) => {
   // Same response whether the username is wrong or the password is — don't leak which.
   if (!row || !bcrypt.compareSync(password, row.password_hash)) {
     return res.status(401).json({ error: 'invalid_credentials' });
+  }
+  // Checked only after the password has already matched — an unverified tenant's email
+  // address isn't information to hand to someone who hasn't proven they know the password.
+  if (isMultiTenant && req.tenant && !req.tenant.email_verified_at) {
+    return res.status(403).json({ error: 'email_not_verified', message: 'Please verify your email before signing in — check your inbox for the activation link, or resend it below.' });
   }
   loginAs(req, row, (err) => {
     if (err) return res.status(500).json({ error: 'session_error' });

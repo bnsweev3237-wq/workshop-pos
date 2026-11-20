@@ -602,11 +602,17 @@ exactly as everything above describes, completely unaffected by any of this.
   live (optional, defaults to a local `data/` directory)
 - `CRAFTIUM_POOL_MAX` / `CRAFTIUM_POOL_IDLE_MS` — tune the per-tenant connection pool (optional,
   sensible defaults)
-- `CRAFTIUM_SMTP_HOST` / `_PORT` / `_SECURE` / `_USER` / `_PASS` — the platform's own outgoing
-  mail server, needed for receipt emails and low-stock alerts to actually send. A tenant only
-  ever controls their own "from" name and alert recipient, never the SMTP host itself — letting
-  a tenant point a shared process at an arbitrary host would be a real SSRF risk once many
-  tenants share one process, so that's an operator setting, not a tenant one.
+- `CRAFTIUM_SMTP_HOST` / `_PORT` / `_SECURE` / `_USER` / `_PASS` and `CRAFTIUM_PLATFORM_FROM` —
+  the platform's own outgoing mail server and "from" address. Used for tenant receipt emails and
+  low-stock alerts (a tenant only ever controls their own "from" name and alert recipient, never
+  the SMTP host itself — letting a tenant point a shared process at an arbitrary host would be a
+  real SSRF risk once many tenants share one process), and also for the platform's own account
+  emails: the signup verification link and the welcome email (see "Signup and email
+  verification" below). These env vars are now just the initial/fallback config — the same
+  settings can be viewed, changed, and test-sent from the admin console's "Platform email
+  settings" card with no redeploy or restart, which is the easier way to change providers later.
+  Nothing here is required to boot; with none of it set, the server starts normally and logs a
+  warning that account verification emails won't send until it's configured one way or the other.
 
 **Isolation** — one SQLite file per tenant, not shared tables with a `tenant_id` column. A
 tenant is resolved from the subdomain in the request's `Host` header before anything else runs
@@ -623,12 +629,22 @@ gets a clear "upgrade to add more" message, never a silent failure. An operator 
 tenant's plan manually (the CLI below, or the admin console's per-tenant plan dropdown); there's
 no payment integration yet, so nothing is automatically suspended for non-payment.
 
+**Signup and email verification** — signup collects an owner email address and sends a
+clickable verification link to it (same platform mail config as above); login is blocked with a
+clear "check your email" message (and a resend option) until that link is clicked. Clicking it
+also logs the owner straight into their new shop — same trust model as a password-reset email —
+and triggers a welcome email with a link to the in-app quick-start guide (`/quickstart.html`,
+also linked from the signup success screen). Tenants created via the operator CLI skip this
+(`node scripts/tenant-admin.js create <slug> <businessName> <username> <password> <email>
+[ownerName]` — an operator creating one by hand has already vetted the address out of band).
+
 **Admin console** — platform staff sign in separately, at `/admin` on the base domain (e.g.
 `https://app.example.com/admin`) — a completely separate login from any tenant's own, never
 reachable on a tenant's subdomain. Two roles: `support` can view every tenant and its disk
 usage, and use "Open" to start a support session inside a tenant's account; `admin` can do
-everything `support` can, plus change a tenant's plan, trigger a platform-wide update, and
-manage other staff accounts.
+everything `support` can, plus change a tenant's plan, trigger a platform-wide update, manage
+other staff accounts, and change the platform's outgoing email settings (the "Platform email
+settings" card — same config the env vars above seed, editable live, with a test-send button).
 
 The "Open" button is the one deliberate exception to tenant isolation anywhere in this system:
 it mints a one-time, 5-minute, single-tenant-scoped link rather than ever touching a tenant's

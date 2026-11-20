@@ -21,7 +21,7 @@ function usage() {
   console.log(`Usage: node scripts/tenant-admin.js <command> [args]
 
 Commands:
-  create <slug> <businessName> <username> <password> [ownerName]
+  create <slug> <businessName> <username> <password> <email> [ownerName]
   list [status]
   suspend <slug>
   activate <slug>
@@ -39,10 +39,14 @@ async function main() {
   const [, , cmd, ...args] = process.argv;
   switch (cmd) {
     case 'create': {
-      const [slug, businessName, username, password, ownerName] = args;
-      if (!slug || !businessName || !username || !password) { usage(); process.exit(1); }
+      const [slug, businessName, username, password, email, ownerName] = args;
+      if (!slug || !businessName || !username || !password || !email) { usage(); process.exit(1); }
       try {
-        const tenant = await provisionTenant({ businessName, slug, ownerName, username, password });
+        // skipVerification: an operator creating a tenant by hand has already vetted it out
+        // of band — it's active and usable immediately, same as every tenant before email
+        // verification existed. Only the real HTTP signup path (server/routes/platform.js)
+        // goes through the verify-email flow.
+        const tenant = await provisionTenant({ businessName, slug, ownerName, username, password, email, skipVerification: true });
         console.log(`Created tenant "${tenant.business_name}" (${tenant.slug}), id ${tenant.id}`);
       } catch (err) {
         console.error(err instanceof ProvisionError ? err.message : err);

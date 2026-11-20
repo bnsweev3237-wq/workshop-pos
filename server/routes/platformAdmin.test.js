@@ -16,6 +16,12 @@ process.env.CRAFTIUM_MODE = 'multi-tenant';
 process.env.CRAFTIUM_DATA_ROOT = dataRoot;
 process.env.CRAFTIUM_BASE_DOMAIN = 'localhost';
 process.env.CRAFTIUM_SESSION_SECRET = 'x'.repeat(40);
+// Required to boot (server/lib/platformMail.js#assertPlatformMailConfigured) — this file
+// marks tenants verified directly via control.db rather than exercising the real email flow
+// (that's multitenant.isolation.test.js's job), so nothing here actually needs mail to send.
+process.env.CRAFTIUM_SMTP_HOST = 'localhost';
+process.env.CRAFTIUM_SMTP_PORT = '2525';
+process.env.CRAFTIUM_PLATFORM_FROM = 'Craftium <hello@example.com>';
 
 const { startServer } = require('../index');
 const controlDb = require('../control/db');
@@ -72,8 +78,13 @@ async function main() {
 
   // Seed two tenants the normal way.
   const platform = new Client(port, 'localhost');
-  await platform.post('/api/platform/signup', { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', username: 'ann', password: 'alphapass123' });
-  await platform.post('/api/platform/signup', { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', username: 'bo', password: 'betapass123' });
+  await platform.post('/api/platform/signup', { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', email: 'ann@example.com', username: 'ann', password: 'alphapass123' });
+  await platform.post('/api/platform/signup', { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', email: 'bo@example.com', username: 'bo', password: 'betapass123' });
+  // This file's focus is the admin console/impersonation mechanism, not the email-verification
+  // flow (that's multitenant.isolation.test.js's job) — mark both verified directly so login
+  // below works without re-deriving that whole flow here.
+  controlDb.markTenantEmailVerified(controlDb.getTenantBySlug('alpha').id);
+  controlDb.markTenantEmailVerified(controlDb.getTenantBySlug('beta').id);
   const alphaTenant = controlDb.getTenantBySlug('alpha');
   const betaTenant = controlDb.getTenantBySlug('beta');
 
@@ -107,6 +118,41 @@ async function main() {
   assert(adminUpdateCheck.status === 200, 'admin can reach /update/check');
   const adminStaffList = await admin.get('/api/platform/admin/staff');
   assert(adminStaffList.status === 200 && adminStaffList.data.length === 2, 'admin can list staff');
+
+  // ===================================================================================
+  // Platform email settings — admin-only, DB-saved values override the env-var fallback
+  // this test process booted with (CRAFTIUM_SMTP_HOST/CRAFTIUM_PLATFORM_FROM, set above).
+  // ===================================================================================
+  const supportMailGet = await support.get('/api/platform/admin/mail-settings');
+  assert(supportMailGet.status === 403, 'support cannot read platform mail settings');
+  const supportMailSave = await support.post('/api/platform/admin/mail-settings', { host: 'evil.example.com' });
+  assert(supportMailSave.status === 403, 'support cannot change platform mail settings');
+
+  const mailBefore = await admin.get('/api/platform/admin/mail-settings');
+  assert(mailBefore.status === 200 && mailBefore.data.host === 'localhost' && mailBefore.data.configured === true, 'before any save, mail settings reflect the env-var fallback this process booted with');
+
+  const badFrom = await admin.post('/api/platform/admin/mail-settings', { from: 'not-an-email' });
+  assert(badFrom.status === 400, 'saving an invalid "from" address is rejected');
+
+  const mailSave = await admin.post('/api/platform/admin/mail-settings', {
+    host: 'mail.smtp2go.com', port: 2525, secure: false, user: 'smtpuser', password: 'smtppass', from: 'Craftium <noreply@example.com>',
+  });
+  assert(mailSave.status === 200 && mailSave.data.host === 'mail.smtp2go.com' && mailSave.data.hasPassword === true, 'admin can save platform mail settings');
+  assert(!('password' in mailSave.data) && !('pass' in mailSave.data), 'the saved password is never echoed back');
+
+  const mailAfter = await admin.get('/api/platform/admin/mail-settings');
+  assert(mailAfter.data.host === 'mail.smtp2go.com', 'the DB-saved host now wins over the env-var fallback');
+
+  const resaveNoPassword = await admin.post('/api/platform/admin/mail-settings', { host: 'mail.smtp2go.com', port: 2525, secure: false, user: 'smtpuser', password: '', from: 'Craftium <noreply@example.com>' });
+  assert(resaveNoPassword.data.hasPassword === true, 'saving again with a blank password keeps the previously-saved one, same convention as tenant mail settings');
+
+  const badTestRecipient = await admin.post('/api/platform/admin/mail-settings/test', { to: 'not-an-email' });
+  assert(badTestRecipient.status === 400, 'test-send rejects an invalid recipient address');
+  const realTestSend = await admin.post('/api/platform/admin/mail-settings/test', { to: 'someone@example.com' });
+  // This test process has no real SMTP server to actually deliver to — the point here is that
+  // it genuinely attempted to connect (service unavailable / send_failed), not a validation
+  // error, proving it reads through to a real transport rather than short-circuiting.
+  assert(realTestSend.status === 502 && realTestSend.data.error === 'send_failed', 'test-send attempts a real connection (expected to fail — no real mail server in this test run)');
 
   const unauthTenants = await request(port, { path: '/api/platform/admin/tenants', host: 'localhost' });
   assert(unauthTenants.status === 401, 'an unauthenticated request to /tenants is rejected');

@@ -62,6 +62,31 @@
     </div>
   </div>
 
+  <div class="card" id="mailCard" hidden>
+    <h2>Platform email settings</h2>
+    <div class="help">Used for account verification links and the welcome email — never a tenant's own receipts or alerts, which keep their own settings. Switching providers is just a settings change here, no redeploy needed.</div>
+    <div class="hint" id="mailNotConfiguredHint" style="color:var(--danger)" hidden>Not configured — verification emails won't send until this is set up.</div>
+    <div class="row r2">
+      <div><label for="mailHost">SMTP host</label><input id="mailHost" placeholder="mail.smtp2go.com"></div>
+      <div><label for="mailPort">Port</label><input id="mailPort" type="number" min="1" step="1" placeholder="2525"></div>
+    </div>
+    <label class="chk-field">
+      <input type="checkbox" id="mailSecure">
+      <span>Use SSL/TLS (usually port 465 — leave off for STARTTLS on 587/2525, the more common setup)</span>
+    </label>
+    <div class="row r2" style="margin-top:14px">
+      <div><label for="mailUser">Username</label><input id="mailUser" autocomplete="off"></div>
+      <div><label for="mailPass">Password</label><input id="mailPass" type="password" placeholder="leave blank to keep unchanged" autocomplete="new-password"></div>
+    </div>
+    <div style="margin-top:14px;max-width:320px"><label for="mailFrom">From address</label><input id="mailFrom" placeholder="Craftium &lt;noreply@example.com&gt;"></div>
+    <div class="btn-row"><button class="btn primary sm" id="mailSaveBtn">Save email settings</button></div>
+    <div class="row r2" style="margin-top:18px;padding-top:16px;border-top:1px solid var(--line)">
+      <div><label for="mailTestTo">Send a test email to</label><input id="mailTestTo" type="email" placeholder="you@example.com"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn sm" id="mailTestBtn" style="width:100%">Send test email</button></div>
+    </div>
+    <div class="hint" id="mailStatusHint" style="margin-top:10px"></div>
+  </div>
+
   <div class="card" id="staffCard" hidden>
     <h2>Staff accounts</h2>
     <table class="items-table">

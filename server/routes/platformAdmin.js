@@ -18,6 +18,7 @@ const { baseDomain } = require('../tenancy/resolveTenant');
 const pool = require('../tenancy/pool');
 const { checkForUpdate, applyUpdate } = require('../lib/selfUpdate');
 const { PLANS } = require('../lib/plans');
+const { getPlatformMailConfig, setPlatformMailConfig, sendPlatformMail, isValidEmail } = require('../lib/platformMail');
 
 const router = express.Router();
 
@@ -180,6 +181,33 @@ router.delete('/staff/:id', requirePlatformAdmin, (req, res) => {
   }
   deletePlatformUserRow(req.params.id);
   if (req.platformUser.id === req.params.id) req.session.destroy(() => {});
+  res.json({ ok: true });
+});
+
+// ---- Platform email settings — switching providers later is a settings change here, not a
+// redeploy. Admin-only, same split as staff management and platform updates above; support
+// can see tenants are affected by a mail outage but can't change how mail is configured. ----
+router.get('/mail-settings', requirePlatformAdmin, (req, res) => {
+  res.json(getPlatformMailConfig());
+});
+
+router.post('/mail-settings', requirePlatformAdmin, (req, res) => {
+  const b = req.body || {};
+  if (typeof b.from === 'string' && b.from && !isValidEmail(b.from) && !isValidEmail((b.from.match(/<([^>]+)>/) || [])[1])) {
+    return res.status(400).json({ error: 'invalid_input', message: 'From address doesn’t look valid — use "name@example.com" or "Display Name <name@example.com>".' });
+  }
+  res.json(setPlatformMailConfig(b));
+});
+
+router.post('/mail-settings/test', requirePlatformAdmin, async (req, res) => {
+  const { to } = req.body || {};
+  if (!isValidEmail(to)) return res.status(400).json({ error: 'invalid_input', message: 'Enter a valid test recipient address.' });
+  const result = await sendPlatformMail({
+    to, subject: 'Craftium platform email test',
+    text: 'If you got this, the platform\'s outgoing email settings are working.',
+    html: '<p>If you got this, the platform\'s outgoing email settings are working.</p>',
+  });
+  if (!result.ok) return res.status(502).json({ error: 'send_failed', message: result.error });
   res.json({ ok: true });
 });
 

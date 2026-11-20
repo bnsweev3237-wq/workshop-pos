@@ -10,19 +10,39 @@ const { isMultiTenant } = require('../mode');
 // set, not its value, so the Settings page can show "unchanged" instead of re-displaying it.
 //
 // Multi-tenant mode is different on purpose: the SMTP host/port/credentials come from the
-// platform's own environment variables, never from a tenant's own settings. Letting a tenant
-// point the shared server at an arbitrary SMTP host would be a server-side request forgery
-// surface (the platform process making outbound connections to wherever a tenant names,
-// including internal/private addresses) — the same class of risk server/lib/priceFetch.js
-// already guards against for "Check price" requests. A tenant still chooses its own `from`
-// name/address and alert recipient; it just can't choose where the mail actually routes through.
+// platform's own config, never from a tenant's own settings. Letting a tenant point the shared
+// server at an arbitrary SMTP host would be a server-side request forgery surface (the
+// platform process making outbound connections to wherever a tenant names, including
+// internal/private addresses) — the same class of risk server/lib/priceFetch.js already
+// guards against for "Check price" requests. A tenant still chooses its own `from` name/
+// address and alert recipient; it just can't choose where the mail actually routes through.
+//
+// The platform's own SMTP connection is the single thing both tenant email (this file) and
+// platform email (server/lib/platformMail.js — account verification, the welcome message) route
+// through, so this is the one place that resolves it: whatever's saved in the control-plane
+// platform_settings table (editable from the admin console, no redeploy needed to switch
+// providers) wins field by field, falling back to the CRAFTIUM_SMTP_* env vars for anything
+// never saved there — which is what lets a fresh install work from env vars alone with no UI
+// step required.
 function platformSmtpConfig() {
-  return {
+  // Lazy require: server/control/db.js is only relevant in multi-tenant mode, and this file
+  // is loaded in single-tenant mode too, where control.db doesn't exist at all.
+  const controlDb = isMultiTenant ? require('../control/db') : null;
+  const env = {
     host: process.env.CRAFTIUM_SMTP_HOST || '',
     port: Number(process.env.CRAFTIUM_SMTP_PORT) || 587,
     secure: process.env.CRAFTIUM_SMTP_SECURE === 'true',
     user: process.env.CRAFTIUM_SMTP_USER || '',
     pass: process.env.CRAFTIUM_SMTP_PASS || '',
+  };
+  if (!controlDb) return env;
+  const savedSecure = controlDb.getPlatformSetting('platformSmtpSecure', '');
+  return {
+    host: controlDb.getPlatformSetting('platformSmtpHost', '') || env.host,
+    port: Number(controlDb.getPlatformSetting('platformSmtpPort', '')) || env.port,
+    secure: savedSecure ? savedSecure === '1' : env.secure,
+    user: controlDb.getPlatformSetting('platformSmtpUser', '') || env.user,
+    pass: controlDb.getPlatformSetting('platformSmtpPass', '') || env.pass,
   };
 }
 
@@ -117,4 +137,4 @@ async function sendMail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { getMailConfig, setMailConfig, isMailConfigured, sendMail };
+module.exports = { getMailConfig, setMailConfig, isMailConfigured, sendMail, platformSmtpConfig };

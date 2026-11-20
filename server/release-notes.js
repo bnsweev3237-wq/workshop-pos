@@ -15,6 +15,14 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.1.0',
+    date: '2026-11-20',
+    notes: [
+      '(Hosted platform) Signup now collects an owner email address and verifies it with a clickable link before the account can log in, with a resend option if it doesn\'t arrive. Verifying also sends a welcome email with a link to a new in-app quick-start guide for getting a new shop set up in its first fifteen minutes.',
+      '(Hosted platform) Added a "Platform email settings" card to the admin console — the outgoing mail server used for verification and welcome emails can now be set up and changed (with a test-send button) right from the admin console, no redeploy needed.',
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-11-20',
     notes: [

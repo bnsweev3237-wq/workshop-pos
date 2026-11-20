@@ -61,11 +61,16 @@
       businessName: businessName.value.trim(),
       slug: slug.value.trim(),
       ownerName: $('ownerName').value.trim(),
+      email: $('email').value.trim(),
       username: $('username').value.trim(),
       password: $('password').value,
     };
-    if (!body.businessName || !body.slug || !body.username || !body.password) {
+    if (!body.businessName || !body.slug || !body.email || !body.username || !body.password) {
       showError('Please fill in every field.');
+      return;
+    }
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(body.email)) {
+      showError('Enter a valid email address.');
       return;
     }
     if (body.password.length < 8) {
@@ -89,7 +94,7 @@
       }
       $('signupFields').hidden = true;
       $('signupSubmit').hidden = true;
-      $('signupSuccessMessage').textContent = `"${body.businessName}" is ready. Take a quick look at the guide below, or jump straight in.`;
+      $('signupSuccessMessage').textContent = `"${body.businessName}" is ready. We've sent a link to ${body.email} to activate it — click it to verify your email before you can sign in. Take a look at the guide below while you wait.`;
       $('continueToShopBtn').onclick = () => { window.location.href = data.loginUrl; };
       $('signupSuccess').hidden = false;
     } catch {

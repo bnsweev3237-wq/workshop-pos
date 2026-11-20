@@ -162,6 +162,7 @@ function openLogin(forTab) {
   pendingTab = forTab || null;
   forceChangePassword = false;
   $('loginError').hidden = true;
+  $('resendVerificationBtn').hidden = true;
   $('forgotPanel').hidden = true;
   $('forceChangeFields').hidden = true;
   $('loginSubmit').textContent = 'Sign in';
@@ -206,8 +207,20 @@ function showForceChangeScreen() {
 
 $('forgotLink').onclick = () => { $('forgotPanel').hidden = !$('forgotPanel').hidden; };
 
+$('resendVerificationBtn').onclick = async () => {
+  $('resendVerificationBtn').disabled = true;
+  try {
+    const r = await api('POST', '/api/auth/resend-verification');
+    toast(r.alreadyVerified ? 'Already verified — just sign in below.' : 'Verification email sent — check your inbox.');
+  } catch (e) {
+    toast(e.message || 'Could not resend the verification email.');
+  }
+  $('resendVerificationBtn').disabled = false;
+};
+
 $('loginSubmit').onclick = async () => {
   $('loginError').hidden = true;
+  $('resendVerificationBtn').hidden = true;
   try {
     if (forceChangePassword) {
       const p1 = $('forcePassword1').value, p2 = $('forcePassword2').value;
@@ -236,6 +249,7 @@ $('loginSubmit').onclick = async () => {
   } catch (e) {
     $('loginError').textContent = e.message === 'invalid_credentials' || e.code === 'invalid_credentials' ? 'Incorrect username or password.' : e.message;
     $('loginError').hidden = false;
+    $('resendVerificationBtn').hidden = e.code !== 'email_not_verified';
   }
 };
 [$('loginUsername'), $('loginPassword'), $('forcePassword1'), $('forcePassword2')].forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') $('loginSubmit').click(); }));

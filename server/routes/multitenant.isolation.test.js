@@ -14,6 +14,13 @@ process.env.CRAFTIUM_MODE = 'multi-tenant';
 process.env.CRAFTIUM_DATA_ROOT = dataRoot;
 process.env.CRAFTIUM_BASE_DOMAIN = 'localhost';
 process.env.CRAFTIUM_SESSION_SECRET = 'x'.repeat(40);
+// Required to boot at all now (server/lib/platformMail.js#assertPlatformMailConfigured) —
+// nothing in this test run actually needs mail to be deliverable, since every check below
+// drives verification by reading the token straight out of control.db rather than an inbox;
+// sendPlatformMail failing to connect to this bogus host is expected and handled gracefully.
+process.env.CRAFTIUM_SMTP_HOST = 'localhost';
+process.env.CRAFTIUM_SMTP_PORT = '2525';
+process.env.CRAFTIUM_PLATFORM_FROM = 'Craftium <hello@example.com>';
 
 const { startServer } = require('../index');
 const pool = require('../tenancy/pool');
@@ -68,6 +75,15 @@ class Client {
   del(p) { return this.call('DELETE', p); }
 }
 
+// Stands in for "the owner clicks the link in their email" — reads the token straight out of
+// control.db (there's no real inbox in a test run) and consumes it the same way a real click
+// would. Discards the auto-login cookie that comes back; callers that want a session still go
+// through a normal POST /api/auth/login afterward, which is itself part of what's being tested.
+async function verifyTenantEmail(port, slug) {
+  const tenant = controlDb.getTenantBySlug(slug);
+  return request(port, { path: `/api/auth/verify-email/${tenant.email_verify_token}`, host: `${slug}.localhost` });
+}
+
 // ---------- route-inventory guard: every mounted prefix must have a covering test ----------
 function mountedPrefixes() {
   const src = fs.readFileSync(path.join(__dirname, '..', 'index.js'), 'utf8');
@@ -91,26 +107,78 @@ async function main() {
   const avail = await platform.get('/api/platform/slug-available?slug=alpha');
   assert(avail.status === 200 && avail.data.available === true, 'slug-available reports a fresh slug as available');
 
-  const weakPw = await platform.post('/api/platform/signup', { businessName: 'Weak Co', slug: 'weakco', ownerName: 'W', username: 'w', password: 'short' });
+  const weakPw = await platform.post('/api/platform/signup', { businessName: 'Weak Co', slug: 'weakco', ownerName: 'W', email: 'w@example.com', username: 'w', password: 'short' });
   assert(weakPw.status === 400, 'signup rejects a password under 8 characters');
 
-  const reserved = await platform.post('/api/platform/signup', { businessName: 'WWW Co', slug: 'www', ownerName: 'W', username: 'w', password: 'longenough1' });
+  const noEmail = await platform.post('/api/platform/signup', { businessName: 'No Email Co', slug: 'noemail', ownerName: 'W', username: 'w', password: 'longenough1' });
+  assert(noEmail.status === 400 && noEmail.data.error === 'invalid_input', 'signup rejects a missing email');
+
+  const badEmail = await platform.post('/api/platform/signup', { businessName: 'Bad Email Co', slug: 'bademail', ownerName: 'W', email: 'not-an-email', username: 'w', password: 'longenough1' });
+  assert(badEmail.status === 400 && badEmail.data.error === 'invalid_input', 'signup rejects a malformed email');
+
+  const reserved = await platform.post('/api/platform/signup', { businessName: 'WWW Co', slug: 'www', ownerName: 'W', email: 'w@example.com', username: 'w', password: 'longenough1' });
   assert(reserved.status === 400 && reserved.data.error === 'invalid_slug', 'signup rejects a reserved slug (www)');
 
-  const malformed = await platform.post('/api/platform/signup', { businessName: 'Bad', slug: 'ab_cd', ownerName: 'W', username: 'w', password: 'longenough1' });
+  const malformed = await platform.post('/api/platform/signup', { businessName: 'Bad', slug: 'ab_cd', ownerName: 'W', email: 'w@example.com', username: 'w', password: 'longenough1' });
   assert(malformed.status === 400 && malformed.data.error === 'invalid_slug', 'signup rejects a malformed slug (underscore)');
 
-  const alphaSignup = await platform.post('/api/platform/signup', { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', username: 'ann', password: 'alphapass123' });
+  const alphaSignup = await platform.post('/api/platform/signup', { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', email: 'ann@example.com', username: 'ann', password: 'alphapass123' });
   assert(alphaSignup.status === 200 && alphaSignup.data.ok, 'alpha tenant signed up');
 
-  const dupSlug = await platform.post('/api/platform/signup', { businessName: 'Alpha Again', slug: 'alpha', ownerName: 'Ann2', username: 'ann2', password: 'alphapass123' });
+  const dupSlug = await platform.post('/api/platform/signup', { businessName: 'Alpha Again', slug: 'alpha', ownerName: 'Ann2', email: 'ann2@example.com', username: 'ann2', password: 'alphapass123' });
   assert(dupSlug.status === 409 && dupSlug.data.error === 'slug_taken', 'signup rejects a duplicate slug (409)');
 
-  const betaSignup = await platform.post('/api/platform/signup', { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', username: 'bo', password: 'betapass123' });
+  const betaSignup = await platform.post('/api/platform/signup', { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', email: 'bo@example.com', username: 'bo', password: 'betapass123' });
   assert(betaSignup.status === 200 && betaSignup.data.ok, 'beta tenant signed up');
 
-  const gammaSignup = await platform.post('/api/platform/signup', { businessName: 'Gamma Studio', slug: 'gamma', ownerName: 'Gia', username: 'gia', password: 'gammapass123' });
+  const gammaSignup = await platform.post('/api/platform/signup', { businessName: 'Gamma Studio', slug: 'gamma', ownerName: 'Gia', email: 'gia@example.com', username: 'gia', password: 'gammapass123' });
   assert(gammaSignup.status === 200 && gammaSignup.data.ok, 'gamma tenant signed up (used for plan-cap enforcement + scheduler-isolation)');
+
+  // ===================================================================================
+  // Email verification — login is blocked until the owner clicks the link sent at signup
+  // ===================================================================================
+  const alphaTenantRow = controlDb.getTenantBySlug('alpha');
+  const betaTenantRow = controlDb.getTenantBySlug('beta');
+  assert(alphaTenantRow.owner_email === 'ann@example.com' && !alphaTenantRow.email_verified_at, 'alpha\'s owner_email is stored and email_verified_at is still null right after signup');
+
+  const blockedLogin = await request(port, { method: 'POST', path: '/api/auth/login', host: 'alpha.localhost', body: { username: 'ann', password: 'alphapass123' } });
+  assert(blockedLogin.status === 403 && blockedLogin.data.error === 'email_not_verified', 'login is blocked with email_not_verified before the owner verifies');
+
+  const crossTenantVerify = await request(port, { path: `/api/auth/verify-email/${alphaTenantRow.email_verify_token}`, host: 'beta.localhost' });
+  assert(crossTenantVerify.status === 404, 'a token minted for alpha is rejected on beta\'s host, even though it\'s real and unexpired');
+  assert(!controlDb.getTenantBySlug('beta').email_verified_at, 'beta is completely unaffected by alpha\'s token being tried against it');
+
+  const bogusVerify = await request(port, { path: '/api/auth/verify-email/not-a-real-token', host: 'alpha.localhost' });
+  assert(bogusVerify.status === 404, 'an unknown verification token is rejected');
+
+  // An expired (never-consumed) token.
+  controlDb.getControlDb().prepare('UPDATE tenants SET email_verify_expires_at = ? WHERE slug = ?').run(Date.now() - 1000, 'alpha');
+  const expiredVerify = await request(port, { path: `/api/auth/verify-email/${alphaTenantRow.email_verify_token}`, host: 'alpha.localhost' });
+  assert(expiredVerify.status === 404, 'an expired (never-consumed) verification token is rejected');
+
+  // Resend mints a fresh token — the expired one above is now moot either way, but this also
+  // proves resend actually invalidates whatever token existed before.
+  const resend = await request(port, { method: 'POST', path: '/api/auth/resend-verification', host: 'alpha.localhost' });
+  assert(resend.status === 200 && resend.data.ok === true, 'resend-verification succeeds for an unverified tenant');
+  const freshToken = controlDb.getTenantBySlug('alpha').email_verify_token;
+  assert(freshToken !== alphaTenantRow.email_verify_token, 'resend minted a genuinely new token, invalidating the old one');
+
+  const realVerify = await request(port, { path: `/api/auth/verify-email/${freshToken}`, host: 'alpha.localhost' });
+  assert(realVerify.status === 302 && realVerify.setCookie, 'consuming the fresh token on alpha\'s own host auto-logs-in and redirects');
+  assert(!!controlDb.getTenantBySlug('alpha').email_verified_at, 'alpha is now marked verified');
+
+  const secondVerifyAttempt = await request(port, { path: `/api/auth/verify-email/${freshToken}`, host: 'alpha.localhost' });
+  assert(secondVerifyAttempt.status === 404, 'the same verification token cannot be consumed a second time');
+
+  const alreadyVerifiedResend = await request(port, { method: 'POST', path: '/api/auth/resend-verification', host: 'alpha.localhost' });
+  assert(alreadyVerifiedResend.status === 200 && alreadyVerifiedResend.data.alreadyVerified === true, 'resend on an already-verified tenant no-ops rather than sending another email');
+
+  const loginNowWorks = await request(port, { method: 'POST', path: '/api/auth/login', host: 'alpha.localhost', body: { username: 'ann', password: 'alphapass123' } });
+  assert(loginNowWorks.status === 200, 'alpha can now log in normally after verifying');
+
+  // beta and gamma still need verifying before their own logins below.
+  await verifyTenantEmail(port, 'beta');
+  await verifyTenantEmail(port, 'gamma');
 
   // ===================================================================================
   // Plan usage caps — gamma stays on its default 'trial' plan for this, so alpha/beta's

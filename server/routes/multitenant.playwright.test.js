@@ -13,8 +13,15 @@ process.env.CRAFTIUM_MODE = 'multi-tenant';
 process.env.CRAFTIUM_DATA_ROOT = dataRoot;
 process.env.CRAFTIUM_BASE_DOMAIN = 'localhost'; // Chromium resolves *.localhost to loopback with no DNS setup
 process.env.CRAFTIUM_SESSION_SECRET = 'x'.repeat(40);
+// Required to boot at all now (server/lib/platformMail.js#assertPlatformMailConfigured) — a
+// bogus host is fine, since every email in this file is "sent" to a mail server that was
+// never going to answer anyway; sendPlatformMail failing to connect is handled gracefully.
+process.env.CRAFTIUM_SMTP_HOST = 'localhost';
+process.env.CRAFTIUM_SMTP_PORT = '2525';
+process.env.CRAFTIUM_PLATFORM_FROM = 'Craftium <hello@example.com>';
 
 const { startServer } = require('../index');
+const controlDb = require('../control/db');
 
 let failures = 0;
 function assert(cond, msg) {
@@ -22,17 +29,19 @@ function assert(cond, msg) {
   else console.log(`ok: ${msg}`);
 }
 
-async function signUp(page, port, { businessName, slug, ownerName, username, password }) {
+async function signUp(page, port, { businessName, slug, ownerName, email, username, password }) {
   await page.goto(`http://localhost:${port}/`);
   await page.waitForSelector('#signupSubmit');
   await page.fill('#businessName', businessName);
   await page.fill('#slug', slug);
   await page.fill('#ownerName', ownerName);
+  await page.fill('#email', email);
   await page.fill('#username', username);
   await page.fill('#password', password);
   await page.click('#signupSubmit');
-  // Signup now shows a success screen (quick-start guide link + a "Continue to your shop"
-  // button) instead of redirecting immediately.
+  // Signup now shows a success screen (quick-start guide link + a "Go to sign-in" button)
+  // instead of redirecting immediately — and the owner can't actually sign in yet regardless,
+  // until the verification link below is "clicked".
   await page.waitForSelector('#signupSuccess:not([hidden])', { timeout: 10000 });
   await page.click('#continueToShopBtn');
   await page.waitForURL((url) => url.hostname === `${slug}.localhost`, { timeout: 10000 });
@@ -46,6 +55,31 @@ async function logIn(page, username, password) {
   await page.waitForSelector('#tabs button[data-tab="pos"]', { state: 'visible', timeout: 10000 });
 }
 
+// Node-side stand-in for "the owner clicks the link in their email" — reads the token
+// straight out of control.db (no real inbox in a test run) and returns the URL a real email
+// would have contained (used to navigate a real browser tab there).
+function verificationUrlFor(port, slug) {
+  const tenant = controlDb.getTenantBySlug(slug);
+  return `http://${slug}.localhost:${port}/api/auth/verify-email/${tenant.email_verify_token}`;
+}
+
+// Consumes a verification link from this test process directly, without touching any
+// browser's own session — Chromium resolves *.localhost to loopback natively, but plain
+// Node DNS doesn't, so this connects to 127.0.0.1 directly and sets the Host header by hand
+// (http.request allows that; fetch() does not).
+function verifyFromNode(port, slug) {
+  const http = require('http');
+  const tenant = controlDb.getTenantBySlug(slug);
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, path: `/api/auth/verify-email/${tenant.email_verify_token}`, headers: { Host: `${slug}.localhost` } }, (res) => {
+      res.resume();
+      res.on('end', resolve);
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function main() {
   const { server, port } = await startServer(0);
   const browser = await chromium.launch();
@@ -54,10 +88,25 @@ async function main() {
     const context = await browser.newContext();
     const alphaPage = await context.newPage();
 
-    await signUp(alphaPage, port, { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', username: 'ann', password: 'alphapass123' });
+    await signUp(alphaPage, port, { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', email: 'ann@example.com', username: 'ann', password: 'alphapass123' });
     assert(alphaPage.url().includes('alpha.localhost'), 'after signing up, the browser landed on alpha.localhost');
-    await logIn(alphaPage, 'ann', 'alphapass123');
-    assert((await alphaPage.title()) === 'Alpha Crafts', 'alpha\'s page title reflects its own branding (business name) after signing in');
+
+    // Real login attempt with the right credentials, before verifying — must fail in the real
+    // UI (not just at the API) and show the resend action, not silently succeed or hang.
+    await alphaPage.waitForSelector('#loginUsername', { timeout: 10000 });
+    await alphaPage.fill('#loginUsername', 'ann');
+    await alphaPage.fill('#loginPassword', 'alphapass123');
+    await alphaPage.click('#loginSubmit');
+    await alphaPage.waitForSelector('#loginError:not([hidden])', { timeout: 10000 });
+    assert(await alphaPage.isVisible('#resendVerificationBtn'), 'the real login form shows "Resend verification email" when login fails for an unverified account');
+    await alphaPage.click('#resendVerificationBtn');
+    await alphaPage.waitForTimeout(300); // let the toast fire
+
+    // "Click the link in the email" — navigate the same browser/tab there, same as a real
+    // customer would from their inbox. Auto-logs in and redirects, no password re-entry.
+    await alphaPage.goto(verificationUrlFor(port, 'alpha'));
+    await alphaPage.waitForSelector('#tabs button[data-tab="pos"]', { state: 'visible', timeout: 10000 });
+    assert((await alphaPage.title()) === 'Alpha Crafts', 'alpha\'s page title reflects its own branding (business name) after verifying');
 
     // Provision beta (so its host resolves), but deliberately don't log in yet on any page in
     // this browser context — the point of the next check is that alpha's own tab, switched to
@@ -66,7 +115,7 @@ async function main() {
     // login instead, which would hide a real leak behind a merely-confusing-looking pass, so
     // this has to run before beta has any cookie of its own in this context.
     const provisionPage = await context.newPage();
-    await signUp(provisionPage, port, { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', username: 'bo', password: 'betapass123' });
+    await signUp(provisionPage, port, { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', email: 'bo@example.com', username: 'bo', password: 'betapass123' });
     await provisionPage.close();
 
     // Settings UI hides the self-update / license / host-disk sections in multi-tenant mode.
@@ -91,6 +140,11 @@ async function main() {
     // Now actually log into beta (a separate tab, so alpha's own tab/session is undisturbed)
     // and confirm identity and data isolation hold even with both tenants concurrently logged
     // in within the very same browser context — the realistic "one admin runs both tabs" case.
+    // Verified from this test process directly, not through betaPage's own browser session —
+    // navigating betaPage to the link itself (like alpha above) would also auto-log it in,
+    // which would skip real coverage of the username/password form actually working once an
+    // account is verified.
+    await verifyFromNode(port, 'beta');
     const betaPage = await context.newPage();
     await betaPage.goto(`http://beta.localhost:${port}/`);
     await logIn(betaPage, 'bo', 'betapass123');
