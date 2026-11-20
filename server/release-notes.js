@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.2.0',
+    date: '2026-11-20',
+    notes: [
+      '(Hosted platform) The admin console can now suspend/reactivate a tenant, reset a tenant user\'s password, and create a tenant by hand — day-to-day operator actions that used to require SSH into the server and the operator CLI now work entirely from the "Tenants" and "Create a tenant" areas of /admin.',
+    ],
+  },
+  {
     version: '2.1.0',
     date: '2026-11-20',
     notes: [

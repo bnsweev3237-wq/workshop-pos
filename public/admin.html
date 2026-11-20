@@ -52,6 +52,23 @@
     <div class="empty" id="tenantsEmpty" hidden>No tenants yet.</div>
   </div>
 
+  <div class="card" id="createTenantCard" hidden>
+    <h2>Create a tenant</h2>
+    <div class="help">For cases the self-serve <code>/signup</code> page doesn't cover — onboarding someone by hand, a migration, a test account. Skips email verification entirely; the owner can sign in right away.</div>
+    <div class="row r3">
+      <div><label for="ctSlug">Subdomain</label><input id="ctSlug" placeholder="acme-pottery" autocomplete="off"></div>
+      <div><label for="ctBusinessName">Business name</label><input id="ctBusinessName" autocomplete="off"></div>
+      <div><label for="ctOwnerName">Owner name (optional)</label><input id="ctOwnerName" autocomplete="off"></div>
+    </div>
+    <div class="row r3" style="margin-top:14px">
+      <div><label for="ctUsername">Owner username</label><input id="ctUsername" autocomplete="off"></div>
+      <div><label for="ctPassword">Owner password</label><input id="ctPassword" type="password" placeholder="min 8 characters" autocomplete="new-password"></div>
+      <div><label for="ctEmail">Owner email</label><input id="ctEmail" type="email" autocomplete="off"></div>
+    </div>
+    <div class="btn-row"><button class="btn primary sm" id="createTenantBtn">Create tenant</button></div>
+    <div class="hint" id="createTenantHint" style="margin-top:10px"></div>
+  </div>
+
   <div class="card" id="updateCard" hidden>
     <h2>Platform updates</h2>
     <div class="help">Pulls the latest code and restarts the whole platform process — every tenant briefly disconnects while it restarts.</div>
