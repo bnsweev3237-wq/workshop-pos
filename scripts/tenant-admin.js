@@ -15,6 +15,7 @@ const { createUserRow } = require('../server/lib/users');
 const pool = require('../server/tenancy/pool');
 const { provisionTenant, ProvisionError } = require('../server/tenancy/provision');
 const { PLANS } = require('../server/lib/plans');
+const { createPlatformUserRow } = require('../server/lib/platformUsers');
 
 function usage() {
   console.log(`Usage: node scripts/tenant-admin.js <command> [args]
@@ -27,6 +28,10 @@ Commands:
   set-plan <slug> <plan>            plans: ${Object.keys(PLANS).join(', ')}
   reset-password <slug> <username> <newPassword>
   migrate-all                       bring every tenant db up to the current schema
+
+  create-staff <username> <password> <admin|support>   platform admin-console account
+  list-staff
+  remove-staff <username>
 `);
 }
 
@@ -103,6 +108,33 @@ async function main() {
         console.log(`Migrated ${t.slug}.`);
       }
       console.log(`Done — ${tenants.length} tenant(s).`);
+      break;
+    }
+    // Bootstraps the first admin-console account (/admin on the platform host) — a chicken-
+    // and-egg problem, same as the original tenant setup had before signup existed. Once one
+    // admin account exists, more staff can be added from the console itself.
+    case 'create-staff': {
+      const [username, password, role] = args;
+      if (!username || !password || !['admin', 'support'].includes(role)) { usage(); process.exit(1); }
+      if (password.length < 8) { console.error('Password must be at least 8 characters.'); process.exit(1); }
+      if (controlDb.getPlatformUserByUsername(username)) { console.error(`A staff account "${username}" already exists.`); process.exit(1); }
+      const row = createPlatformUserRow(controlDb.getControlDb(), { username, password, role });
+      console.log(`Created staff account "${row.username}" (${row.role}).`);
+      break;
+    }
+    case 'list-staff': {
+      const staff = controlDb.listPlatformUsers();
+      if (!staff.length) { console.log('No staff accounts.'); break; }
+      for (const s of staff) console.log(`${s.username}\t${s.role}\t${new Date(s.created_at).toISOString()}`);
+      break;
+    }
+    case 'remove-staff': {
+      const [username] = args;
+      if (!username) { usage(); process.exit(1); }
+      const row = controlDb.getPlatformUserByUsername(username);
+      if (!row) { console.error(`No staff account "${username}".`); process.exit(1); }
+      controlDb.deletePlatformUserRow(row.id);
+      console.log(`Removed staff account "${username}".`);
       break;
     }
     default:

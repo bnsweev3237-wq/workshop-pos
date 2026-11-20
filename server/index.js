@@ -130,9 +130,10 @@ function createMultiTenantApp(app) {
   app.use(bindSessionToTenant);
   app.use(tenantDbContext); // no-op on the platform host — nothing to attach there
 
-  // Platform-level routes (signup) — the router itself refuses anything not on the platform
-  // host, so mounting it here unconditionally is safe.
+  // Platform-level routes (signup, the staff admin console) — both routers refuse anything
+  // not on the platform host themselves, so mounting them here unconditionally is safe.
   app.use('/api/platform', require('./routes/platform'));
+  app.use('/api/platform/admin', require('./routes/platformAdmin'));
 
   // Every router below assumes a resolved tenant (an active AsyncLocalStorage context) — a
   // request that reached here on the platform host would otherwise fall through into one of
@@ -152,7 +153,10 @@ function createMultiTenantApp(app) {
   app.use(express.static(path.join(__dirname, '..', 'public'), { index: false }));
   app.get('*', (req, res) => {
     if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'not_found' });
-    if (req.platformHost) return res.sendFile(path.join(__dirname, '..', 'public', 'signup.html'));
+    if (req.platformHost) {
+      if (req.path === '/admin' || req.path.startsWith('/admin/')) return res.sendFile(path.join(__dirname, '..', 'public', 'admin.html'));
+      return res.sendFile(path.join(__dirname, '..', 'public', 'signup.html'));
+    }
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
   });
 

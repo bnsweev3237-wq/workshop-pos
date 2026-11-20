@@ -121,8 +121,22 @@ async function refreshAuthStatus() {
   me = s.me;
   if (me) Offline.saveSnapshot('me', me);
   updateAuthUI();
+  updateSupportSessionBanner(s);
   return s;
 }
+
+// Multi-tenant mode only — s.supportSessionActive is true for EVERY session on this tenant
+// while a platform staff member is using the "open tenant" support tool, not just their own;
+// visible disclosure was the deliberate design choice (see server/routes/auth.js). Either the
+// real account holder or the support agent's own session can end it from here.
+function updateSupportSessionBanner(s) {
+  $('supportSessionBanner').hidden = !s.supportSessionActive;
+}
+$('endSupportSessionBtn').onclick = async () => {
+  try { await api('POST', '/api/auth/end-support-session'); }
+  catch (e) { toast(e.message || 'Could not end the support session.'); return; }
+  $('supportSessionBanner').hidden = true;
+};
 
 function updateAuthUI() {
   const isAdmin = !!me && me.role === 'admin';
