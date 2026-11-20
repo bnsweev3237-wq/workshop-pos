@@ -12,13 +12,14 @@ const { createPlatformUserRow } = require('../lib/platformUsers');
 const { requirePlatformStaff, requirePlatformAdmin, loginPlatformUser } = require('../control/adminAuth');
 const {
   getControlDb, listTenants, getTenantById, getPlatformUserByUsername, listPlatformUsers,
-  deletePlatformUserRow, insertSupportSession, updateTenantPlan, addAuditLog,
+  deletePlatformUserRow, insertSupportSession, updateTenantPlan, updateTenantStatus, addAuditLog,
 } = require('../control/db');
 const { baseDomain } = require('../tenancy/resolveTenant');
 const pool = require('../tenancy/pool');
 const { checkForUpdate, applyUpdate } = require('../lib/selfUpdate');
 const { PLANS } = require('../lib/plans');
 const { getPlatformMailConfig, setPlatformMailConfig, sendPlatformMail, isValidEmail } = require('../lib/platformMail');
+const { provisionTenant, ProvisionError } = require('../tenancy/provision');
 
 const router = express.Router();
 
@@ -103,6 +104,27 @@ router.get('/tenants', requirePlatformStaff, async (req, res) => {
   res.json(out);
 });
 
+// Manually provisioning a tenant from the console — for the cases the public self-serve
+// /signup page doesn't cover (onboarding someone by hand, a migration, a test account).
+// skipVerification: true, same as scripts/tenant-admin.js's "create" command — a staff member
+// creating one by hand has already vetted the address out of band, so unlike real self-serve
+// signup there's no "check your email" step and the owner can log in immediately.
+router.post('/tenants', requirePlatformAdmin, async (req, res) => {
+  const { businessName, slug, ownerName, username, password, email } = req.body || {};
+  try {
+    const tenant = await provisionTenant({ businessName, slug, ownerName, username, password, email, skipVerification: true });
+    addAuditLog(tenant.id, req.platformUser.username, 'tenant_created_by_staff', {});
+    res.json({ id: tenant.id, slug: tenant.slug, businessName: tenant.business_name, loginUrl: `//${tenant.slug}.${baseDomain()}/` });
+  } catch (err) {
+    if (err instanceof ProvisionError) {
+      const status = err.code === 'slug_taken' ? 409 : 400;
+      return res.status(status).json({ error: err.code, message: err.message });
+    }
+    console.error('Admin-console tenant creation failed:', err);
+    res.status(502).json({ error: 'create_failed', message: 'Something went wrong creating that tenant. Try again.' });
+  }
+});
+
 // Changing what a tenant pays for is an admin-only action — support staff can view plans
 // (visible in the /tenants response) but not change them, same split as staff management
 // and platform updates. See server/lib/plans.js for the actual plan content.
@@ -116,6 +138,54 @@ router.post('/tenants/:id/plan', requirePlatformAdmin, (req, res) => {
   updateTenantPlan(tenant.id, plan);
   addAuditLog(tenant.id, req.platformUser.username, 'plan_changed', { plan });
   res.json({ ok: true, plan });
+});
+
+// Suspending/reactivating a tenant is an admin-only action, same split as plan changes —
+// support can see a tenant is suspended (status is in the /tenants response) but not change it.
+// server/tenancy/resolveTenant.js is what actually enforces 'suspended' by rejecting the
+// request before any route runs; this just flips the status.
+router.post('/tenants/:id/status', requirePlatformAdmin, (req, res) => {
+  const tenant = getTenantById(req.params.id);
+  if (!tenant) return res.status(404).json({ error: 'not_found' });
+  const { status } = req.body || {};
+  if (!['active', 'suspended'].includes(status)) {
+    return res.status(400).json({ error: 'invalid_input', message: 'Status must be active or suspended.' });
+  }
+  updateTenantStatus(tenant.id, status);
+  addAuditLog(tenant.id, req.platformUser.username, status === 'suspended' ? 'suspended' : 'activated', {});
+  res.json({ ok: true, status });
+});
+
+// Support need (locked-out owner, forgot password), so support can do this too — unlike plan/
+// status changes it never affects what the tenant pays for or whether they can be reached at
+// all, just lets staff hand back access. Mirrors scripts/tenant-admin.js's reset-password
+// command: runs against the tenant's own db via the pool (same context a real request would
+// use), sets must_change_password so the new password is a one-time handoff, never silently
+// permanent.
+router.post('/tenants/:id/reset-password', requirePlatformStaff, async (req, res) => {
+  const tenant = getTenantById(req.params.id);
+  if (!tenant) return res.status(404).json({ error: 'not_found' });
+  const { username, newPassword } = req.body || {};
+  if (!username) return res.status(400).json({ error: 'invalid_input', message: 'Username is required.' });
+  if (!newPassword || newPassword.length < 8) {
+    return res.status(400).json({ error: 'invalid_input', message: 'New password must be at least 8 characters.' });
+  }
+  try {
+    const changed = await pool.withTenant(tenant.id, () => {
+      const bcrypt = require('bcryptjs');
+      const db = require('../db');
+      const user = db.prepare('SELECT id FROM users WHERE username = ? COLLATE NOCASE').get(username);
+      if (!user) return false;
+      db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1 WHERE id = ?').run(bcrypt.hashSync(newPassword, 12), user.id);
+      return true;
+    });
+    if (!changed) return res.status(404).json({ error: 'user_not_found', message: `No user "${username}" on this tenant.` });
+    addAuditLog(tenant.id, req.platformUser.username, 'password_reset', { username });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Admin-console password reset failed:', err);
+    res.status(502).json({ error: 'reset_failed', message: 'Something went wrong resetting that password.' });
+  }
 });
 
 // Mints a one-time, short-lived, single-tenant-scoped link — consumed by

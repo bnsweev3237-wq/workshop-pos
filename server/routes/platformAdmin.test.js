@@ -16,8 +16,8 @@ process.env.CRAFTIUM_MODE = 'multi-tenant';
 process.env.CRAFTIUM_DATA_ROOT = dataRoot;
 process.env.CRAFTIUM_BASE_DOMAIN = 'localhost';
 process.env.CRAFTIUM_SESSION_SECRET = 'x'.repeat(40);
-// Required to boot (server/lib/platformMail.js#assertPlatformMailConfigured) — this file
-// marks tenants verified directly via control.db rather than exercising the real email flow
+// Seeds the env-var fallback for platform mail (server/lib/mail.js#platformSmtpConfig) — this
+// file marks tenants verified directly via control.db rather than exercising the real email flow
 // (that's multitenant.isolation.test.js's job), so nothing here actually needs mail to send.
 process.env.CRAFTIUM_SMTP_HOST = 'localhost';
 process.env.CRAFTIUM_SMTP_PORT = '2525';
@@ -217,6 +217,50 @@ async function main() {
   assert(dupe.status === 409, 'duplicate staff username rejected');
   const lastAdminDelete = await admin.del(`/api/platform/admin/staff/${(await admin.get('/api/platform/admin/staff')).data.find((s) => s.username === 'opsadmin').id}`);
   assert(lastAdminDelete.status === 409, 'the last admin staff account cannot be removed');
+
+  // ===================================================================================
+  // Tenant lifecycle: suspend/activate, password reset, manual creation — all meant to cut
+  // down how often an operator needs shell access to the VPS (scripts/tenant-admin.js's
+  // suspend/activate/reset-password/create commands, now also reachable from /admin).
+  // ===================================================================================
+  const supportStatusChange = await support.post(`/api/platform/admin/tenants/${betaTenant.id}/status`, { status: 'suspended' });
+  assert(supportStatusChange.status === 403, 'support cannot suspend/activate a tenant');
+
+  const badStatus = await admin.post(`/api/platform/admin/tenants/${betaTenant.id}/status`, { status: 'deleted' });
+  assert(badStatus.status === 400, 'status must be active or suspended — not an arbitrary value');
+
+  const suspendBeta = await admin.post(`/api/platform/admin/tenants/${betaTenant.id}/status`, { status: 'suspended' });
+  assert(suspendBeta.status === 200 && suspendBeta.data.status === 'suspended', 'admin can suspend a tenant');
+  const betaBlocked = await request(port, { path: '/api/auth/status', host: 'beta.localhost' });
+  assert(betaBlocked.status === 403 && betaBlocked.data.error === 'tenant_suspended', 'a suspended tenant is rejected before any route runs');
+
+  const reactivateBeta = await admin.post(`/api/platform/admin/tenants/${betaTenant.id}/status`, { status: 'active' });
+  assert(reactivateBeta.status === 200 && reactivateBeta.data.status === 'active', 'admin can reactivate a suspended tenant');
+  const betaWorksAgain = await request(port, { path: '/api/auth/status', host: 'beta.localhost' });
+  assert(betaWorksAgain.status === 200, 'reactivating immediately un-blocks the tenant again');
+
+  const badPasswordReset = await support.post(`/api/platform/admin/tenants/${betaTenant.id}/reset-password`, { username: 'bo', newPassword: 'short' });
+  assert(badPasswordReset.status === 400, 'a too-short new password is rejected');
+  const unknownUserReset = await support.post(`/api/platform/admin/tenants/${betaTenant.id}/reset-password`, { username: 'nobody', newPassword: 'newpassword123' });
+  assert(unknownUserReset.status === 404, 'resetting an unknown username on a real tenant 404s');
+
+  const passwordReset = await support.post(`/api/platform/admin/tenants/${betaTenant.id}/reset-password`, { username: 'bo', newPassword: 'newpassword123' });
+  assert(passwordReset.status === 200, 'support can reset a tenant user\'s password (a support need, unlike plan/status changes)');
+  const oldPasswordFails = await request(port, { path: '/api/auth/login', method: 'POST', host: 'beta.localhost', body: { username: 'bo', password: 'betapass123' } });
+  assert(oldPasswordFails.status === 401, 'the old password no longer works after a reset');
+  const newPasswordWorks = await request(port, { path: '/api/auth/login', method: 'POST', host: 'beta.localhost', body: { username: 'bo', password: 'newpassword123' } });
+  assert(newPasswordWorks.status === 200, 'the new password logs in');
+
+  const supportCreateTenant = await support.post('/api/platform/admin/tenants', { businessName: 'Gamma Goods', slug: 'gamma', username: 'gail', password: 'gammapass123', email: 'gail@example.com' });
+  assert(supportCreateTenant.status === 403, 'support cannot create a tenant from the console');
+
+  const dupeSlugCreate = await admin.post('/api/platform/admin/tenants', { businessName: 'Dupe', slug: 'alpha', username: 'x', password: 'password123', email: 'x@example.com' });
+  assert(dupeSlugCreate.status === 409, 'creating a tenant with an already-taken slug is rejected');
+
+  const createdTenant = await admin.post('/api/platform/admin/tenants', { businessName: 'Gamma Goods', slug: 'gamma', username: 'gail', password: 'gammapass123', email: 'gail@example.com' });
+  assert(createdTenant.status === 200 && createdTenant.data.slug === 'gamma', 'admin can create a tenant from the console');
+  const gammaLoginImmediately = await request(port, { path: '/api/auth/login', method: 'POST', host: 'gamma.localhost', body: { username: 'gail', password: 'gammapass123' } });
+  assert(gammaLoginImmediately.status === 200, 'skipVerification means the new owner can log in immediately, no "check your email" step');
 
   server.close();
 

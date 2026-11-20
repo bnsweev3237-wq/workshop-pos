@@ -59,6 +59,7 @@
     $('updateCard').hidden = !isAdmin;
     $('staffCard').hidden = !isAdmin;
     $('mailCard').hidden = !isAdmin;
+    $('createTenantCard').hidden = !isAdmin;
     loadTenants();
     if (isAdmin) { loadUpdateStatus(); loadStaff(); loadMailSettings(); }
   }
@@ -76,6 +77,10 @@
         ? `<select class="plan-select">${availablePlans.map((p) => `<option value="${esc(p)}" ${p === t.plan ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
            <button class="btn sm plan-apply" style="margin-left:6px">Set</button>`
         : esc(t.plan);
+      const isSuspended = t.status === 'suspended';
+      const statusBtn = me.role === 'admin'
+        ? `<button class="btn sm ${isSuspended ? '' : 'danger'} toggle-status">${isSuspended ? 'Activate' : 'Suspend'}</button>`
+        : '';
       tr.innerHTML = `
         <td>${esc(t.slug)}</td>
         <td>${esc(t.businessName)}</td>
@@ -83,9 +88,10 @@
         <td>${planCell}</td>
         <td>${new Date(t.createdAt).toLocaleDateString()}</td>
         <td class="r">${formatBytes(t.dbBytes)} db, ${formatBytes(t.backupBytes)} backups <span class="hint">(${formatBytes(t.photoBytes)} photos, included in db)</span></td>
-        <td class="acts"><button class="btn sm open-tenant">Open</button></td>
+        <td class="acts"><button class="btn sm open-tenant">Open</button> <button class="btn sm reset-password">Reset password</button> ${statusBtn}</td>
       `;
       tr.querySelector('.open-tenant').onclick = () => openTenant(t.id, t.slug);
+      tr.querySelector('.reset-password').onclick = () => resetTenantPassword(t.id, t.slug);
       const applyBtn = tr.querySelector('.plan-apply');
       if (applyBtn) {
         applyBtn.onclick = async () => {
@@ -94,6 +100,16 @@
           try { await api('POST', `/api/platform/admin/tenants/${t.id}/plan`, { plan }); }
           catch (e) { alert(e.message || 'Could not change that tenant\'s plan.'); }
           applyBtn.disabled = false;
+        };
+      }
+      const toggleBtn = tr.querySelector('.toggle-status');
+      if (toggleBtn) {
+        toggleBtn.onclick = async () => {
+          const next = isSuspended ? 'active' : 'suspended';
+          if (next === 'suspended' && !confirm(`Suspend "${t.businessName}" (${t.slug})? They won't be able to sign in until reactivated.`)) return;
+          toggleBtn.disabled = true;
+          try { await api('POST', `/api/platform/admin/tenants/${t.id}/status`, { status: next }); loadTenants(); }
+          catch (e) { alert(e.message || 'Could not change that tenant\'s status.'); toggleBtn.disabled = false; }
         };
       }
       tb.appendChild(tr);
@@ -107,6 +123,19 @@
       window.open(url, '_blank');
     } catch (e) {
       alert(e.message || `Could not open ${slug}.`);
+    }
+  }
+
+  async function resetTenantPassword(id, slug) {
+    const username = prompt(`Reset which account's password on "${slug}"? Enter their username:`);
+    if (!username) return;
+    const newPassword = prompt(`New password for "${username}" on "${slug}" (min 8 characters). They'll be asked to change it on next sign-in.`);
+    if (!newPassword) return;
+    try {
+      await api('POST', `/api/platform/admin/tenants/${id}/reset-password`, { username, newPassword });
+      alert(`Password reset for "${username}" on ${slug}.`);
+    } catch (e) {
+      alert(e.message || 'Could not reset that password.');
     }
   }
 
@@ -170,6 +199,29 @@
       $('newStaffPassword').value = '';
       loadStaff();
     } catch (e) { alert(e.message || 'Could not create that account.'); }
+  };
+
+  $('createTenantBtn').onclick = async () => {
+    const body = {
+      slug: $('ctSlug').value.trim(), businessName: $('ctBusinessName').value.trim(),
+      ownerName: $('ctOwnerName').value.trim(), username: $('ctUsername').value.trim(),
+      password: $('ctPassword').value, email: $('ctEmail').value.trim(),
+    };
+    if (!body.slug || !body.businessName || !body.username || !body.password || !body.email) {
+      $('createTenantHint').textContent = 'Subdomain, business name, username, password, and email are all required.';
+      return;
+    }
+    $('createTenantBtn').disabled = true;
+    try {
+      const t = await api('POST', '/api/platform/admin/tenants', body);
+      $('ctSlug').value = ''; $('ctBusinessName').value = ''; $('ctOwnerName').value = '';
+      $('ctUsername').value = ''; $('ctPassword').value = ''; $('ctEmail').value = '';
+      $('createTenantHint').textContent = `Created "${t.slug}" — sign in at ${t.loginUrl}`;
+      loadTenants();
+    } catch (e) {
+      $('createTenantHint').textContent = e.message || 'Could not create that tenant.';
+    }
+    $('createTenantBtn').disabled = false;
   };
 
   async function loadMailSettings() {

@@ -641,10 +641,14 @@ also linked from the signup success screen). Tenants created via the operator CL
 **Admin console** — platform staff sign in separately, at `/admin` on the base domain (e.g.
 `https://app.example.com/admin`) — a completely separate login from any tenant's own, never
 reachable on a tenant's subdomain. Two roles: `support` can view every tenant and its disk
-usage, and use "Open" to start a support session inside a tenant's account; `admin` can do
-everything `support` can, plus change a tenant's plan, trigger a platform-wide update, manage
-other staff accounts, and change the platform's outgoing email settings (the "Platform email
-settings" card — same config the env vars above seed, editable live, with a test-send button).
+usage, use "Open" to start a support session inside a tenant's account, and reset a tenant
+user's password; `admin` can do everything `support` can, plus change a tenant's plan, suspend/
+reactivate a tenant, create a tenant by hand, trigger a platform-wide update, manage other staff
+accounts, and change the platform's outgoing email settings (the "Platform email settings" card
+— same config the env vars above seed, editable live, with a test-send button). Day-to-day
+tenant operations are meant to live here, not over SSH — the operator CLI below still exists for
+scripting and the rare case the console itself is unreachable (e.g. no staff accounts at all),
+but a password reset, a suspend, or creating a one-off tenant no longer needs shell access.
 
 The "Open" button is the one deliberate exception to tenant isolation anywhere in this system:
 it mints a one-time, 5-minute, single-tenant-scoped link rather than ever touching a tenant's
@@ -657,7 +661,7 @@ side can end it. Visible disclosure, not a silent backdoor, was a deliberate cho
 running server:
 
 ```
-node scripts/tenant-admin.js create <slug> <businessName> <username> <password> [ownerName]
+node scripts/tenant-admin.js create <slug> <businessName> <username> <password> <email> [ownerName]
 node scripts/tenant-admin.js list [status]
 node scripts/tenant-admin.js suspend <slug>
 node scripts/tenant-admin.js activate <slug>
