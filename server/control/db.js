@@ -18,7 +18,24 @@ function getControlDb() {
   db.pragma('foreign_keys = ON');
   const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8');
   db.exec(schema);
+  migrate(db);
   return db;
+}
+
+// schema.sql's CREATE TABLE IF NOT EXISTS only covers a brand-new control.db — an
+// already-deployed one (real tenants already in it) needs these added in place, same
+// ensureColumn pattern server/db/migrate.js uses for per-tenant databases.
+function migrate(cdb) {
+  function ensureColumn(table, column, definition) {
+    const cols = cdb.prepare(`PRAGMA table_info(${table})`).all();
+    if (!cols.some((c) => c.name === column)) {
+      cdb.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+  ensureColumn('tenants', 'owner_email', 'TEXT');
+  ensureColumn('tenants', 'email_verified_at', 'INTEGER');
+  ensureColumn('tenants', 'email_verify_token', 'TEXT');
+  ensureColumn('tenants', 'email_verify_expires_at', 'INTEGER');
 }
 
 function newTenantId() {
@@ -41,9 +58,20 @@ function listTenants({ status } = {}) {
 }
 function insertTenant(row) {
   getControlDb().prepare(`
-    INSERT INTO tenants (id, slug, business_name, status, plan, created_at, updated_at)
-    VALUES (@id, @slug, @business_name, @status, @plan, @created_at, @updated_at)
-  `).run(row);
+    INSERT INTO tenants (
+      id, slug, business_name, status, plan, owner_email,
+      email_verified_at, email_verify_token, email_verify_expires_at,
+      created_at, updated_at
+    )
+    VALUES (
+      @id, @slug, @business_name, @status, @plan, @owner_email,
+      @email_verified_at, @email_verify_token, @email_verify_expires_at,
+      @created_at, @updated_at
+    )
+  `).run({
+    email_verified_at: null, email_verify_token: null, email_verify_expires_at: null,
+    ...row,
+  });
 }
 function updateTenantStatus(id, status) {
   getControlDb().prepare('UPDATE tenants SET status = ?, updated_at = ? WHERE id = ?').run(status, Date.now(), id);
@@ -53,6 +81,16 @@ function updateTenantPlan(id, plan) {
 }
 function deleteTenantRow(id) {
   getControlDb().prepare('DELETE FROM tenants WHERE id = ?').run(id);
+}
+// Mints/replaces the one active verification link for a tenant — resending (server/routes/
+// auth.js's POST /resend-verification) calls this again, which invalidates whatever token
+// existed before (there's only ever one column to hold it).
+function setTenantEmailVerification(id, token, expiresAt) {
+  getControlDb().prepare('UPDATE tenants SET email_verify_token = ?, email_verify_expires_at = ? WHERE id = ?').run(token, expiresAt, id);
+}
+function markTenantEmailVerified(id) {
+  getControlDb().prepare('UPDATE tenants SET email_verified_at = ?, email_verify_token = NULL, email_verify_expires_at = NULL, updated_at = ? WHERE id = ?')
+    .run(Date.now(), Date.now(), id);
 }
 function addAuditLog(tenantId, actor, action, detail) {
   getControlDb().prepare('INSERT INTO audit_log (id, tenant_id, actor, action, detail_json, at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -104,6 +142,7 @@ function endActiveSupportSessionForTenant(tenantId) {
 module.exports = {
   getControlDb, CONTROL_DB_PATH, newTenantId, getTenantBySlug, getTenantById, listTenants,
   insertTenant, updateTenantStatus, updateTenantPlan, deleteTenantRow, addAuditLog,
+  setTenantEmailVerification, markTenantEmailVerified,
   getPlatformUserByUsername, listPlatformUsers, deletePlatformUserRow,
   insertSupportSession, getSupportSession, markSupportSessionConsumed,
   getActiveSupportSessionForTenant, endActiveSupportSessionForTenant,

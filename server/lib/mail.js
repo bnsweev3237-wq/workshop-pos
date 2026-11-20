@@ -117,4 +117,4 @@ async function sendMail({ to, subject, text, html }) {
   }
 }
 
-module.exports = { getMailConfig, setMailConfig, isMailConfigured, sendMail };
+module.exports = { getMailConfig, setMailConfig, isMailConfigured, sendMail, platformSmtpConfig };

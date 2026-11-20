@@ -18,6 +18,15 @@ CREATE TABLE IF NOT EXISTS tenants (
   feature_flags_override_json TEXT,
   usage_caps_override_json TEXT,
   owner_contact TEXT,
+  -- Captured at signup. email_verified_at is null until the owner clicks the link sent to
+  -- owner_email (server/routes/auth.js's GET /verify-email/:token) — login is blocked until
+  -- then (see that route's POST /login). email_verify_token/_expires_at back that one link;
+  -- cleared once consumed. A CLI-created tenant (scripts/tenant-admin.js, operator-vetted) skips
+  -- all of this and is created already verified.
+  owner_email TEXT,
+  email_verified_at INTEGER,
+  email_verify_token TEXT,
+  email_verify_expires_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

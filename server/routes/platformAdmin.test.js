@@ -16,6 +16,12 @@ process.env.CRAFTIUM_MODE = 'multi-tenant';
 process.env.CRAFTIUM_DATA_ROOT = dataRoot;
 process.env.CRAFTIUM_BASE_DOMAIN = 'localhost';
 process.env.CRAFTIUM_SESSION_SECRET = 'x'.repeat(40);
+// Required to boot (server/lib/platformMail.js#assertPlatformMailConfigured) — this file
+// marks tenants verified directly via control.db rather than exercising the real email flow
+// (that's multitenant.isolation.test.js's job), so nothing here actually needs mail to send.
+process.env.CRAFTIUM_SMTP_HOST = 'localhost';
+process.env.CRAFTIUM_SMTP_PORT = '2525';
+process.env.CRAFTIUM_PLATFORM_FROM = 'Craftium <hello@example.com>';
 
 const { startServer } = require('../index');
 const controlDb = require('../control/db');
@@ -72,8 +78,13 @@ async function main() {
 
   // Seed two tenants the normal way.
   const platform = new Client(port, 'localhost');
-  await platform.post('/api/platform/signup', { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', username: 'ann', password: 'alphapass123' });
-  await platform.post('/api/platform/signup', { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', username: 'bo', password: 'betapass123' });
+  await platform.post('/api/platform/signup', { businessName: 'Alpha Crafts', slug: 'alpha', ownerName: 'Ann', email: 'ann@example.com', username: 'ann', password: 'alphapass123' });
+  await platform.post('/api/platform/signup', { businessName: 'Beta Shop', slug: 'beta', ownerName: 'Bo', email: 'bo@example.com', username: 'bo', password: 'betapass123' });
+  // This file's focus is the admin console/impersonation mechanism, not the email-verification
+  // flow (that's multitenant.isolation.test.js's job) — mark both verified directly so login
+  // below works without re-deriving that whole flow here.
+  controlDb.markTenantEmailVerified(controlDb.getTenantBySlug('alpha').id);
+  controlDb.markTenantEmailVerified(controlDb.getTenantBySlug('beta').id);
   const alphaTenant = controlDb.getTenantBySlug('alpha');
   const betaTenant = controlDb.getTenantBySlug('beta');
 

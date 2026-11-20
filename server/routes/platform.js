@@ -37,9 +37,9 @@ router.get('/slug-available', (req, res) => {
 });
 
 router.post('/signup', signupLimiter, async (req, res) => {
-  const { businessName, slug, ownerName, username, password } = req.body || {};
+  const { businessName, slug, ownerName, username, password, email } = req.body || {};
   try {
-    const tenant = await provisionTenant({ businessName, slug, ownerName, username, password });
+    const tenant = await provisionTenant({ businessName, slug, ownerName, username, password, email });
     // Carry over whatever port the browser actually used to reach the platform host (e.g. a
     // local dev/test server on :4302) — production behind a standard 80/443 reverse proxy has
     // no port in the Host header, so this is a no-op there.

@@ -102,6 +102,12 @@ function createMultiTenantApp(app) {
   const { bindSessionToTenant } = require('./tenancy/bindSession');
   const { tenantDbContext } = require('./tenancy/dbContext');
   const { getControlDb } = require('./control/db');
+  const { assertPlatformMailConfigured } = require('./lib/platformMail');
+
+  // Fails loud at boot rather than discovered the first time a real signup gets stuck unable
+  // to log in — account verification email is load-bearing now (POST /login in routes/auth.js
+  // blocks until it's clicked), same reasoning as getSessionSecret()'s own requirement below.
+  assertPlatformMailConfigured();
 
   // Runs before everything else, authenticated or not — several routes (signup, login itself,
   // the public branding GET a login screen needs, a subscriber's confirm-link) have no session
