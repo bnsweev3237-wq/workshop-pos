@@ -2,14 +2,18 @@
 // in this phase; an operator assigns a tenant's plan directly (scripts/tenant-admin.js
 // set-plan). This is what server/lib/license.js reads from in multi-tenant mode, behind the
 // same hasFeature()/checkUsageCap()/requireFeature() call sites every route already uses.
+// usageCaps keys are read by server/lib/license.js#checkUsageCap, called with a tenant's
+// current count of whatever the cap is on — a key simply absent from a plan's usageCaps means
+// unlimited (checkUsageCap treats a missing/null limit as always-ok), so "pro" below just
+// doesn't mention either cap at all rather than setting them to some large number.
 const PLANS = {
   trial: {
     featureFlags: { consignment: true },
-    usageCaps: {},
+    usageCaps: { staffAccounts: 1, items: 100 },
   },
   basic: {
     featureFlags: {},
-    usageCaps: {},
+    usageCaps: { staffAccounts: 1, items: 150 },
   },
   pro: {
     featureFlags: { consignment: true },

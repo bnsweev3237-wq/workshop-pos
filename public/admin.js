@@ -1,6 +1,7 @@
 (function () {
   const $ = (id) => document.getElementById(id);
   let me = null;
+  let availablePlans = [];
 
   async function api(method, path, body) {
     const res = await fetch(path, {
@@ -62,21 +63,38 @@
   }
 
   async function loadTenants() {
+    if (me.role === 'admin' && !availablePlans.length) {
+      try { availablePlans = await api('GET', '/api/platform/admin/plans'); } catch { /* fall back to plain text below */ }
+    }
     const tenants = await api('GET', '/api/platform/admin/tenants');
     const tb = $('tenantRows');
     tb.innerHTML = '';
     for (const t of tenants) {
       const tr = document.createElement('tr');
+      const planCell = (me.role === 'admin' && availablePlans.length)
+        ? `<select class="plan-select">${availablePlans.map((p) => `<option value="${esc(p)}" ${p === t.plan ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
+           <button class="btn sm plan-apply" style="margin-left:6px">Set</button>`
+        : esc(t.plan);
       tr.innerHTML = `
         <td>${esc(t.slug)}</td>
         <td>${esc(t.businessName)}</td>
         <td>${esc(t.status)}</td>
-        <td>${esc(t.plan)}</td>
+        <td>${planCell}</td>
         <td>${new Date(t.createdAt).toLocaleDateString()}</td>
         <td class="r">${formatBytes(t.dbBytes)} db, ${formatBytes(t.backupBytes)} backups <span class="hint">(${formatBytes(t.photoBytes)} photos, included in db)</span></td>
         <td class="acts"><button class="btn sm open-tenant">Open</button></td>
       `;
       tr.querySelector('.open-tenant').onclick = () => openTenant(t.id, t.slug);
+      const applyBtn = tr.querySelector('.plan-apply');
+      if (applyBtn) {
+        applyBtn.onclick = async () => {
+          const plan = tr.querySelector('.plan-select').value;
+          applyBtn.disabled = true;
+          try { await api('POST', `/api/platform/admin/tenants/${t.id}/plan`, { plan }); }
+          catch (e) { alert(e.message || 'Could not change that tenant\'s plan.'); }
+          applyBtn.disabled = false;
+        };
+      }
       tb.appendChild(tr);
     }
     $('tenantsEmpty').hidden = tenants.length > 0;

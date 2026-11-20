@@ -5,6 +5,7 @@ const db = require('../db');
 const { requireAdmin, requireLogin, ROLES } = require('../middleware/auth');
 const { createUserRow } = require('../lib/users');
 const { isMultiTenant } = require('../mode');
+const { checkUsageCap } = require('../lib/license');
 const {
   getSupportSession, markSupportSessionConsumed, getActiveSupportSessionForTenant,
   endActiveSupportSessionForTenant, addAuditLog,
@@ -164,6 +165,14 @@ router.post('/users', requireAdmin, (req, res) => {
   }
   const existing = db.prepare('SELECT 1 FROM users WHERE username = ?').get(username.trim());
   if (existing) return res.status(409).json({ error: 'username_taken' });
+  // Default-allow in single-tenant mode (no license configured there) — same as every other
+  // checkUsageCap call site, this only actually restricts anything once a multi-tenant plan
+  // sets a real limit.
+  const staffCount = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  const cap = checkUsageCap('staffAccounts', staffCount);
+  if (!cap.ok) {
+    return res.status(403).json({ error: 'usage_cap_reached', cap: 'staffAccounts', limit: cap.limit, message: `Your plan allows up to ${cap.limit} staff account${cap.limit === 1 ? '' : 's'}. Upgrade to add more.` });
+  }
   // must_change_password: the admin picked this password, not the account's owner, so
   // they're forced to set their own the moment they first sign in with it.
   const row = createUserRow(db, { name, username: username.trim(), password, role, mustChangePassword: true });
