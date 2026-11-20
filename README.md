@@ -569,15 +569,98 @@ by `npm install`. After a successful update the server exits on purpose — a pr
 the server just stops and needs to be started by hand. On the desktop app, or any install
 that isn't a git checkout, this section explains that and doesn't offer the button.
 
-## Licensing (groundwork)
+## Licensing (groundwork) — single-tenant mode only
 
 Settings → License (admin only) lets an instance be given a key and checks in once a day
 against a central license server the vendor runs — see `licensing/README.md` for that side.
 This is groundwork for a future tiered/licensed product, not a live feature: with no key
 entered (the default for every install today, including this one), the app runs exactly as it
-always has, fully unrestricted. Nothing is gated yet — no tiers have been decided — but the
-plumbing (phone-home, a 30-day offline grace period, and `hasFeature()`/`checkUsageCap()`
-helpers routes can opt into) is real and in place for when they are.
+always has, fully unrestricted. Nothing is gated yet in this mode — no tiers have been decided
+for the desktop/VPS product — but the plumbing (phone-home, a 30-day offline grace period, and
+`hasFeature()`/`checkUsageCap()` helpers routes can opt into) is real and in place for when they
+are. **Hosted multi-tenant mode is different: plans and real usage caps are already live
+there** — see "Hosted multi-tenant mode" below, which is what repurposes this same
+`hasFeature()`/`checkUsageCap()` plumbing.
+
+## Hosted multi-tenant mode
+
+Alongside the desktop app and the single-tenant VPS deploy above, Craftium can also run as a
+shared, multi-tenant platform — one process serves many independent businesses ("tenants"),
+each signed up at their own subdomain, each with their own fully isolated database. This is a
+third mode, not a replacement: a single-tenant install with no `CRAFTIUM_MODE` set behaves
+exactly as everything above describes, completely unaffected by any of this.
+
+**Turning it on** — set these environment variables before starting the server:
+
+- `CRAFTIUM_MODE=multi-tenant`
+- `CRAFTIUM_SESSION_SECRET` — a random string, 32+ characters; the server refuses to boot
+  without one. (Single-tenant mode doesn't need this — it still generates and persists its own
+  per-install secret automatically, as always.)
+- `CRAFTIUM_BASE_DOMAIN` — the domain tenants sign up under, e.g. `app.example.com`, with DNS
+  for both that domain and `*.app.example.com` pointed at the server
+- `CRAFTIUM_DATA_ROOT` — where the control-plane database and every tenant's own data directory
+  live (optional, defaults to a local `data/` directory)
+- `CRAFTIUM_POOL_MAX` / `CRAFTIUM_POOL_IDLE_MS` — tune the per-tenant connection pool (optional,
+  sensible defaults)
+- `CRAFTIUM_SMTP_HOST` / `_PORT` / `_SECURE` / `_USER` / `_PASS` — the platform's own outgoing
+  mail server, needed for receipt emails and low-stock alerts to actually send. A tenant only
+  ever controls their own "from" name and alert recipient, never the SMTP host itself — letting
+  a tenant point a shared process at an arbitrary host would be a real SSRF risk once many
+  tenants share one process, so that's an operator setting, not a tenant one.
+
+**Isolation** — one SQLite file per tenant, not shared tables with a `tenant_id` column. A
+tenant is resolved from the subdomain in the request's `Host` header before anything else runs
+(never from a client-controlled header like `X-Forwarded-Host`), and every database access for
+the rest of that request is transparently routed to that tenant's own file — an
+`AsyncLocalStorage`-backed proxy, see `server/db/index.js` and `server/tenancy/`. There is no
+fallback: code that somehow runs with no resolved tenant throws rather than silently touching
+any default/shared connection. Self-update and database restore (both of which end the whole
+process in single-tenant mode) are platform-operator actions only here, never a tenant's.
+
+**Plans** — `trial`, `basic`, and `pro` (defined in `server/lib/plans.js`) gate both features
+(e.g. consignment tracking) and usage caps (staff accounts, catalog size) — a tenant over a cap
+gets a clear "upgrade to add more" message, never a silent failure. An operator assigns a
+tenant's plan manually (the CLI below, or the admin console's per-tenant plan dropdown); there's
+no payment integration yet, so nothing is automatically suspended for non-payment.
+
+**Admin console** — platform staff sign in separately, at `/admin` on the base domain (e.g.
+`https://app.example.com/admin`) — a completely separate login from any tenant's own, never
+reachable on a tenant's subdomain. Two roles: `support` can view every tenant and its disk
+usage, and use "Open" to start a support session inside a tenant's account; `admin` can do
+everything `support` can, plus change a tenant's plan, trigger a platform-wide update, and
+manage other staff accounts.
+
+The "Open" button is the one deliberate exception to tenant isolation anywhere in this system:
+it mints a one-time, 5-minute, single-tenant-scoped link rather than ever touching a tenant's
+password. Consuming it on the wrong tenant's host is rejected outright, even though the token
+itself is real and unexpired. While a support session is open, *every* session on that tenant —
+including the real account holder's own, already-open one — sees a banner saying so, and either
+side can end it. Visible disclosure, not a silent backdoor, was a deliberate choice here.
+
+**Operator CLI** (`scripts/tenant-admin.js`) — run with `CRAFTIUM_DATA_ROOT` set to match the
+running server:
+
+```
+node scripts/tenant-admin.js create <slug> <businessName> <username> <password> [ownerName]
+node scripts/tenant-admin.js list [status]
+node scripts/tenant-admin.js suspend <slug>
+node scripts/tenant-admin.js activate <slug>
+node scripts/tenant-admin.js set-plan <slug> <trial|basic|pro>
+node scripts/tenant-admin.js reset-password <slug> <username> <newPassword>
+node scripts/tenant-admin.js migrate-all
+node scripts/tenant-admin.js create-staff <username> <password> <admin|support>
+node scripts/tenant-admin.js list-staff
+node scripts/tenant-admin.js remove-staff <username>
+```
+
+**Verification** — three standalone adversarial test scripts cover this mode specifically:
+`server/routes/multitenant.isolation.test.js` (tenant data isolation under adversarial
+conditions — spoofed headers, cross-tenant cookie replay, a hand-tampered session row, 400
+concurrent requests with the connection pool forced to evict constantly), `server/routes/
+platformAdmin.test.js` (the admin console and impersonation mechanism specifically, including
+that a token minted for one tenant is rejected outright on another tenant's host), and
+`server/routes/singleTenant.regression.test.js` (proves none of this changed single-tenant
+behavior).
 
 ## Sell page on a phone
 
@@ -672,6 +755,11 @@ Not modeled (yet, but the SMTP setup above is reusable for it): per-order or per
 a digest frequency other than daily, or more than one recipient.
 
 ## Security model
+
+This section describes single-tenant mode (the desktop app and the VPS deploy above). Hosted
+multi-tenant mode has its own, separate isolation model — one SQLite file per tenant, a
+subdomain resolved only from the raw `Host` header, and a deliberately narrow, visibly-disclosed
+exception for platform support access — covered in "Hosted multi-tenant mode" above, not here.
 
 - Every page requires a login — there's no anonymous access anymore. The only unauthenticated
   route is `/api/meta/version` (just a version number and changelog).
