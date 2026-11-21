@@ -284,7 +284,7 @@
       <div class="row r3" style="margin-top:12px">
         <div><label for="bulkTagFormat">Label sheet</label><select id="bulkTagFormat"></select></div>
         <div><label for="bulkTagBooth">Booth # (optional)</label><input id="bulkTagBooth" placeholder="e.g. 12"></div>
-        <div style="display:flex;align-items:flex-end"><label class="chk-field" style="margin-top:0"><input type="checkbox" id="bulkTagBarcode" checked><span>Include barcode</span></label></div>
+        <div><label for="bulkTagBarcode">Code on tag</label><select id="bulkTagBarcode"><option value="barcode">Barcode</option><option value="qr">QR code</option><option value="none">None</option></select></div>
       </div>
       <div class="hint" id="bulkTagHint" style="margin-top:4px"></div>
       <div class="btn-row">
@@ -486,12 +486,12 @@
               <option value="5162">Avery 5162/8162 — 1⅓" × 4" (14/sheet)</option>
               <option value="5163">Avery 5163/8163 — 2" × 4" (10/sheet)</option>
               <option value="22806">Avery 22806 — 2" round (20/sheet)</option>
-              <option value="5167">Avery 5167/8167 — ½" × 1¾" (80/sheet, no barcode)</option>
-              <option value="5195">Avery 5195/8195 — ⅔" × 1¾" (60/sheet, no barcode)</option>
+              <option value="5167">Avery 5167/8167 — ½" × 1¾" (80/sheet, no barcode/QR)</option>
+              <option value="5195">Avery 5195/8195 — ⅔" × 1¾" (60/sheet, no barcode/QR)</option>
             </select>
           </div>
           <div><label for="evTagsBooth">Booth # (optional)</label><input id="evTagsBooth" placeholder="e.g. 12"></div>
-          <div style="display:flex;align-items:flex-end"><label class="chk-field" style="margin-top:0"><input type="checkbox" id="evTagsBarcode" checked><span>Include barcode</span></label></div>
+          <div><label for="evTagsBarcode">Code on tag</label><select id="evTagsBarcode"><option value="barcode">Barcode</option><option value="qr">QR code</option><option value="none">None</option></select></div>
         </div>
         <div class="hint" id="evTagsHint" style="margin-top:4px"></div>
         <div class="btn-row" style="margin-top:10px">
@@ -1051,7 +1051,7 @@
       <div class="row r3" style="margin-top:12px">
         <div><label for="itemTagCopies">How many tags</label><input id="itemTagCopies" type="number" min="1" step="1" value="1"></div>
         <div><label for="itemTagBooth">Booth # (optional)</label><input id="itemTagBooth" placeholder="e.g. 12"></div>
-        <div style="display:flex;align-items:flex-end"><label class="chk-field" style="margin-top:0"><input type="checkbox" id="itemTagBarcode" checked><span>Include barcode</span></label></div>
+        <div><label for="itemTagBarcode">Code on tag</label><select id="itemTagBarcode"><option value="barcode">Barcode</option><option value="qr">QR code</option><option value="none">None</option></select></div>
       </div>
       <div class="btn-row" style="margin-top:16px">
         <button class="btn primary sm" id="itemTagPrint">Print</button>
@@ -1129,9 +1129,10 @@
   </div>
 </div>
 
-<!-- Vendored locally (not a CDN script) so barcode printing keeps working on a fully offline
-     install — see public/vendor/README.md. -->
+<!-- Vendored locally (not a CDN script) so barcode/QR printing keeps working on a fully
+     offline install — see public/vendor/README.md. -->
 <script src="/vendor/jsbarcode.code128.min.js"></script>
+<script src="/vendor/qrcode.js"></script>
 <script src="/offline.js"></script>
 <script src="/app.js"></script>
 </body>
