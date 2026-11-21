@@ -72,9 +72,9 @@ async function main() {
   assert(it.owed === 0, 'a legacy item (no itemId, no stored price) has 0 owed — consistent with hasPricing-gated totals, not NaN');
 
   // --- Consignment, linked to a real catalog item: sending inventory decrements its stock,
-  // over-sending clamps both the stock change AND the recorded qty_sent (never let the ledger
-  // claim more left the shelf than actually did), and removing the entry restores whatever's
-  // still unsold ---
+  // and the full requested quantity always goes through even past what's on record as in stock
+  // (negative stock just means the count needs reconciling, never a reason to block a send) —
+  // removing the entry still restores whatever's unsold back to stock regardless ---
   const earringsItem = await call('POST', '/api/items', { name: 'Hoop Earrings', price: 25, cost: 8, stock: 10 });
   assert(earringsItem.status === 200, 'catalog item created');
   const linkedSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 4 });
@@ -92,18 +92,18 @@ async function main() {
   assert(removeOverride.status === 200, 'cleanup: removing the override-price test entry succeeds');
 
   const overSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 9 });
-  assert(overSend.status === 200 && overSend.data.had === 6 && overSend.data.qtySent === 6, `asking to send 9 with only 6 left clamps the recorded qtySent to 6 too, not just the stock floor (got had=${overSend.data.had}, qtySent=${overSend.data.qtySent})`);
+  assert(overSend.status === 200 && overSend.data.had === 6 && overSend.data.qtySent === 9, `sending 9 with only 6 on record goes through in full — had is informational, never a cap (got had=${overSend.data.had}, qtySent=${overSend.data.qtySent})`);
   const afterSend2 = await call('GET', '/api/items/full');
-  assert(afterSend2.data.find((x) => x.id === earringsItem.data.id).stock === 0, 'catalog stock now at 0');
+  assert(afterSend2.data.find((x) => x.id === earringsItem.data.id).stock === -3, `catalog stock goes negative (6 - 9) rather than floored at 0 (got ${afterSend2.data.find((x) => x.id === earringsItem.data.id).stock})`);
 
   const unknownItem = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: 'not-a-real-item-id', name: 'Ghost Item', qtySent: 1 });
   assert(unknownItem.status === 400, 'sending a nonexistent itemId is rejected rather than silently skipping the stock change');
 
-  await call('POST', `/api/consignment/items/${overSend.data.id}/adjust`, { qtySold: 2 }); // 6 (clamped) sent, 2 sold -> 4 still out
+  await call('POST', `/api/consignment/items/${overSend.data.id}/adjust`, { qtySold: 2 }); // 9 sent, 2 sold -> 7 still out
   const delLinked = await call('DELETE', '/api/consignment/items/' + overSend.data.id);
   assert(delLinked.status === 200, 'removing the consignment entry succeeds');
   const afterDelete = await call('GET', '/api/items/full');
-  assert(afterDelete.data.find((x) => x.id === earringsItem.data.id).stock === 4, `the 4 still-unsold units came back to stock (got ${afterDelete.data.find((x) => x.id === earringsItem.data.id).stock})`);
+  assert(afterDelete.data.find((x) => x.id === earringsItem.data.id).stock === 4, `the 7 still-unsold units came back to stock, landing back at 4 (-3 + 7) (got ${afterDelete.data.find((x) => x.id === earringsItem.data.id).stock})`);
 
   // A lead account can reach the rest of consignment (requireEventManage includes lead) but
   // not move real stock through it — requireManageItems (admin/manager only) gates sending,
@@ -148,35 +148,36 @@ async function main() {
   // "owed" tally public/app.js sums across every partner.
   assert(Math.abs(t.owed - 17.5) < 0.01, `totals.owed sums every item's owed amount for this partner (got ${t.owed})`);
 
-  // --- "Items are rotated" / a recount — Sent can be corrected in either direction directly.
-  // A decrease restores the difference to real stock and floors at qtySold (can't un-send
-  // what's already marked sold); an increase is clamped to whatever's actually on the shelf,
-  // exactly like "+ Send inventory" above, and decrements it the same way. ---
+  // --- "Items are rotated" / a recount — Sent can be corrected in either direction directly,
+  // never floored at what's on record as in stock. A decrease restores the difference to real
+  // stock and floors at qtySold (can't un-send what's already marked sold); an increase always
+  // goes through in full, decrementing stock the same way — even past 0. Nothing here ever
+  // blocks or partially applies the requested number; "an inventory error" is never a reason
+  // to stop a correction. ---
   const rotateDown = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 0 });
   assert(rotateDown.status === 200 && rotateDown.data.qtySent === 1 && rotateDown.data.delta === -3, `reducing Sent floors at qtySold (1) rather than 0, restoring the 3-unit difference (got ${JSON.stringify(rotateDown.data)})`);
   const afterRotate = await call('GET', '/api/items/full');
   assert(afterRotate.data.find((x) => x.id === earringsItem.data.id).stock === 7, `the 3 restored units actually landed back in real stock (got ${afterRotate.data.find((x) => x.id === earringsItem.data.id).stock})`);
 
-  const increaseSent = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 99 });
-  assert(increaseSent.status === 200 && increaseSent.data.qtySent === 8 && increaseSent.data.delta === 7, `asking to increase Sent to 99 with only 7 in stock clamps it to the 7 actually available (1 + 7 = 8) (got ${JSON.stringify(increaseSent.data)})`);
+  const increaseSent = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 20 });
+  assert(increaseSent.status === 200 && increaseSent.data.qtySent === 20 && increaseSent.data.delta === 19, `asking to increase Sent to 20 with only 7 on record goes through in full, not clamped to 7 (got ${JSON.stringify(increaseSent.data)})`);
   const afterIncrease = await call('GET', '/api/items/full');
-  assert(afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock === 0, `the 7 taken for that increase actually left real stock (got ${afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock})`);
+  assert(afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock === -12, `real stock goes negative (7 - 19) rather than floored at 0 (got ${afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock})`);
 
-  // --- The real-world bug report this guards against: with real stock now at 0, trying to
-  // increase Sent further is fully rejected, returning the SAME qtySent it already had (8) and
-  // delta 0 — not an error, just a no-op. (The actual bug was client-side: public/app.js only
-  // corrected the Sent input's displayed value when the server's answer *differed* from before,
-  // so a fully-rejected increase like this one left the input showing whatever was optimistically
-  // typed — e.g. "5" — while "On shelf" correctly stayed at the old, unchanged value. Fixed by
-  // always writing the just-committed field's own input back, whether or not it changed.) ---
-  const increaseWithNoStock = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 50 });
-  assert(increaseWithNoStock.status === 200 && increaseWithNoStock.data.qtySent === 8 && increaseWithNoStock.data.delta === 0, `with 0 in stock, an increase is fully rejected back to the unchanged qtySent (8), not an error (got ${JSON.stringify(increaseWithNoStock.data)})`);
+  // --- The real-world bug report this guards against: "I want to be able to go into negative
+  // stock numbers, nothing can slow down a sale from happening, especially an inventory error."
+  // Stock is already negative here (-12) — a further increase must still go through in full,
+  // not get rejected or clamped back just because there's nothing left on record. ---
+  const increaseFurther = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 30 });
+  assert(increaseFurther.status === 200 && increaseFurther.data.qtySent === 30 && increaseFurther.data.delta === 10, `increasing Sent further still goes through in full even with stock already negative (got ${JSON.stringify(increaseFurther.data)})`);
+  const afterFurther = await call('GET', '/api/items/full');
+  assert(afterFurther.data.find((x) => x.id === earringsItem.data.id).stock === -22, `stock goes even more negative (-12 - 10) with no floor at all (got ${afterFurther.data.find((x) => x.id === earringsItem.data.id).stock})`);
 
-  // --- The bug this whole section guards against: adjusting ONE field must never read or
-  // clobber the OTHER field's current value — editing Sold alone must leave Sent exactly where
-  // it was, and vice versa ---
+  // --- The bug an earlier fix guarded against: adjusting ONE field must never read or clobber
+  // the OTHER field's current value — editing Sold alone must leave Sent exactly where it was,
+  // and vice versa ---
   const soldOnly = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySold: 2 });
-  assert(soldOnly.status === 200 && soldOnly.data.qtySent === 8 && soldOnly.data.qtySold === 2 && soldOnly.data.delta === 0, `adjusting only qtySold leaves qtySent completely untouched (got ${JSON.stringify(soldOnly.data)})`);
+  assert(soldOnly.status === 200 && soldOnly.data.qtySent === 30 && soldOnly.data.qtySold === 2 && soldOnly.data.delta === 0, `adjusting only qtySold leaves qtySent completely untouched (got ${JSON.stringify(soldOnly.data)})`);
   const sentOnly = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 0 });
   assert(sentOnly.status === 200 && sentOnly.data.qtySent === 2 && sentOnly.data.qtySold === 2, `adjusting only qtySent leaves qtySold untouched — floors Sent at the existing Sold (2), not at 0 (got ${JSON.stringify(sentOnly.data)})`);
 
@@ -192,6 +193,32 @@ async function main() {
   assert(lookupTestItem.status === 404, 'a test-catalog item is never reachable through the public lookup, even with its real item number');
   const lookupPage = await fetch(`${base}/i/${earringsItem.data.itemNo}`);
   assert(lookupPage.status === 200 && (await lookupPage.text()).includes('item-lookup.js'), 'the /i/:itemNo page itself serves the lookup shell');
+
+  // --- "Nothing can slow down a sale from happening, especially an inventory error" — checkout,
+  // the Items tab's manual Sell/Make actions, and material consumption via Make all let stock go
+  // negative instead of floor at 0 or blocking. A stale/wrong count is never a reason to refuse
+  // a sale. ---
+  const lowStockItem = await call('POST', '/api/items', { name: 'Resin Keychain', price: 10, cost: 3, stock: 2 });
+  const oversell = await call('POST', '/api/sales', {
+    test: false, tender: 'cash', taxIncluded: false,
+    lines: [{ itemId: lowStockItem.data.id, name: 'Resin Keychain', price: 10, qty: 5, taxRate: 0 }],
+  });
+  assert(oversell.status === 200, 'a sale for more than what\'s on record checks out successfully, not rejected');
+  const afterOversell = await call('GET', '/api/items/full');
+  assert(afterOversell.data.find((x) => x.id === lowStockItem.data.id).stock === -3, `checkout takes real stock negative (2 - 5) rather than floored at 0 (got ${afterOversell.data.find((x) => x.id === lowStockItem.data.id).stock})`);
+
+  const manualOversell = await call('POST', `/api/items/${lowStockItem.data.id}/sell`, { qty: 10 });
+  assert(manualOversell.status === 200 && manualOversell.data.item.stock === -13, `the Items tab's manual "Sell" action also goes negative (-3 - 10), never blocked (got ${JSON.stringify(manualOversell.data.item.stock)})`);
+
+  const lowMaterial = await call('POST', '/api/materials', { name: 'Scrap Resin', price: 5, yield: 1, stock: 1 });
+  const madeWithItem = await call('POST', '/api/items', {
+    name: 'Resin Charm', price: 8, cost: 2, stock: 0,
+    materials: [{ libId: lowMaterial.data.id, per: 1 }],
+  });
+  const overMake = await call('POST', `/api/items/${madeWithItem.data.id}/make`, { qty: 5 });
+  assert(overMake.status === 200 && overMake.data.short.length === 1, 'making a batch that needs more material than is on record still succeeds, just flags it as short');
+  const afterOverMake = await call('GET', '/api/materials');
+  assert(afterOverMake.data.find((x) => x.id === lowMaterial.data.id).stock === -4, `material stock consumed by Make also goes negative (1 - 5) rather than floored at 0 (got ${afterOverMake.data.find((x) => x.id === lowMaterial.data.id).stock})`);
 
   // --- Event expenses + event delete with expenses attached ---
   const ev = await call('POST', '/api/events', { name: 'Spring Fair', start: '2026-05-01', days: 1, cost: 50, status: 'ended', test: false });

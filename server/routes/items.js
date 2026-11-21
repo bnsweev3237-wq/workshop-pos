@@ -270,7 +270,10 @@ router.delete('/:id', requireManageItems, (req, res) => {
 
 // Make a batch: atomically adds to this item's stock and deducts the materials it used.
 // A real SQL transaction — the lease/retry dance the artifact needed (no transactions
-// available there) isn't needed at all against a real database.
+// available there) isn't needed at all against a real database. Material stock is never
+// floored at 0 — running short just means the count needs reconciling, not that making a
+// batch should be blocked or short-filled; `short` still flags it, informationally, same as
+// before.
 router.post('/:id/make', requireManageItems, (req, res) => {
   const qty = Math.max(1, Math.round(Number(req.body?.qty)) || 1);
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(req.params.id);
@@ -284,7 +287,7 @@ router.post('/:id/make', requireManageItems, (req, res) => {
       if (!m) continue;
       const need = (Number(r.per) || 0) * qty;
       if (m.stock < need) short.push(m.name || 'a material');
-      db.prepare('UPDATE materials SET stock = MAX(0, stock - ?) WHERE id = ?').run(need, m.id);
+      db.prepare('UPDATE materials SET stock = stock - ? WHERE id = ?').run(need, m.id);
     }
     db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qty, item.id);
   });
@@ -292,13 +295,15 @@ router.post('/:id/make', requireManageItems, (req, res) => {
   res.json({ ok: true, short, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id), categoriesFor(item.id)) });
 });
 
+// Manually log a sale outside the POS (e.g. a show-floor tally) — always goes through for the
+// full requested quantity, never floored at 0, same reasoning as checkout: an inventory count
+// being off is never a reason to block a sale.
 router.post('/:id/sell', requireManageItems, (req, res) => {
   const qty = Math.max(1, Math.round(Number(req.body?.qty)) || 1);
   const item = db.prepare('SELECT * FROM items WHERE id = ?').get(req.params.id);
   if (!item) return res.status(404).json({ error: 'not_found' });
-  const have = Math.max(0, item.stock);
-  db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(qty, item.id);
-  res.json({ ok: true, had: have, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id), categoriesFor(item.id)) });
+  db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?').run(qty, item.id);
+  res.json({ ok: true, had: item.stock, item: toFullItem(db.prepare('SELECT * FROM items WHERE id = ?').get(item.id), categoriesFor(item.id)) });
 });
 
 module.exports = router;

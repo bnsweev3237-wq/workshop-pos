@@ -100,16 +100,16 @@ router.post('/items', requireManageItems, (req, res) => {
   const b = req.body || {};
   const existing = b.id ? db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(b.id) : null;
   if (!b.partnerId) return res.status(400).json({ error: 'missing_partner' });
-  const requestedQty = Math.max(0, Math.round(Number(b.qtySent)) || 0);
-  let item = null, had = null, qtySent = requestedQty;
+  // Always honors the full requested quantity, never floored at what's on record as in stock —
+  // an inventory count being off (or just not set up yet) is never a reason to stop someone
+  // from sending inventory. `had` is purely informational (what the catalog showed right
+  // before this send), not a cap.
+  const qtySent = Math.max(0, Math.round(Number(b.qtySent)) || 0);
+  let item = null, had = null;
   if (!existing && b.itemId) {
     item = db.prepare('SELECT * FROM items WHERE id = ?').get(b.itemId);
     if (!item) return res.status(400).json({ error: 'unknown_item', message: 'Pick an item from the catalog list.' });
-    had = Math.max(0, item.stock);
-    // Never let the ledger record sending more than was actually on the shelf — the recorded
-    // qty_sent is what the UI/reports treat as truly out with the partner, not just whatever
-    // was typed in.
-    qtySent = Math.min(requestedQty, had);
+    had = item.stock;
   }
   // Price defaults to the linked item's own current price — imported automatically, but the
   // sender can override it (a consignment listing price doesn't have to match the shop's own
@@ -128,7 +128,7 @@ router.post('/items', requireManageItems, (req, res) => {
       VALUES (@id, @partner_id, @item_id, @name, @qty_sent, @date_sent, @notes, @price, @cost)
       ON CONFLICT(id) DO UPDATE SET item_id=@item_id, name=@name, qty_sent=@qty_sent, date_sent=@date_sent, notes=@notes
     `).run(row);
-    if (item) db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(qtySent, item.id);
+    if (item) db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?').run(qtySent, item.id);
   });
   tx();
   res.json({ ...toItem(db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(row.id)), had });
@@ -158,9 +158,10 @@ router.delete('/items/:id', requireManageItems, (req, res) => {
 //
 // Sold can move either direction freely (0..qtySent) — owed is computed live from qty_sold *
 // price above, so there's no separate sales ledger to keep in sync. Sent can move either
-// direction too: an increase is clamped to available real stock exactly like "+ Send inventory"
-// above (and decrements it the same way); a decrease restores the difference. Either way it's
-// floored at qtySold — can't un-send what's already marked sold. No blanket requireManageItems:
+// direction too, always honoring the full requested number: an increase decrements real stock
+// by the full amount (same as "+ Send inventory" above), even past 0; a decrease restores the
+// difference. Either way it's floored at qtySold — can't un-send what's already marked sold.
+// No blanket requireManageItems:
 // adjusting Sold alone never touches real stock, so it's lead-accessible like the old per-sale
 // logging was; only a request that actually changes Sent (either direction) requires
 // admin/manager, checked inline once we know whether this particular call does that.
@@ -169,14 +170,10 @@ router.post('/items/:id/adjust', (req, res) => {
   if (!it) return res.status(404).json({ error: 'not_found' });
   const b = req.body || {};
   let qtySold = b.qtySold !== undefined ? Math.max(0, Math.round(Number(b.qtySold)) || 0) : it.qty_sold;
-  const requestedSent = b.qtySent !== undefined ? Math.max(0, Math.round(Number(b.qtySent)) || 0) : it.qty_sent;
-  let qtySent = requestedSent;
-  let item = null;
-  if (qtySent > it.qty_sent && it.item_id) {
-    item = db.prepare('SELECT * FROM items WHERE id = ?').get(it.item_id);
-    const had = item ? Math.max(0, item.stock) : 0;
-    qtySent = it.qty_sent + Math.min(qtySent - it.qty_sent, had); // never claim more than's actually on the shelf
-  }
+  // Sent always honors the full requested number in either direction — never floored at what's
+  // on record as real stock. An increase just takes that much more from stock (which can go
+  // negative — the count needing reconciling is never a reason to block the send).
+  let qtySent = b.qtySent !== undefined ? Math.max(0, Math.round(Number(b.qtySent)) || 0) : it.qty_sent;
   qtySent = Math.max(qtySent, qtySold); // can't un-send below what's marked sold
   qtySold = Math.min(qtySold, qtySent); // nor mark more sold than was ever sent
   if (qtySent !== it.qty_sent && !['admin', 'manager'].includes(req.user.role)) {
@@ -185,7 +182,7 @@ router.post('/items/:id/adjust', (req, res) => {
   const delta = qtySent - it.qty_sent; // positive: more sent, taken from real stock; negative: restored to it
   const tx = db.transaction(() => {
     if (delta !== 0 && it.item_id) {
-      if (delta > 0) db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(delta, it.item_id);
+      if (delta > 0) db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?').run(delta, it.item_id);
       else db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(-delta, it.item_id);
     }
     db.prepare('UPDATE consignment_items SET qty_sent = ?, qty_sold = ? WHERE id = ?').run(qtySent, qtySold, it.id);

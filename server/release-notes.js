@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.8.0',
+    date: '2026-11-21',
+    notes: [
+      'Stock can now go negative everywhere — checkout, the Items tab\'s manual Sell/Make actions, and sending or adjusting consignment inventory all go through for the full amount requested instead of stopping short or erroring when the count on record runs out. A sale (or a send, or a batch) should never be the thing that gets blocked by an inventory number that\'s simply wrong or out of date — go negative and fix the count later.',
+    ],
+  },
+  {
     version: '2.7.3',
     date: '2026-11-21',
     notes: [
