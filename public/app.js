@@ -605,7 +605,7 @@ function renderLib() {
       <td data-l="Price paid ($)"><input class="in-small" type="number" min="0" step="0.01" placeholder="0.00"></td>
       <td data-l="Makes / pack of"><input class="in-small" type="number" min="1" step="any"></td>
       <td class="num" data-l="Per piece"></td>
-      <td data-l="In stock"><input class="in-tiny stockIn" type="number" min="0" step="any"></td>
+      <td data-l="In stock"><input class="in-tiny stockIn" type="number" step="any"></td>
       <td data-l="Low at"><input class="in-tiny lowIn" type="number" min="0" step="any" placeholder="off"></td>
       <td data-l="Source"><select class="in-small sourceSelect"></select></td>
       <td class="num used" data-l="Used in"></td>
@@ -806,8 +806,8 @@ async function makeBatch(it, qty) {
 async function sellItem(it, qty) {
   qty = Math.max(1, Math.round(num(qty)) || 1);
   try {
-    const r = await api('POST', `/api/items/${it.id}/sell`, { qty });
-    toast(qty > r.had ? `Sold ${r.had} “${it.name}” (only had ${r.had} in stock)` : `Sold ${qty} “${it.name}”`);
+    await api('POST', `/api/items/${it.id}/sell`, { qty });
+    toast(`Sold ${qty} “${it.name}”`);
   } catch (e) { toast('Could not update stock — try again.'); }
   await Promise.all([loadItems(), loadPosItems()]);
 }
@@ -834,7 +834,7 @@ function renderItems() {
       <td class="num" data-l="Cost now">${money(c.cost)}${moved && Math.abs(costDiff) >= 0.005 ? `<small>${costDiff > 0 ? 'up' : 'down'} ${money(Math.abs(costDiff))} from ${money(num(it.cost))}</small>` : ''}</td>
       <td class="num" data-l="Sales price">${priceMoved ? `<span class="old">${money(num(it.price))}</span> <b>${money(c.price)}</b><span class="chg">${diff > 0 ? '▲' : '▼'} ${money(Math.abs(diff))}</span>` : `<b>${money(c.price)}</b>`}
         <small class="${c.price - c.cost < 0 ? 'neg' : ''}">${!priceMoved && c.overridden ? `your price · suggested ${money(c.suggested)} · ` : !priceMoved && moved ? 'price unchanged after rounding · ' : ''}margin ${c.price > 0 ? ((c.price - c.cost) / c.price * 100).toFixed(0) : 0}%</small></td>
-      <td class="num" data-l="Stock"><div class="stock-cell${low ? ' low' : ''}"><input type="number" class="in-tiny stockIn" min="0" step="1"><span class="stock-badge"${low ? '' : ' hidden'}>LOW</span></div></td>
+      <td class="num" data-l="Stock"><div class="stock-cell${low ? ' low' : ''}"><input type="number" class="in-tiny stockIn" step="1"><span class="stock-badge"${low ? '' : ' hidden'}>LOW</span></div></td>
       <td class="acts">
         <div class="items-acts">
           <div class="qty-ctrl"><input type="number" class="qty" min="1" step="1" value="1">
@@ -1231,10 +1231,12 @@ async function loadQueuedSales() {
 }
 
 function applyLocalStockDelta(lines, sign) {
+  // Not floored at 0 — matches the server, which never blocks or clamps a sale either; this is
+  // just an optimistic local echo of it ahead of the next refetch.
   for (const l of lines) {
     if (!l.itemId) continue;
     const it = posItemsList.find((x) => x.id === l.itemId);
-    if (it) it.stock = Math.max(0, num(it.stock) + sign * num(l.qty));
+    if (it) it.stock = num(it.stock) + sign * num(l.qty);
   }
   renderPosItems();
   Offline.saveSnapshot(`posItems:${testMode ? 1 : 0}`, posItemsList);
@@ -2492,7 +2494,7 @@ function buildPartnerCard(p) {
     try { r = await api('POST', '/api/consignment/items', { partnerId: p.id, itemId: match.id, name: match.name, qtySent: qty, price }); }
     catch (e) { toast(e.message || 'Could not send that inventory'); return; }
     card.querySelector('.cnItemName').value = ''; card.querySelector('.cnItemQty').value = '1'; card.querySelector('.cnItemPrice').value = ''; stockHint.textContent = '';
-    toast(r.qtySent < qty ? `Only had ${r.had} “${match.name}” in stock — sent ${r.qtySent}` : `Sent ${r.qtySent} “${match.name}”`);
+    toast(`Sent ${r.qtySent} “${match.name}”`);
     refreshPartnerItems(p, card);
     await Promise.all([loadItems(), loadPosItems()]);
     refreshItemNameList();
@@ -2547,14 +2549,14 @@ async function refreshPartnerItems(p, card) {
     };
     // Sent and Sold each get their own independent debounce + save, sending only the one field
     // actually being edited — never the other input's live value — and on success only ever
-    // write that same field's input back (to reflect server-side clamping), never the other
-    // one's. They used to share one timer, send both fields together, and always write both
-    // inputs back on success, so editing one while the other was mid-edit — or just sitting at
-    // a stale value, or its own save landing moments later — could read it back in or stomp its
-    // display: typing into Sold could "copy" into Sent, and an in-progress edit in either field
-    // could get reverted by the other's save completing. The one exception is the sold-can't-
-    // exceed-sent invariant below, which can legitimately move the *other* field too — that's
-    // real, not a stomp, so it's still reflected when it actually happens.
+    // write that same field's input back, never the other one's. They used to share one timer,
+    // send both fields together, and always write both inputs back on success, so editing one
+    // while the other was mid-edit — or just sitting at a stale value, or its own save landing
+    // moments later — could read it back in or stomp its display: typing into Sold could "copy"
+    // into Sent, and an in-progress edit in either field could get reverted by the other's save
+    // completing. The one exception is the sold-can't-exceed-sent invariant below (Sent and Sold
+    // are never capped by real stock — only by each other), which can legitimately move the
+    // *other* field too — that's real, not a stomp, so it's still reflected when it happens.
     const commit = async (field, value) => {
       const requested = Math.max(0, Math.round(num(value)) || 0);
       const input = field === 'qtySent' ? sentIn : soldIn;
@@ -2569,10 +2571,11 @@ async function refreshPartnerItems(p, card) {
       it.estProfit = it.hasPricing ? it.retailOnShelf * (1 - pct / 100) - it.costOnShelf : 0;
       // The field just committed is always corrected to the server's answer, whether or not it
       // actually changed — otherwise a request that got fully rejected back to its starting
-      // value (e.g. trying to increase Sent with nothing left in stock) leaves the input still
-      // showing whatever was optimistically typed, even though nothing was actually saved. The
-      // *other* field is only touched if it genuinely changed (the sold-can't-exceed-sent
-      // invariant) — never just to "re-sync" it, so an unrelated in-progress edit there survives.
+      // value (e.g. Sold already at the Sent ceiling, so a Sold increase leaves it unchanged)
+      // leaves the input still showing whatever was optimistically typed, even though nothing
+      // was actually saved. The *other* field is only touched if it genuinely changed (the
+      // sold-can't-exceed-sent invariant) — never just to "re-sync" it, so an unrelated
+      // in-progress edit there survives.
       if (field === 'qtySent') sentIn.value = r.qtySent;
       else if (r.qtySent !== prevSent) sentIn.value = r.qtySent;
       if (field === 'qtySold') soldIn.value = r.qtySold;
@@ -2584,9 +2587,8 @@ async function refreshPartnerItems(p, card) {
       totals.estProfit = rows.reduce((s, x) => s + x.estProfit, 0);
       renderSummary(totals);
       if (field === 'qtySent') {
-        if (r.delta > 0) toast(r.qtySent < requested ? `Only ${r.delta} left in stock — sent ${r.delta} more instead of what was typed` : `${r.delta} more taken from stock`);
+        if (r.delta > 0) toast(`${r.delta} more taken from stock`);
         else if (r.delta < 0) toast(`${-r.delta} added back to stock`);
-        else if (requested > prevSent) toast(`Nothing left in stock to send — Sent stays at ${r.qtySent}`);
         if (r.delta !== 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
       }
     };

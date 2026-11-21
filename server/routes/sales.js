@@ -219,8 +219,10 @@ router.post('/', requireLogin, (req, res) => {
       INSERT INTO sales (id, event_id, test, tax_included, lines_json, subtotal, tax, total, tender, received, change, profit, charity_due, card_processor, card_fee, user_id, user_name, client_sale_id, customer_email, created_at)
       VALUES (@id, @event_id, @test, @tax_included, @lines_json, @subtotal, @tax, @total, @tender, @received, @change, @profit, @charity_due, @card_processor, @card_fee, @user_id, @user_name, @client_sale_id, @customer_email, @created_at)
     `).run(row);
+    // Never floored at 0 — a sale always goes through regardless of what stock is on record;
+    // negative stock just means the count needs reconciling, not that checkout should stall.
     for (const c of stockChanges) {
-      db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(c.qty, c.id);
+      db.prepare('UPDATE items SET stock = stock - ? WHERE id = ?').run(c.qty, c.id);
     }
     // Rung up from a custom order's "Check out this order" button — links the order to the
     // sale that just paid for it and credits the full amount toward amount_paid, same
