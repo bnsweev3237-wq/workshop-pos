@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.7.2',
+    date: '2026-11-21',
+    notes: [
+      'Consignment: fixed Sent and Sold interfering with each other — typing into one could silently copy its value into the other, or revert a change you just made. Each field now saves completely independently. Sent can also now be corrected upward (not just down) for a recount that finds more out there than recorded, the same way sending more inventory already does.',
+    ],
+  },
+  {
     version: '2.7.1',
     date: '2026-11-21',
     notes: [

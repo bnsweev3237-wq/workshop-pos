@@ -2545,34 +2545,45 @@ async function refreshPartnerItems(p, card) {
       refreshPartnerItems(p, card);
       if (it.qtyOut > 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
     };
-    let adjustTimer;
-    const scheduleAdjust = () => {
-      clearTimeout(adjustTimer);
-      adjustTimer = setTimeout(async () => {
-        const qtySent = Math.max(0, Math.round(num(sentIn.value)) || 0);
-        const qtySold = Math.max(0, Math.round(num(soldIn.value)) || 0);
-        let r;
-        try { r = await api('POST', `/api/consignment/items/${it.id}/adjust`, { qtySent, qtySold }); }
-        catch (e) { toast(e.message || 'Could not update that entry'); sentIn.value = it.qtySent; soldIn.value = it.qtySold; return; }
-        it.qtySent = r.qtySent; it.qtySold = r.qtySold; it.qtyOut = Math.max(0, r.qtySent - r.qtySold);
-        it.owed = it.hasPricing ? Number(it.price) * r.qtySold * (1 - pct / 100) : 0;
-        it.costOnShelf = it.hasPricing ? Number(it.cost) * it.qtyOut : 0;
-        it.retailOnShelf = it.hasPricing ? Number(it.price) * it.qtyOut : 0;
-        it.estProfit = it.hasPricing ? it.retailOnShelf * (1 - pct / 100) - it.costOnShelf : 0;
-        sentIn.value = it.qtySent; soldIn.value = it.qtySold; paint();
-        totals.owed = rows.reduce((s, x) => s + x.owed, 0);
-        totals.costOnShelf = rows.reduce((s, x) => s + x.costOnShelf, 0);
-        totals.retailOnShelf = rows.reduce((s, x) => s + x.retailOnShelf, 0);
-        totals.estProfit = rows.reduce((s, x) => s + x.estProfit, 0);
-        renderSummary(totals);
-        if (r.restored > 0) {
-          toast(`${r.restored} added back to stock`);
-          if (it.itemId) await Promise.all([loadItems(), loadPosItems()]);
-        }
-      }, 600);
+    // Sent and Sold each get their own independent debounce + save, sending only the one field
+    // actually being edited — never the other input's live value — and on success only ever
+    // write that same field's input back (to reflect server-side clamping), never the other
+    // one's. They used to share one timer, send both fields together, and always write both
+    // inputs back on success, so editing one while the other was mid-edit — or just sitting at
+    // a stale value, or its own save landing moments later — could read it back in or stomp its
+    // display: typing into Sold could "copy" into Sent, and an in-progress edit in either field
+    // could get reverted by the other's save completing. The one exception is the sold-can't-
+    // exceed-sent invariant below, which can legitimately move the *other* field too — that's
+    // real, not a stomp, so it's still reflected when it actually happens.
+    const commit = async (field, value) => {
+      const requested = Math.max(0, Math.round(num(value)) || 0);
+      const input = field === 'qtySent' ? sentIn : soldIn;
+      const prevSent = it.qtySent, prevSold = it.qtySold;
+      let r;
+      try { r = await api('POST', `/api/consignment/items/${it.id}/adjust`, { [field]: requested }); }
+      catch (e) { toast(e.message || 'Could not update that entry'); input.value = field === 'qtySent' ? it.qtySent : it.qtySold; return; }
+      it.qtySent = r.qtySent; it.qtySold = r.qtySold; it.qtyOut = Math.max(0, r.qtySent - r.qtySold);
+      it.owed = it.hasPricing ? Number(it.price) * r.qtySold * (1 - pct / 100) : 0;
+      it.costOnShelf = it.hasPricing ? Number(it.cost) * it.qtyOut : 0;
+      it.retailOnShelf = it.hasPricing ? Number(it.price) * it.qtyOut : 0;
+      it.estProfit = it.hasPricing ? it.retailOnShelf * (1 - pct / 100) - it.costOnShelf : 0;
+      if (r.qtySent !== prevSent) sentIn.value = r.qtySent;
+      if (r.qtySold !== prevSold) soldIn.value = r.qtySold;
+      paint();
+      totals.owed = rows.reduce((s, x) => s + x.owed, 0);
+      totals.costOnShelf = rows.reduce((s, x) => s + x.costOnShelf, 0);
+      totals.retailOnShelf = rows.reduce((s, x) => s + x.retailOnShelf, 0);
+      totals.estProfit = rows.reduce((s, x) => s + x.estProfit, 0);
+      renderSummary(totals);
+      if (field === 'qtySent') {
+        if (r.delta > 0) toast(r.qtySent < requested ? `Only ${r.delta} left in stock — sent ${r.delta} more instead of what was typed` : `${r.delta} more taken from stock`);
+        else if (r.delta < 0) toast(`${-r.delta} added back to stock`);
+        if (r.delta !== 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
+      }
     };
-    sentIn.addEventListener('input', scheduleAdjust);
-    soldIn.addEventListener('input', scheduleAdjust);
+    let sentTimer, soldTimer;
+    sentIn.addEventListener('input', () => { clearTimeout(sentTimer); sentTimer = setTimeout(() => commit('qtySent', sentIn.value), 600); });
+    soldIn.addEventListener('input', () => { clearTimeout(soldTimer); soldTimer = setTimeout(() => commit('qtySold', soldIn.value), 600); });
     tbody.appendChild(tr);
   }
 }
