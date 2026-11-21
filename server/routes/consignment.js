@@ -60,16 +60,18 @@ router.delete('/partners/:id', requireManageItems, (req, res) => {
 
 // Items + their sold log for one partner, with the running balance computed here rather than
 // trusted from the client: out = sent - sold, owed = sum(sale_price * qty) * (1 - commission%)
-// (what's ACTUALLY been reported sold so far — real money). costOnShelf/retailOnShelf/
-// estProfit are a projection for what's still unsold (qtyOut) if it eventually sells at its
-// listed price: retail * (1 - commission%) - cost. Both price and cost are null for the legacy
-// free-text path (no item_id) or any row predating those columns, so their on-shelf figures
-// are 0 rather than NaN — shown as "—" by the client rather than a misleading $0.
+// (what's ACTUALLY been reported sold so far — real money owed back to you). costOnShelf/
+// retailOnShelf/estProfit are a projection for what's still unsold (qtyOut) if it eventually
+// sells at its listed price: retail * (1 - commission%) - cost. Both price and cost are null
+// for the legacy free-text path (no item_id) or any row predating those columns, so their
+// on-shelf figures are 0 rather than NaN — shown as "—" by the client rather than a misleading
+// $0. totals sums all of the above across every item for this partner — the per-partner and
+// across-all-partners rolling tallies public/app.js shows are built directly from this.
 router.get('/partners/:id/items', (req, res) => {
   const items = db.prepare('SELECT * FROM consignment_items WHERE partner_id = ? ORDER BY date_sent DESC').all(req.params.id);
   const partner = db.prepare('SELECT * FROM consignment_partners WHERE id = ?').get(req.params.id);
   const pct = partner ? Number(partner.commission_pct) || 0 : 0;
-  const totals = { costOnShelf: 0, retailOnShelf: 0, estProfit: 0 };
+  const totals = { owed: 0, costOnShelf: 0, retailOnShelf: 0, estProfit: 0 };
   const out = items.map((it) => {
     const sales = db.prepare('SELECT * FROM consignment_sales WHERE consignment_item_id = ? ORDER BY date_reported DESC').all(it.id);
     const owed = sales.reduce((sum, s) => sum + Number(s.sale_price) * Number(s.qty) * (1 - pct / 100), 0);
@@ -78,6 +80,7 @@ router.get('/partners/:id/items', (req, res) => {
     const costOnShelf = hasPricing ? Number(it.cost) * qtyOut : 0;
     const retailOnShelf = hasPricing ? Number(it.price) * qtyOut : 0;
     const estProfit = hasPricing ? retailOnShelf * (1 - pct / 100) - costOnShelf : 0;
+    totals.owed += owed;
     totals.costOnShelf += costOnShelf;
     totals.retailOnShelf += retailOnShelf;
     totals.estProfit += estProfit;
