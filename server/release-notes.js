@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.7.1',
+    date: '2026-11-21',
+    notes: [
+      'Admin console: visual cleanup — fixed the per-tenant plan dropdown getting clipped ("bas" instead of "basic") with its "Set" button wrapping onto its own line, tidied up the disk-usage column, added a status dot to Active/Suspended, and gave the header the same logo/branding treatment as the rest of the app.',
+    ],
+  },
+  {
     version: '2.7.0',
     date: '2026-11-21',
     notes: [
