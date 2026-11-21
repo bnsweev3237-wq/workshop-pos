@@ -269,11 +269,15 @@ and how many of each (the per-item quantities if the event is scoped to "Selecte
 every sellable item's current stock if it's open to the whole catalog — a "not for shows" item
 never appears either way). Below it, "Print labels for this event" prints to actual price tags:
 type how many labels you want for any item — leave it blank to skip that item — with name,
-price, and — unless you uncheck "Include barcode" — a scannable Code128 barcode encoding the
-item's own item number. Both use the browser's print dialog (no bundled PDF library, same as
-Reports' PDF export), and a USB barcode scanner, which types out a barcode's digits like a
-keyboard, reads those tags straight into the Sell page's search box: scan one there and it's
-added to the ticket directly, instead of just filtering the grid the way typing normally does.
+price, and, per the "Code on tag" select, either a scannable Code128 barcode or a QR code
+encoding the item's own item number (or neither). Both use the browser's print dialog (no
+bundled PDF library, same as Reports' PDF export). A USB barcode scanner, which types out a
+barcode's digits like a keyboard, reads a barcode tag straight into the Sell page's search box:
+scan one there and it's added to the ticket directly, instead of just filtering the grid the
+way typing normally does. A QR code instead points a phone's camera at a public, no-login page
+(`/i/<item number>`) showing just that item's name and price — nothing private (stock, cost,
+notes) — handy for a customer to scan right off the tag; it isn't meant for restocking from the
+Sell page the way a barcode is.
 
 Price tags can print two ways: "Plain paper (cut out)" lays out as many tags as fit per page
 with a dashed cut line around each one — any printer, any paper. Or pick a real Avery label
@@ -282,23 +286,23 @@ sheet size — 5160/8160 (30/sheet), 5162/8162 (14/sheet), 5163/8163 (10/sheet),
 the tags are positioned to land inside each sticker's own edges, filling one sheet before
 starting the next. (In the print dialog, set Margins to "None" for the best alignment on real
 label stock.) 5167 and 5195 are only half an inch to two-thirds of an inch tall, too short to
-fit a legible barcode, so those two always print the item number as plain text regardless of
-the "Include barcode" checkbox — pick any of the other sizes if you need a scannable tag. An
-optional booth number, set on the event itself right next to the label picker, prints on every
-tag either way — handy for a consignment shop or a multi-vendor show where more than one
+fit a legible barcode or QR code, so those two always print the item number as plain text
+regardless of the "Code on tag" selection — pick any of the other sizes if you need a scannable
+tag. An optional booth number, set on the event itself right next to the label picker, prints on
+every tag either way — handy for a consignment shop or a multi-vendor show where more than one
 seller's tags end up in the same display.
 
 A single item doesn't need a whole event for a tag reprint — click "Print labels" next to any
-item on the Items tab for the same label sheet, barcode, and booth number options in a small
+item on the Items tab for the same label sheet, code, and booth number options in a small
 window, plus how many copies to print (handy for restocking a shelf with several of the same
-tag). It remembers your last-used label sheet and barcode choice between entry points, and
+tag). It remembers your last-used label sheet and barcode/QR choice between entry points, and
 pre-fills the booth number from the currently open event if one has it set.
 
 For more than one item at a time, there's also a "Print labels" section at the bottom of the
 Items tab: same idea — type how many of each item to print, blank skips it — with its own
-label sheet/barcode/booth options, filling sheets across the whole selection rather than one
-item at a time. It always uses catalog price, not any event's adjustment (see below); print
-from the event itself for event-adjusted pricing.
+label sheet/code/booth options, filling sheets across the whole selection rather than one item
+at a time. It always uses catalog price, not any event's adjustment (see below); print from the
+event itself for event-adjusted pricing.
 
 Every printed document — packing lists, price tags, purchase orders, and Reports' PDF export —
 carries a small "Powered by Craftium" line at the bottom, independent of whatever business

@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.4.0',
+    date: '2026-11-21',
+    notes: [
+      'Price tags now offer a QR code as an alternative to a barcode — scanning it opens a simple public page showing just that item\'s name and price, no account needed, handy for a customer to check right off the tag. The barcode option still works exactly as before for a USB scanner at the register.',
+    ],
+  },
+  {
     version: '2.3.0',
     date: '2026-11-21',
     notes: [

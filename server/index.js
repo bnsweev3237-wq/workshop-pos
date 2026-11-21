@@ -27,7 +27,7 @@ function createApp() {
 
   // Baseline security headers. The Content-Security-Policy is spelled out explicitly to match
   // what this app actually loads — every script is same-origin (app.js, offline.js, and the
-  // vendored barcode library under public/vendor), Google Fonts is the only outside origin,
+  // vendored barcode/QR libraries under public/vendor), Google Fonts is the only outside origin,
   // and the UI relies heavily on inline `style="..."` attributes throughout (hence style-src
   // needs 'unsafe-inline'; there's no inline *script*, so script-src doesn't). Using helmet's
   // defaults blind here would risk silently breaking rendering instead of actually protecting
@@ -83,6 +83,13 @@ function createSingleTenantApp(app) {
 
   mountTenantScopedRoutes(app);
   app.use('/api/update', require('./routes/update'));
+
+  // /i/:itemNo — the public, no-login item-lookup page a price tag's QR code/barcode points
+  // at (see public/app.js's printPriceTags() and server/routes/items.js's GET /lookup/:itemNo,
+  // which this page's own script calls). A dedicated route rather than a static file because
+  // the item number lives in the path, not a query string — keeps the QR code's encoded URL
+  // as short as possible, which matters for how small/dense the printed code needs to be.
+  app.get('/i/:itemNo', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'item-lookup.html')));
 
   // index: false — the catch-all below is what decides which HTML shell to serve (it also
   // picks between index.html and signup.html by host in multi-tenant mode), so static must
@@ -158,6 +165,11 @@ function createMultiTenantApp(app) {
   // /api/update is never mounted here: a platform-wide deploy (git pull, npm ci, a restart) is
   // an operator action now, never something one tenant's admin can trigger against a process
   // every other tenant shares. It falls through to the catch-all's /api/ 404 below.
+
+  // Same public item-lookup page as the single-tenant branch above — see its comment. On the
+  // platform host there's no tenant to look an item up against, so the page's own fetch just
+  // 404s there; no special-casing needed.
+  app.get('/i/:itemNo', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'item-lookup.html')));
 
   // index: false — see the single-tenant branch above; here it also matters for choosing
   // signup.html vs index.html by host, which static's own auto-index would bypass.

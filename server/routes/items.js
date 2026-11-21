@@ -1,4 +1,5 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const db = require('../db');
 const { uid, genItemNo } = require('../lib/ids');
 const { requireManageItems, requireReports, requireLogin } = require('../middleware/auth');
@@ -7,6 +8,27 @@ const { validatePhoto } = require('../lib/photos');
 const { checkUsageCap } = require('../lib/license');
 
 const router = express.Router();
+
+// Public, no login required — a QR code or barcode on a price tag (public/app.js's
+// printPriceTags()) encodes a URL that lands here with no session at all. Deliberately the
+// narrowest possible response: only what's already printed on the tag anyway (name, price,
+// and a photo if there is one) — never stock, cost, notes, or anything else a cashier-role
+// session doesn't already see. Rate-limited since it's the one unauthenticated way into this
+// router — nothing sensitive to steal, but no reason to let it be scraped at will either.
+const lookupLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'too_many_requests' },
+});
+router.get('/lookup/:itemNo', lookupLimiter, (req, res) => {
+  // test = 0: the test catalog is sandbox-only data, never meant to be reachable by a real
+  // scan regardless of what mode the shop's own browser session happens to be in right now.
+  const row = db.prepare('SELECT name, price, photo FROM items WHERE item_no = ? AND test = 0').get(req.params.itemNo);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  res.json({ name: row.name, price: row.price, photo: row.photo || '' });
+});
 
 // A single item can belong to several categories (item_categories, a join table — see
 // schema.sql; the old single `items.category` column is deprecated and no longer written).

@@ -115,6 +115,19 @@ async function main() {
   assert(leadDeletePartner.status === 403, 'lead cannot delete a consignment partner');
   cookie = adminCookie;
 
+  // --- Public item lookup (QR/barcode price-tag scan target, server/routes/items.js's GET
+  // /lookup/:itemNo) — no auth at all, so check it with a bare fetch, no session cookie ---
+  const lookupOk = await (await fetch(`${base}/api/items/lookup/${earringsItem.data.itemNo}`)).json();
+  assert(lookupOk.name === 'Hoop Earrings' && lookupOk.price === 25, `lookup returns the right name/price (got ${JSON.stringify(lookupOk)})`);
+  assert(!('stock' in lookupOk) && !('cost' in lookupOk) && !('notes' in lookupOk) && !('id' in lookupOk), 'lookup never leaks stock, cost, notes, or the internal id — only what\'s already printed on the tag');
+  const lookupMissing = await fetch(`${base}/api/items/lookup/000000`);
+  assert(lookupMissing.status === 404, 'looking up an unknown item number 404s');
+  const testItem = await call('POST', '/api/items', { name: 'Sandbox Thing', price: 9, cost: 1, stock: 1, test: true });
+  const lookupTestItem = await fetch(`${base}/api/items/lookup/${testItem.data.itemNo}`);
+  assert(lookupTestItem.status === 404, 'a test-catalog item is never reachable through the public lookup, even with its real item number');
+  const lookupPage = await fetch(`${base}/i/${earringsItem.data.itemNo}`);
+  assert(lookupPage.status === 200 && (await lookupPage.text()).includes('item-lookup.js'), 'the /i/:itemNo page itself serves the lookup shell');
+
   // --- Event expenses + event delete with expenses attached ---
   const ev = await call('POST', '/api/events', { name: 'Spring Fair', start: '2026-05-01', days: 1, cost: 50, status: 'ended', test: false });
   const exp = await call('POST', '/api/event-expenses', { eventId: ev.data.id, label: 'Travel', amount: 25 });

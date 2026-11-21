@@ -2098,8 +2098,8 @@ $('evPrintPacking').onclick = () => {
 // 0.3in left/right margins, solved for the pitch that fills the sheet exactly symmetrically
 // (checked: 2 x 0.3in margin + 4 x 1.75in labels + 3 x 0.3in gaps = 8.5in, exact). Both are
 // address-label-strip sizes (half an inch / two-thirds of an inch tall) — too short to fit a
-// legible barcode alongside name/price/booth, so `noBarcode` forces the item-number text
-// fallback instead, however the checkbox is set (see evPrintTags below).
+// legible barcode or QR code alongside name/price/booth, so `noBarcode` forces the item-number
+// text fallback instead, whatever the code-on-tag select is set to (see evPrintTags below).
 const AVERY_TEMPLATES = {
   plain: { label: 'Plain paper (cut out)' },
   '5160': { label: 'Avery 5160/8160', cols: 3, rows: 10, labelW: 2.625, labelH: 1, marginTop: 0.5, marginLeft: 0.1875, colPitch: 2.75, rowPitch: 1, shape: 'rect' },
@@ -2115,23 +2115,34 @@ const AVERY_TEMPLATES = {
 function renderTagsHint(formatId, hintId) {
   const tpl = AVERY_TEMPLATES[$(formatId).value];
   $(hintId).textContent = tpl.cols
-    ? `${tpl.cols * tpl.rows} tags per sheet — in the print dialog, set Margins to “None” for the best alignment on real ${tpl.label} sheets.${tpl.noBarcode ? ' Too small to fit a barcode — the item number prints as text instead.' : ''}`
+    ? `${tpl.cols * tpl.rows} tags per sheet — in the print dialog, set Margins to “None” for the best alignment on real ${tpl.label} sheets.${tpl.noBarcode ? ' Too small to fit a barcode or QR code — the item number prints as text instead.' : ''}`
     : 'Fits as many tags as possible per page with a dashed cut line — any plain paper works.';
 }
 try { $('evTagsFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
-try { $('evTagsBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+// 'barcode' | 'qr' | 'none' — one shared preference across all three tag-printing entry points
+// (event, single item, bulk). Migrates the old boolean key transparently: an unrecognized value
+// (including the pre-existing '1', or nothing stored yet on a first run) keeps the previous
+// default-on behavior by falling back to 'barcode'; '0' maps to 'none'.
+function loadTagCodeMode() {
+  let v; try { v = localStorage.getItem('workshopPos.tagsBarcode'); } catch { v = null; }
+  if (v === 'barcode' || v === 'qr' || v === 'none') return v;
+  return v === '0' ? 'none' : 'barcode';
+}
+function saveTagCodeMode(mode) { try { localStorage.setItem('workshopPos.tagsBarcode', mode); } catch {} }
+try { $('evTagsBarcode').value = loadTagCodeMode(); } catch {}
 $('evTagsFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('evTagsFormat').value); } catch {} renderTagsHint('evTagsFormat', 'evTagsHint'); };
-$('evTagsBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('evTagsBarcode').checked ? '1' : '0'); } catch {} };
+$('evTagsBarcode').onchange = () => saveTagCodeMode($('evTagsBarcode').value);
 renderTagsHint('evTagsFormat', 'evTagsHint');
-function tagInnerHtml(it, i, withBarcode, booth) {
+function tagInnerHtml(it, i, mode, booth) {
   let idHtml = '';
-  if (withBarcode && it.itemNo) idHtml = `<svg class="tag-barcode" id="tag-bc-${i}"></svg><div class="tag-no">${esc(it.itemNo)}</div>`;
+  if (mode === 'barcode' && it.itemNo) idHtml = `<svg class="tag-barcode" id="tag-bc-${i}"></svg><div class="tag-no">${esc(it.itemNo)}</div>`;
+  else if (mode === 'qr' && it.itemNo) idHtml = `<div class="tag-qr" id="tag-qr-${i}"></div><div class="tag-no">${esc(it.itemNo)}</div>`;
   else if (it.itemNo) idHtml = `<div class="tag-no">#${esc(it.itemNo)}</div>`;
   return `<div class="tag-name">${esc(it.name)}</div><div class="tag-price">${money(num(it.price))}</div>${idHtml}${booth ? `<div class="tag-booth">Booth ${esc(booth)}</div>` : ''}`;
 }
-function printPriceTags(tagItems, rawWithBarcode, booth, templateId) {
+function printPriceTags(tagItems, rawMode, booth, templateId) {
   const tpl = AVERY_TEMPLATES[templateId];
-  const withBarcode = rawWithBarcode && !tpl.noBarcode;
+  const mode = tpl.noBarcode ? 'none' : rawMode;
   printFromCard('printing-price-tags', 'priceTagsCard', () => {
     $('priceTagsCard').querySelector('.print-credit').style.display = tpl.cols ? 'none' : '';
     if (tpl.cols) {
@@ -2142,17 +2153,32 @@ function printPriceTags(tagItems, rawWithBarcode, booth, templateId) {
       const tagClass = `price-tag avery${tpl.shape === 'round' ? ' round' : ''}${tpl.compact ? ' compact' : ''}`;
       $('priceTagsGrid').innerHTML = sheets.map((sheetItems, si) => `
         <div class="avery-sheet" style="grid-template-columns:repeat(${tpl.cols},${tpl.labelW}in);grid-template-rows:repeat(${tpl.rows},${tpl.labelH}in);column-gap:${(tpl.colPitch - tpl.labelW).toFixed(4)}in;row-gap:${(tpl.rowPitch - tpl.labelH).toFixed(4)}in;padding:${tpl.marginTop}in 0 0 ${tpl.marginLeft}in">
-          ${sheetItems.map((it, j) => `<div class="${tagClass}">${tagInnerHtml(it, si * perSheet + j, withBarcode, booth)}</div>`).join('')}
+          ${sheetItems.map((it, j) => `<div class="${tagClass}">${tagInnerHtml(it, si * perSheet + j, mode, booth)}</div>`).join('')}
         </div>`).join('');
     } else {
       $('priceTagsGrid').className = 'tag-grid';
-      $('priceTagsGrid').innerHTML = tagItems.map((it, i) => `<div class="price-tag cutout">${tagInnerHtml(it, i, withBarcode, booth)}</div>`).join('');
+      $('priceTagsGrid').innerHTML = tagItems.map((it, i) => `<div class="price-tag cutout">${tagInnerHtml(it, i, mode, booth)}</div>`).join('');
     }
-    if (withBarcode && window.JsBarcode) {
+    if (mode === 'barcode' && window.JsBarcode) {
       tagItems.forEach((it, i) => {
         if (!it.itemNo) return;
         try { window.JsBarcode(`#tag-bc-${i}`, it.itemNo, { format: 'CODE128', displayValue: false, height: 40, margin: 0 }); }
         catch { /* a malformed item number (shouldn't happen) just skips its barcode, not the whole print */ }
+      });
+    } else if (mode === 'qr' && window.qrcode) {
+      // Encodes the same short, no-login lookup URL printed on every QR tag — see
+      // server/index.js's GET /i/:itemNo and server/routes/items.js's GET /lookup/:itemNo.
+      // typeNumber 0 lets the library auto-pick the smallest QR version that fits the data.
+      tagItems.forEach((it, i) => {
+        if (!it.itemNo) return;
+        const el = document.getElementById(`tag-qr-${i}`);
+        if (!el) return;
+        try {
+          const qr = window.qrcode(0, 'M');
+          qr.addData(`${location.origin}/i/${it.itemNo}`);
+          qr.make();
+          el.innerHTML = qr.createSvgTag({ scalable: true, margin: 0 });
+        } catch { /* a malformed item number (shouldn't happen) just skips its QR code, not the whole print */ }
       });
     }
   });
@@ -2205,7 +2231,7 @@ $('evPrintTags').onclick = () => {
     if (!it) continue;
     for (let i = 0; i < qty; i++) tagItems.push({ name: it.name, price: eventAdjustedPrice(it.price, evForPricing), itemNo: it.itemNo });
   }
-  printPriceTags(tagItems, $('evTagsBarcode').checked, $('evTagsBooth').value.trim(), $('evTagsFormat').value);
+  printPriceTags(tagItems, $('evTagsBarcode').value, $('evTagsBooth').value.trim(), $('evTagsFormat').value);
 };
 // Items tab: print one item's tag — same options as the event flow (format/barcode/booth
 // preferences are shared via the same localStorage keys), plus how many copies to print, since
@@ -2216,14 +2242,14 @@ function openItemTagModal(it) {
   $('itemTagTitle').textContent = `Print labels — ${it.name}`;
   $('itemTagFormat').innerHTML = $('evTagsFormat').innerHTML;
   try { $('itemTagFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
-  try { $('itemTagBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+  try { $('itemTagBarcode').value = loadTagCodeMode(); } catch {}
   $('itemTagCopies').value = 1;
   $('itemTagBooth').value = openEvent()?.boothNumber || '';
   renderTagsHint('itemTagFormat', 'itemTagHint');
   $('itemTagModal').hidden = false;
 }
 $('itemTagFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('itemTagFormat').value); } catch {} renderTagsHint('itemTagFormat', 'itemTagHint'); };
-$('itemTagBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('itemTagBarcode').checked ? '1' : '0'); } catch {} };
+$('itemTagBarcode').onchange = () => saveTagCodeMode($('itemTagBarcode').value);
 function closeItemTagModal() { $('itemTagModal').hidden = true; itemTagTarget = null; }
 $('itemTagClose').onclick = $('itemTagCancel').onclick = closeItemTagModal;
 $('itemTagModal').addEventListener('click', (e) => { if (e.target === $('itemTagModal')) closeItemTagModal(); });
@@ -2231,7 +2257,7 @@ $('itemTagPrint').onclick = () => {
   if (!itemTagTarget) return;
   const copies = Math.max(1, Math.round(num($('itemTagCopies').value)) || 1);
   const tagItems = Array.from({ length: copies }, () => ({ name: itemTagTarget.name, price: itemTagTarget.price, itemNo: itemTagTarget.itemNo }));
-  printPriceTags(tagItems, $('itemTagBarcode').checked, $('itemTagBooth').value.trim(), $('itemTagFormat').value);
+  printPriceTags(tagItems, $('itemTagBarcode').value, $('itemTagBooth').value.trim(), $('itemTagFormat').value);
   closeItemTagModal();
 };
 // Items tab: "Print labels" card at the bottom — pick any number of items and how many of
@@ -2242,7 +2268,7 @@ const bulkTagQty = new Map(); // itemId -> qty
 let bulkTagSearch = '';
 $('bulkTagFormat').innerHTML = $('evTagsFormat').innerHTML;
 try { $('bulkTagFormat').value = localStorage.getItem('workshopPos.tagsFormat') || 'plain'; } catch {}
-try { $('bulkTagBarcode').checked = localStorage.getItem('workshopPos.tagsBarcode') !== '0'; } catch {}
+try { $('bulkTagBarcode').value = loadTagCodeMode(); } catch {}
 renderTagsHint('bulkTagFormat', 'bulkTagHint');
 function renderBulkTagList() {
   for (const id of [...bulkTagQty.keys()]) if (!items.some((it) => it.id === id)) bulkTagQty.delete(id);
@@ -2273,7 +2299,7 @@ function updateBulkTagCount() {
 }
 $('bulkTagSearch').addEventListener('input', () => { bulkTagSearch = $('bulkTagSearch').value; renderBulkTagList(); });
 $('bulkTagFormat').onchange = () => { try { localStorage.setItem('workshopPos.tagsFormat', $('bulkTagFormat').value); } catch {} renderTagsHint('bulkTagFormat', 'bulkTagHint'); };
-$('bulkTagBarcode').onchange = () => { try { localStorage.setItem('workshopPos.tagsBarcode', $('bulkTagBarcode').checked ? '1' : '0'); } catch {} };
+$('bulkTagBarcode').onchange = () => saveTagCodeMode($('bulkTagBarcode').value);
 $('bulkTagClear').onclick = () => { bulkTagQty.clear(); renderBulkTagList(); };
 $('bulkTagPrint').onclick = () => {
   if (!bulkTagQty.size) { toast('Type a quantity for at least one item first'); return; }
@@ -2284,7 +2310,7 @@ $('bulkTagPrint').onclick = () => {
     if (!it) continue;
     for (let i = 0; i < qty; i++) tagItems.push({ name: it.name, price: it.price, itemNo: it.itemNo });
   }
-  printPriceTags(tagItems, $('bulkTagBarcode').checked, $('bulkTagBooth').value.trim(), $('bulkTagFormat').value);
+  printPriceTags(tagItems, $('bulkTagBarcode').value, $('bulkTagBooth').value.trim(), $('bulkTagFormat').value);
 };
 $('evEnd').onclick = async () => {
   const existing = editingEventId ? events.find(e => e.id === editingEventId) : null;
@@ -3778,7 +3804,7 @@ $('releaseNotesModal').addEventListener('click', e => { if (e.target === $('rele
 const HELP_SECTIONS = [
   { title: 'Calculator', body: 'Price an item from its materials, labor, and overhead, plus a markup/margin/multiplier. "Resale" items (bought ready-made) skip straight to a cost and sale price instead. Save an item here before it can be sold.' },
   { title: 'Materials', body: 'Your material library — enter a price once and every item using it recalculates when the price changes. Keep stock here up to date for low-stock warnings.' },
-  { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event.' },
+  { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event. Price tags (an item\'s "Labels" button, or printed in bulk from the Sell/Events pages) can include a barcode, or a QR code a customer can scan with their phone to see the name and price — pick which from the tag-printing options, or print with neither.' },
   { title: 'Custom Orders', body: 'Made-to-order or custom pieces tracked from request to pickup (or shipment), separate from the regular catalog and event inventory. Its "Check out this order" button loads the order onto the Sell page ticket to ring up the actual sale.' },
   { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Log a sale whenever the shop reports one back — it tracks what’s still out and what’s owed to you after their commission. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
   { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
