@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.5.0',
+    date: '2026-11-21',
+    notes: [
+      'Consignment: sending inventory now imports its price from the catalog item automatically — change it before sending if this partner sells it for something different. Each partner now shows the total cost and retail value of what\'s still on their shelf, and the estimated profit once the store takes its cut. Also fixed the inventory list\'s columns not lining up.',
+    ],
+  },
+  {
     version: '2.4.0',
     date: '2026-11-21',
     notes: [

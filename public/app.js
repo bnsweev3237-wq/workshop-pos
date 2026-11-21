@@ -2433,10 +2433,18 @@ function buildPartnerCard(p) {
       <button class="icon-btn del" title="Delete partner">×</button>
     </div>
     <div class="hint" style="margin-top:-4px"></div>
-    <div class="cn-items" style="margin-top:10px"></div>
-    <div class="row r3 cnSendRow" style="margin-top:10px">
+    <div class="hint cnShelfSummary" style="margin-top:2px;font-weight:500"></div>
+    <div class="scroll" style="margin-top:10px">
+      <table class="items-table">
+        <thead><tr><th>Item</th><th class="r">Sent</th><th class="r">Sold</th><th class="r">On shelf</th><th class="r">Price</th><th class="r">Owed</th><th></th></tr></thead>
+        <tbody class="cn-items"></tbody>
+      </table>
+    </div>
+    <div class="empty cnItemsEmpty" hidden>No inventory sent yet.</div>
+    <div class="row r4 cnSendRow" style="margin-top:10px">
       <div><label>Item</label><input class="cnItemName" list="itemNameList" placeholder="Start typing an item name…"></div>
       <div><label>Qty sent</label><input class="cnItemQty" type="number" min="1" step="1" value="1"></div>
+      <div><label>Price ($)</label><input class="cnItemPrice" type="number" min="0" step="0.01" placeholder="auto"></div>
       <div style="display:flex;align-items:flex-end"><button class="btn sm cnItemAdd" style="width:100%">+ Send inventory</button></div>
     </div>
     <div class="hint cnItemStockHint" style="margin-top:4px"></div>`;
@@ -2450,60 +2458,79 @@ function buildPartnerCard(p) {
     if (!await askConfirm(`Delete “${p.name || 'this partner'}” and its whole inventory/sales history? Any unsold inventory still out with them will be added back to your stock.`, 'Delete partner')) return;
     await api('DELETE', '/api/consignment/partners/' + p.id); toast('Partner deleted'); await Promise.all([loadConsignment(), loadPosItems()]);
   };
-  const itemsBox = card.querySelector('.cn-items');
-  refreshPartnerItems(p, itemsBox);
+  refreshPartnerItems(p, card);
   const nameIn = card.querySelector('.cnItemName'), stockHint = card.querySelector('.cnItemStockHint');
   nameIn.addEventListener('input', () => {
     const match = items.find((it) => it.name === nameIn.value.trim());
-    stockHint.textContent = match ? `${num(match.stock)} in stock` : '';
+    stockHint.textContent = match ? `${num(match.stock)} in stock · catalog price ${money(match.price)} (imported automatically — type a different price below to override)` : '';
   });
   card.querySelector('.cnItemAdd').onclick = async () => {
     const name = card.querySelector('.cnItemName').value.trim();
     const match = items.find((it) => it.name === name);
     if (!match) { card.querySelector('.cnItemName').focus(); toast('Pick an item from the list first'); return; }
     const qty = Math.max(1, Math.round(num(card.querySelector('.cnItemQty').value)) || 1);
+    const priceInput = card.querySelector('.cnItemPrice').value;
+    const price = priceInput === '' ? undefined : Math.max(0, num(priceInput));
     let r;
-    try { r = await api('POST', '/api/consignment/items', { partnerId: p.id, itemId: match.id, name: match.name, qtySent: qty }); }
+    try { r = await api('POST', '/api/consignment/items', { partnerId: p.id, itemId: match.id, name: match.name, qtySent: qty, price }); }
     catch (e) { toast(e.message || 'Could not send that inventory'); return; }
-    card.querySelector('.cnItemName').value = ''; card.querySelector('.cnItemQty').value = '1'; stockHint.textContent = '';
+    card.querySelector('.cnItemName').value = ''; card.querySelector('.cnItemQty').value = '1'; card.querySelector('.cnItemPrice').value = ''; stockHint.textContent = '';
     toast(r.qtySent < qty ? `Only had ${r.had} “${match.name}” in stock — sent ${r.qtySent}` : `Sent ${r.qtySent} “${match.name}”`);
-    refreshPartnerItems(p, itemsBox);
+    refreshPartnerItems(p, card);
     await Promise.all([loadItems(), loadPosItems()]);
     refreshItemNameList();
   };
   return card;
 }
-async function refreshPartnerItems(p, box) {
-  const items = await api('GET', `/api/consignment/partners/${p.id}/items`);
-  box.innerHTML = '';
-  if (!items.length) { box.innerHTML = '<div class="hint">No inventory sent yet.</div>'; return; }
-  for (const it of items) {
-    const row = document.createElement('div'); row.className = 'ev-charity-row';
-    row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="btn sm cnSoldBtn">Log a sale</button><button class="icon-btn del" title="Remove">×</button><div class="cn-sold-form" hidden style="flex-basis:100%;margin-top:8px"></div>`;
-    row.querySelector('.ev-charity-name').textContent = `${it.name} — ${it.qtyOut} out of ${it.qtySent}`;
-    row.querySelector('.ev-charity-pct').textContent = `${money(it.owed)} owed`;
-    row.querySelector('.del').hidden = !canManageItems;
-    row.querySelector('.del').onclick = async () => {
+async function refreshPartnerItems(p, card) {
+  const tbody = card.querySelector('.cn-items');
+  const { items: rows, totals } = await api('GET', `/api/consignment/partners/${p.id}/items`);
+  tbody.innerHTML = '';
+  card.querySelector('.cnItemsEmpty').hidden = rows.length > 0;
+  card.querySelector('.cnShelfSummary').textContent = rows.length
+    ? `On the shelf: ${money(totals.costOnShelf)} cost · ${money(totals.retailOnShelf)} retail · est. ${money(totals.estProfit)} profit after commission`
+    : '';
+  for (const it of rows) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td></td>
+      <td class="num" data-l="Sent">${it.qtySent}</td>
+      <td class="num" data-l="Sold">${it.qtySold}</td>
+      <td class="num" data-l="On shelf">${it.qtyOut}</td>
+      <td class="num" data-l="Price">${it.price != null ? money(it.price) : '—'}</td>
+      <td class="num" data-l="Owed">${money(it.owed)}</td>
+      <td class="acts"><button class="btn sm cnSoldBtn">Log a sale</button> <button class="icon-btn del" title="Remove">×</button></td>
+    `;
+    tr.querySelector('td').textContent = it.name;
+    const delBtn = tr.querySelector('.del');
+    delBtn.hidden = !canManageItems;
+    delBtn.onclick = async () => {
       const msg = it.qtyOut > 0 ? `Remove this entry? The ${it.qtyOut} still out, unsold, will be added back to your stock.` : 'Remove this entry?';
       if (!await askConfirm(msg, 'Remove')) return;
       await api('DELETE', '/api/consignment/items/' + it.id);
-      refreshPartnerItems(p, box);
+      refreshPartnerItems(p, card);
       if (it.qtyOut > 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
     };
-    const form = row.querySelector('.cn-sold-form');
-    row.querySelector('.cnSoldBtn').onclick = () => {
-      form.hidden = !form.hidden;
-      if (!form.hidden) {
+    const formRow = document.createElement('tr'); formRow.className = 'cn-sold-row'; formRow.hidden = true;
+    formRow.innerHTML = '<td colspan="7"><div class="cn-sold-form"></div></td>';
+    const form = formRow.querySelector('.cn-sold-form');
+    tr.querySelector('.cnSoldBtn').onclick = () => {
+      formRow.hidden = !formRow.hidden;
+      if (!formRow.hidden && !form.childElementCount) {
         form.innerHTML = `<div class="row r3"><div><label>Qty sold</label><input class="cnSoldQty" type="number" min="1" step="1" value="1"></div><div><label>Sale price each ($)</label><input class="cnSoldPrice" type="number" min="0" step="0.01"></div><div style="display:flex;align-items:flex-end"><button class="btn sm primary cnSoldSave" style="width:100%">Save</button></div></div>`;
+        // Prefilled from the price imported/set when this inventory was sent — usually right,
+        // just a convenience, never re-saved unless the "Save" button below is actually clicked.
+        if (it.price != null) form.querySelector('.cnSoldPrice').value = it.price;
         form.querySelector('.cnSoldSave').onclick = async () => {
           const qty = Math.max(1, Math.round(num(form.querySelector('.cnSoldQty').value)) || 1);
           const salePrice = num(form.querySelector('.cnSoldPrice').value);
           await api('POST', `/api/consignment/items/${it.id}/sold`, { qty, salePrice });
-          toast('Sale logged'); refreshPartnerItems(p, box);
+          toast('Sale logged'); refreshPartnerItems(p, card);
         };
       }
     };
-    box.appendChild(row);
+    tbody.appendChild(tr);
+    tbody.appendChild(formRow);
   }
 }
 $('cnPartnerAdd').onclick = async () => {
@@ -3806,7 +3833,7 @@ const HELP_SECTIONS = [
   { title: 'Materials', body: 'Your material library — enter a price once and every item using it recalculates when the price changes. Keep stock here up to date for low-stock warnings.' },
   { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event. Price tags (an item\'s "Labels" button, or printed in bulk from the Sell/Events pages) can include a barcode, or a QR code a customer can scan with their phone to see the name and price — pick which from the tag-printing options, or print with neither.' },
   { title: 'Custom Orders', body: 'Made-to-order or custom pieces tracked from request to pickup (or shipment), separate from the regular catalog and event inventory. Its "Check out this order" button loads the order onto the Sell page ticket to ring up the actual sale.' },
-  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Log a sale whenever the shop reports one back — it tracks what’s still out and what’s owed to you after their commission. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
+  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Its price is imported from the item automatically but can be changed per send; each partner shows the total cost and retail value still on their shelf, and the estimated profit once the store takes its cut. Log a sale whenever the shop reports one back — that tracks what’s actually been sold and what’s owed to you after commission. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
   { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
   { title: 'Events', body: 'Set up an event (space cost, dates, tax rates, item scope, a price adjustment) to track break-even live. Add expenses beyond the space cost, and charity-giving rules, from the event’s own edit panel. Draft events can be cloned for a recurring market.' },
   { title: 'Reports', body: 'Revenue, profit, and tax over a date range; cost/profit by item and by salesperson; every event’s "true profit" and a trend of it over time; inventory value; voids and returns; and your mailing-list signups, exportable as a CSV.' },

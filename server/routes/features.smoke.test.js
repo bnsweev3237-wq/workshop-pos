@@ -64,7 +64,7 @@ async function main() {
   const sold = await call('POST', `/api/consignment/items/${citem.data.id}/sold`, { qty: 3, salePrice: 20 });
   assert(sold.status === 200, 'consignment sale logged');
   const partnerItems = await call('GET', `/api/consignment/partners/${partner.data.id}/items`);
-  const it = partnerItems.data[0];
+  const it = partnerItems.data.items[0];
   assert(it.qtyOut === 7, `qtyOut computed correctly (got ${it.qtyOut})`);
   assert(Math.abs(it.owed - 42) < 0.01, `owed computed correctly after 30% commission (got ${it.owed})`);
 
@@ -76,8 +76,17 @@ async function main() {
   assert(earringsItem.status === 200, 'catalog item created');
   const linkedSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 4 });
   assert(linkedSend.status === 200 && linkedSend.data.had === 10 && linkedSend.data.qtySent === 4, `sending 4 of 10 in stock (got had=${linkedSend.data.had}, qtySent=${linkedSend.data.qtySent})`);
+  assert(linkedSend.data.price === 25 && linkedSend.data.cost === 8, `price/cost are imported from the catalog item automatically when none is given (got price=${linkedSend.data.price}, cost=${linkedSend.data.cost})`);
   const afterSend1 = await call('GET', '/api/items/full');
   assert(afterSend1.data.find((x) => x.id === earringsItem.data.id).stock === 6, 'catalog stock actually dropped to 6');
+
+  // "Import then modify" — an explicit price overrides the catalog default; cost is still
+  // snapshotted from the catalog regardless, since it's never client-supplied. Sent and
+  // immediately removed again so it doesn't complicate the shelf-totals math checked below.
+  const overridePriceSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 1, price: 19.99 });
+  assert(overridePriceSend.status === 200 && overridePriceSend.data.price === 19.99 && overridePriceSend.data.cost === 8, `an explicit price overrides the catalog default (got price=${overridePriceSend.data.price}, cost=${overridePriceSend.data.cost})`);
+  const removeOverride = await call('DELETE', '/api/consignment/items/' + overridePriceSend.data.id);
+  assert(removeOverride.status === 200, 'cleanup: removing the override-price test entry succeeds');
 
   const overSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 9 });
   assert(overSend.status === 200 && overSend.data.had === 6 && overSend.data.qtySent === 6, `asking to send 9 with only 6 left clamps the recorded qtySent to 6 too, not just the stock floor (got had=${overSend.data.had}, qtySent=${overSend.data.qtySent})`);
@@ -114,6 +123,18 @@ async function main() {
   const leadDeletePartner = await call('DELETE', '/api/consignment/partners/' + partner.data.id);
   assert(leadDeletePartner.status === 403, 'lead cannot delete a consignment partner');
   cookie = adminCookie;
+
+  // --- Shelf totals: cost/retail on the shelf and estimated profit after commission, for
+  // what's still unsold. By this point: the legacy item has no price/cost (qtyOut 7,
+  // contributes 0); linkedSend has qty_sent=4, qty_sold=1 (leadSold above), so qtyOut=3 at
+  // price=25/cost=8 -> costOnShelf 24, retailOnShelf 75, estProfit 75*0.7-24=28.5 ---
+  const finalPartnerItems = await call('GET', `/api/consignment/partners/${partner.data.id}/items`);
+  const linkedRow = finalPartnerItems.data.items.find((x) => x.id === linkedSend.data.id);
+  assert(linkedRow.qtyOut === 3 && linkedRow.costOnShelf === 24 && linkedRow.retailOnShelf === 75 && Math.abs(linkedRow.estProfit - 28.5) < 0.01, `per-item shelf cost/retail/estimated-profit computed correctly (got ${JSON.stringify({ qtyOut: linkedRow.qtyOut, costOnShelf: linkedRow.costOnShelf, retailOnShelf: linkedRow.retailOnShelf, estProfit: linkedRow.estProfit })})`);
+  const legacyRow = finalPartnerItems.data.items.find((x) => x.id === citem.data.id);
+  assert(legacyRow.hasPricing === false && legacyRow.costOnShelf === 0 && legacyRow.retailOnShelf === 0, 'the legacy free-text item (no itemId, no price) contributes 0 to shelf totals rather than NaN');
+  const t = finalPartnerItems.data.totals;
+  assert(t.costOnShelf === 24 && t.retailOnShelf === 75 && Math.abs(t.estProfit - 28.5) < 0.01, `partner-level shelf totals sum correctly across every item (got ${JSON.stringify(t)})`);
 
   // --- Public item lookup (QR/barcode price-tag scan target, server/routes/items.js's GET
   // /lookup/:itemNo) — no auth at all, so check it with a bare fetch, no session cookie ---
