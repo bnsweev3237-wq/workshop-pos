@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.6.0',
+    date: '2026-11-21',
+    notes: [
+      'Consignment: each partner now shows a running "owed to you so far" total alongside the shelf cost/retail figures, and a rolling total across every partner combined sits at the top of the tab.',
+    ],
+  },
+  {
     version: '2.5.0',
     date: '2026-11-21',
     notes: [

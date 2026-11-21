@@ -135,6 +135,10 @@ async function main() {
   assert(legacyRow.hasPricing === false && legacyRow.costOnShelf === 0 && legacyRow.retailOnShelf === 0, 'the legacy free-text item (no itemId, no price) contributes 0 to shelf totals rather than NaN');
   const t = finalPartnerItems.data.totals;
   assert(t.costOnShelf === 24 && t.retailOnShelf === 75 && Math.abs(t.estProfit - 28.5) < 0.01, `partner-level shelf totals sum correctly across every item (got ${JSON.stringify(t)})`);
+  // totals.owed: citem's 3 sold @ $20 (30% commission) = 42, plus linkedSend's 1 sold @ $25
+  // (leadSold above) = 17.5 -> 59.5 total, the rolling "owed" tally public/app.js sums across
+  // every partner.
+  assert(Math.abs(t.owed - 59.5) < 0.01, `totals.owed sums every item's owed amount for this partner (got ${t.owed})`);
 
   // --- Public item lookup (QR/barcode price-tag scan target, server/routes/items.js's GET
   // /lookup/:itemNo) — no auth at all, so check it with a bare fetch, no session cookie ---

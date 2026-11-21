@@ -2387,6 +2387,19 @@ $('testModeOffKeepLink').onclick = () => {
 // server/lib/license.js; default-allowed on an unlicensed install, same as every feature
 // flag before any tier exists to turn one off) ----------
 let consignPartners = [];
+// partnerId -> that partner's totals, as last returned by GET /partners/:id/items — kept
+// around so the "across all partners" rolling tally can be summed without a separate backend
+// endpoint. Rebuilt from scratch on a full reload (renderConsignPartners) and kept current
+// after that by every refreshPartnerItems() call a send/sale/remove/delete already triggers,
+// so it stays live without any extra fetching of its own.
+let consignPartnerTotals = new Map();
+function renderConsignGrandTotals() {
+  $('cnTotalsCard').hidden = consignPartnerTotals.size === 0;
+  if (!consignPartnerTotals.size) return;
+  let owed = 0, cost = 0, retail = 0;
+  for (const t of consignPartnerTotals.values()) { owed += t.owed; cost += t.costOnShelf; retail += t.retailOnShelf; }
+  $('cnTotalsLine').textContent = `Owed to you so far: ${money(owed)} · Inventory committed: ${money(retail)} retail (${money(cost)} cost)`;
+}
 async function loadConsignment() {
   // Gated by plan (hasConsignment, from /api/auth/status — same source of truth the API
   // itself enforces server-side) rather than by role: a tab that looked real but 403'd on
@@ -2423,6 +2436,10 @@ function renderConsignPartners() {
   const box = $('cnPartnerList'); box.innerHTML = '';
   $('cnPartnerEmpty').hidden = consignPartners.length > 0;
   $('cnPartnerEmpty').textContent = 'No consignment partners yet.';
+  // Dropped partners (a delete elsewhere, or just a fresh load) shouldn't leave a stale entry
+  // behind inflating the grand total — each card's own refreshPartnerItems() repopulates it.
+  consignPartnerTotals = new Map();
+  renderConsignGrandTotals();
   for (const p of consignPartners) box.appendChild(buildPartnerCard(p));
 }
 function buildPartnerCard(p) {
@@ -2488,8 +2505,13 @@ async function refreshPartnerItems(p, card) {
   tbody.innerHTML = '';
   card.querySelector('.cnItemsEmpty').hidden = rows.length > 0;
   card.querySelector('.cnShelfSummary').textContent = rows.length
-    ? `On the shelf: ${money(totals.costOnShelf)} cost · ${money(totals.retailOnShelf)} retail · est. ${money(totals.estProfit)} profit after commission`
+    ? `Owed to you so far: ${money(totals.owed)} · On the shelf: ${money(totals.costOnShelf)} cost · ${money(totals.retailOnShelf)} retail · est. ${money(totals.estProfit)} profit after commission`
     : '';
+  // Feeds the "across all partners" rolling tally above — see consignPartnerTotals/
+  // renderConsignGrandTotals(). A partner with no inventory sent yet still gets an entry
+  // (all zeros) so it isn't missing from the sum once it does.
+  consignPartnerTotals.set(p.id, totals);
+  renderConsignGrandTotals();
   for (const it of rows) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
@@ -3833,7 +3855,7 @@ const HELP_SECTIONS = [
   { title: 'Materials', body: 'Your material library — enter a price once and every item using it recalculates when the price changes. Keep stock here up to date for low-stock warnings.' },
   { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event. Price tags (an item\'s "Labels" button, or printed in bulk from the Sell/Events pages) can include a barcode, or a QR code a customer can scan with their phone to see the name and price — pick which from the tag-printing options, or print with neither.' },
   { title: 'Custom Orders', body: 'Made-to-order or custom pieces tracked from request to pickup (or shipment), separate from the regular catalog and event inventory. Its "Check out this order" button loads the order onto the Sell page ticket to ring up the actual sale.' },
-  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Its price is imported from the item automatically but can be changed per send; each partner shows the total cost and retail value still on their shelf, and the estimated profit once the store takes its cut. Log a sale whenever the shop reports one back — that tracks what’s actually been sold and what’s owed to you after commission. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
+  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Its price is imported from the item automatically but can be changed per send. Each partner, and a running total across all of them at the top of the tab, shows how much you’re owed so far and the cost/retail value of what’s still on their shelf. Log a sale whenever the shop reports one back — that’s what the "owed" figure is actually based on. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
   { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
   { title: 'Events', body: 'Set up an event (space cost, dates, tax rates, item scope, a price adjustment) to track break-even live. Add expenses beyond the space cost, and charity-giving rules, from the event’s own edit panel. Draft events can be cloned for a recurring market.' },
   { title: 'Reports', body: 'Revenue, profit, and tax over a date range; cost/profit by item and by salesperson; every event’s "true profit" and a trend of it over time; inventory value; voids and returns; and your mailing-list signups, exportable as a CSV.' },
