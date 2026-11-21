@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.3.0',
+    date: '2026-11-21',
+    notes: [
+      'Consignment: sending inventory to a partner is now picked from your actual item catalog (with a live "X in stock" hint) instead of typed as free text, and comes out of that item\'s stock right away, same as a sale — removing an entry adds back whatever\'s still unsold. Admin/manager only, same as other manual stock adjustments.',
+    ],
+  },
+  {
     version: '2.2.0',
     date: '2026-11-20',
     notes: [

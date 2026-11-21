@@ -60,13 +60,60 @@ async function main() {
   const partner = await call('POST', '/api/consignment/partners', { name: 'Maple St Gallery', commissionPct: 30 });
   assert(partner.status === 200, 'consignment partner created (unlicensed install defaults to allowed)');
   const citem = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, name: 'Earrings', qtySent: 10 });
-  assert(citem.status === 200, 'consignment inventory item created');
+  assert(citem.status === 200, 'consignment inventory item created (legacy free-text path, no itemId, still works)');
   const sold = await call('POST', `/api/consignment/items/${citem.data.id}/sold`, { qty: 3, salePrice: 20 });
   assert(sold.status === 200, 'consignment sale logged');
   const partnerItems = await call('GET', `/api/consignment/partners/${partner.data.id}/items`);
   const it = partnerItems.data[0];
   assert(it.qtyOut === 7, `qtyOut computed correctly (got ${it.qtyOut})`);
   assert(Math.abs(it.owed - 42) < 0.01, `owed computed correctly after 30% commission (got ${it.owed})`);
+
+  // --- Consignment, linked to a real catalog item: sending inventory decrements its stock,
+  // over-sending clamps both the stock change AND the recorded qty_sent (never let the ledger
+  // claim more left the shelf than actually did), and removing the entry restores whatever's
+  // still unsold ---
+  const earringsItem = await call('POST', '/api/items', { name: 'Hoop Earrings', price: 25, cost: 8, stock: 10 });
+  assert(earringsItem.status === 200, 'catalog item created');
+  const linkedSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 4 });
+  assert(linkedSend.status === 200 && linkedSend.data.had === 10 && linkedSend.data.qtySent === 4, `sending 4 of 10 in stock (got had=${linkedSend.data.had}, qtySent=${linkedSend.data.qtySent})`);
+  const afterSend1 = await call('GET', '/api/items/full');
+  assert(afterSend1.data.find((x) => x.id === earringsItem.data.id).stock === 6, 'catalog stock actually dropped to 6');
+
+  const overSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 9 });
+  assert(overSend.status === 200 && overSend.data.had === 6 && overSend.data.qtySent === 6, `asking to send 9 with only 6 left clamps the recorded qtySent to 6 too, not just the stock floor (got had=${overSend.data.had}, qtySent=${overSend.data.qtySent})`);
+  const afterSend2 = await call('GET', '/api/items/full');
+  assert(afterSend2.data.find((x) => x.id === earringsItem.data.id).stock === 0, 'catalog stock now at 0');
+
+  const unknownItem = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: 'not-a-real-item-id', name: 'Ghost Item', qtySent: 1 });
+  assert(unknownItem.status === 400, 'sending a nonexistent itemId is rejected rather than silently skipping the stock change');
+
+  await call('POST', `/api/consignment/items/${overSend.data.id}/sold`, { qty: 2, salePrice: 25 }); // 6 (clamped) sent, 2 sold -> 4 still out
+  const delLinked = await call('DELETE', '/api/consignment/items/' + overSend.data.id);
+  assert(delLinked.status === 200, 'removing the consignment entry succeeds');
+  const afterDelete = await call('GET', '/api/items/full');
+  assert(afterDelete.data.find((x) => x.id === earringsItem.data.id).stock === 4, `the 4 still-unsold units came back to stock (got ${afterDelete.data.find((x) => x.id === earringsItem.data.id).stock})`);
+
+  // A lead account can reach the rest of consignment (requireEventManage includes lead) but
+  // not move real stock through it — requireManageItems (admin/manager only) gates sending,
+  // removing an item, and deleting a partner specifically, same stricter territory as the
+  // Items tab's own manual stock adjustments (:id/make, :id/sell).
+  const adminCookie = cookie;
+  const leadSetup = await call('POST', '/api/auth/users', { name: 'Lead Hand', username: 'lead1', password: 'password123', role: 'lead' });
+  assert(leadSetup.status === 200, 'lead account created');
+  cookie = '';
+  const leadLogin = await call('POST', '/api/auth/login', { username: 'lead1', password: 'password123' });
+  assert(leadLogin.status === 200, 'lead logged in');
+  const leadReadPartners = await call('GET', '/api/consignment/partners');
+  assert(leadReadPartners.status === 200, 'lead can still view consignment partners/inventory');
+  const leadSold = await call('POST', `/api/consignment/items/${linkedSend.data.id}/sold`, { qty: 1, salePrice: 25 });
+  assert(leadSold.status === 200, 'lead can still log a reported sale (doesn\'t touch real stock)');
+  const leadSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 1 });
+  assert(leadSend.status === 403, 'lead cannot send inventory to consignment (requireManageItems)');
+  const leadDeleteItem = await call('DELETE', '/api/consignment/items/' + linkedSend.data.id);
+  assert(leadDeleteItem.status === 403, 'lead cannot remove a consignment inventory entry');
+  const leadDeletePartner = await call('DELETE', '/api/consignment/partners/' + partner.data.id);
+  assert(leadDeletePartner.status === 403, 'lead cannot delete a consignment partner');
+  cookie = adminCookie;
 
   // --- Event expenses + event delete with expenses attached ---
   const ev = await call('POST', '/api/events', { name: 'Spring Fair', start: '2026-05-01', days: 1, cost: 50, status: 'ended', test: false });
