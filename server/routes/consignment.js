@@ -7,10 +7,12 @@ const { requireFeature } = require('../lib/license');
 const router = express.Router();
 // Same roles as custom orders/event management (including lead), plus the 'consignment'
 // feature flag — see server/lib/license.js. Default-allowed today (no tier restricts it yet),
-// same as every other feature flag before any tier exists to turn one off. The three routes
-// below that actually move real catalog stock (sending/removing inventory) additionally
-// require requireManageItems — a silent stock adjustment with no sale record is the same
-// stricter, admin/manager-only territory as server/routes/items.js's :id/make and :id/sell.
+// same as every other feature flag before any tier exists to turn one off. Routes that actually
+// move real catalog stock (sending inventory, deleting an item/partner that still has unsold
+// stock out, or :id/adjust when it reduces Sent) additionally require admin/manager — a silent
+// stock adjustment with no sale record is the same stricter territory as server/routes/
+// items.js's :id/make and :id/sell. requireManageItems covers the routes where that's always
+// true; :id/adjust checks it inline since whether a given call touches stock depends on the body.
 router.use(requireEventManage, requireFeature('consignment'));
 
 const toPartner = (r) => ({ id: r.id, name: r.name, contact: r.contact, commissionPct: r.commission_pct, createdAt: r.created_at });
@@ -58,25 +60,25 @@ router.delete('/partners/:id', requireManageItems, (req, res) => {
   res.json({ ok: true });
 });
 
-// Items + their sold log for one partner, with the running balance computed here rather than
-// trusted from the client: out = sent - sold, owed = sum(sale_price * qty) * (1 - commission%)
-// (what's ACTUALLY been reported sold so far — real money owed back to you). costOnShelf/
-// retailOnShelf/estProfit are a projection for what's still unsold (qtyOut) if it eventually
-// sells at its listed price: retail * (1 - commission%) - cost. Both price and cost are null
-// for the legacy free-text path (no item_id) or any row predating those columns, so their
-// on-shelf figures are 0 rather than NaN — shown as "—" by the client rather than a misleading
-// $0. totals sums all of the above across every item for this partner — the per-partner and
-// across-all-partners rolling tallies public/app.js shows are built directly from this.
+// Items for one partner, with the running balance computed here rather than trusted from the
+// client: out = sent - sold, owed = sold * price * (1 - commission%) — what's actually been
+// marked sold so far (qty_sold, directly editable below — see :id/adjust), valued at this
+// item's own stored price. costOnShelf/retailOnShelf/estProfit are the same idea for what's
+// still unsold (qtyOut): retail * (1 - commission%) - cost. Both price and cost are null for
+// the legacy free-text path (no item_id) or any row predating those columns, so every figure
+// here is 0 rather than NaN for one of those — shown as "—" by the client rather than a
+// misleading $0. totals sums all of the above across every item for this partner — the
+// per-partner and across-all-partners rolling tallies public/app.js shows are built directly
+// from this.
 router.get('/partners/:id/items', (req, res) => {
   const items = db.prepare('SELECT * FROM consignment_items WHERE partner_id = ? ORDER BY date_sent DESC').all(req.params.id);
   const partner = db.prepare('SELECT * FROM consignment_partners WHERE id = ?').get(req.params.id);
   const pct = partner ? Number(partner.commission_pct) || 0 : 0;
   const totals = { owed: 0, costOnShelf: 0, retailOnShelf: 0, estProfit: 0 };
   const out = items.map((it) => {
-    const sales = db.prepare('SELECT * FROM consignment_sales WHERE consignment_item_id = ? ORDER BY date_reported DESC').all(it.id);
-    const owed = sales.reduce((sum, s) => sum + Number(s.sale_price) * Number(s.qty) * (1 - pct / 100), 0);
     const qtyOut = Math.max(0, it.qty_sent - it.qty_sold);
     const hasPricing = it.price != null && it.cost != null;
+    const owed = hasPricing ? Number(it.price) * it.qty_sold * (1 - pct / 100) : 0;
     const costOnShelf = hasPricing ? Number(it.cost) * qtyOut : 0;
     const retailOnShelf = hasPricing ? Number(it.price) * qtyOut : 0;
     const estProfit = hasPricing ? retailOnShelf * (1 - pct / 100) - costOnShelf : 0;
@@ -84,11 +86,7 @@ router.get('/partners/:id/items', (req, res) => {
     totals.costOnShelf += costOnShelf;
     totals.retailOnShelf += retailOnShelf;
     totals.estProfit += estProfit;
-    return {
-      ...toItem(it),
-      qtyOut, owed, hasPricing, costOnShelf, retailOnShelf, estProfit,
-      sales: sales.map((s) => ({ id: s.id, qty: s.qty, salePrice: s.sale_price, dateReported: s.date_reported, notes: s.notes })),
-    };
+    return { ...toItem(it), qtyOut, owed, hasPricing, costOnShelf, retailOnShelf, estProfit };
   });
   res.json({ items: out, totals });
 });
@@ -150,22 +148,37 @@ router.delete('/items/:id', requireManageItems, (req, res) => {
   res.json({ ok: true });
 });
 
-// Logs a sale the shop reported back — periodic reconciliation, not a live checkout.
-router.post('/items/:id/sold', (req, res) => {
-  const item = db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(req.params.id);
-  if (!item) return res.status(404).json({ error: 'not_found' });
+// Direct, in-place correction of Sent and/or Sold — for a rotation (the partner hands back
+// unsold stock, or does a recount) or reporting sales in bulk, without logging each sale as its
+// own transaction. No blanket requireManageItems here: adjusting Sold alone never touches real
+// stock, so it's lead-accessible like the old per-sale logging was. Only a request that actually
+// reduces Sent (see below) — which restores real stock — requires admin/manager, checked inline
+// once we know whether this particular call does that.
+//
+// Sold can move either direction freely (0..qtySent) — owed is computed live from qty_sold *
+// price above, so there's no separate sales ledger to keep in sync. Sent can only decrease here
+// (floored at the current qtySold — can't un-send what's already marked sold): increasing it is
+// what the "+ Send inventory" form above is for, since that's the path that already knows how
+// to clamp against real stock on hand. A decrease restores the difference to real stock.
+router.post('/items/:id/adjust', (req, res) => {
+  const it = db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(req.params.id);
+  if (!it) return res.status(404).json({ error: 'not_found' });
   const b = req.body || {};
-  const qty = Math.max(1, Math.round(Number(b.qty)) || 1);
-  const row = { id: uid(), partner_id: item.partner_id, consignment_item_id: item.id, qty, sale_price: Number(b.salePrice) || 0, date_reported: b.dateReported || Date.now(), notes: b.notes || null };
+  let qtySold = b.qtySold !== undefined ? Math.max(0, Math.round(Number(b.qtySold)) || 0) : it.qty_sold;
+  let qtySent = b.qtySent !== undefined ? Math.round(Number(b.qtySent)) || 0 : it.qty_sent;
+  qtySent = Math.min(qtySent, it.qty_sent); // this route never sends more — see comment above
+  qtySent = Math.max(qtySent, qtySold); // can't un-send below what's marked sold
+  qtySold = Math.min(qtySold, qtySent); // nor mark more sold than was ever sent
+  if (qtySent !== it.qty_sent && !['admin', 'manager'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'forbidden' });
+  }
+  const restored = Math.max(0, it.qty_sent - qtySent);
   const tx = db.transaction(() => {
-    db.prepare(`
-      INSERT INTO consignment_sales (id, partner_id, consignment_item_id, qty, sale_price, date_reported, notes)
-      VALUES (@id, @partner_id, @consignment_item_id, @qty, @sale_price, @date_reported, @notes)
-    `).run(row);
-    db.prepare('UPDATE consignment_items SET qty_sold = qty_sold + ? WHERE id = ?').run(qty, item.id);
+    if (restored > 0 && it.item_id) db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(restored, it.item_id);
+    db.prepare('UPDATE consignment_items SET qty_sent = ?, qty_sold = ? WHERE id = ?').run(qtySent, qtySold, it.id);
   });
   tx();
-  res.json({ ok: true });
+  res.json({ ok: true, qtySent, qtySold, restored });
 });
 
 module.exports = router;

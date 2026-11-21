@@ -61,12 +61,15 @@ async function main() {
   assert(partner.status === 200, 'consignment partner created (unlicensed install defaults to allowed)');
   const citem = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, name: 'Earrings', qtySent: 10 });
   assert(citem.status === 200, 'consignment inventory item created (legacy free-text path, no itemId, still works)');
-  const sold = await call('POST', `/api/consignment/items/${citem.data.id}/sold`, { qty: 3, salePrice: 20 });
-  assert(sold.status === 200, 'consignment sale logged');
+  // Sold is adjusted directly (no per-sale price entry) — owed is computed from the stored
+  // price, so a legacy item with none (no itemId) has 0 owed regardless of qty_sold rather than
+  // NaN or a leftover sale-ledger figure.
+  const adjustCitem = await call('POST', `/api/consignment/items/${citem.data.id}/adjust`, { qtySold: 3 });
+  assert(adjustCitem.status === 200 && adjustCitem.data.qtySold === 3, `directly adjusting Sold works, no per-sale logging needed (got ${JSON.stringify(adjustCitem.data)})`);
   const partnerItems = await call('GET', `/api/consignment/partners/${partner.data.id}/items`);
-  const it = partnerItems.data.items[0];
+  const it = partnerItems.data.items.find((x) => x.id === citem.data.id);
   assert(it.qtyOut === 7, `qtyOut computed correctly (got ${it.qtyOut})`);
-  assert(Math.abs(it.owed - 42) < 0.01, `owed computed correctly after 30% commission (got ${it.owed})`);
+  assert(it.owed === 0, 'a legacy item (no itemId, no stored price) has 0 owed — consistent with hasPricing-gated totals, not NaN');
 
   // --- Consignment, linked to a real catalog item: sending inventory decrements its stock,
   // over-sending clamps both the stock change AND the recorded qty_sent (never let the ledger
@@ -96,7 +99,7 @@ async function main() {
   const unknownItem = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: 'not-a-real-item-id', name: 'Ghost Item', qtySent: 1 });
   assert(unknownItem.status === 400, 'sending a nonexistent itemId is rejected rather than silently skipping the stock change');
 
-  await call('POST', `/api/consignment/items/${overSend.data.id}/sold`, { qty: 2, salePrice: 25 }); // 6 (clamped) sent, 2 sold -> 4 still out
+  await call('POST', `/api/consignment/items/${overSend.data.id}/adjust`, { qtySold: 2 }); // 6 (clamped) sent, 2 sold -> 4 still out
   const delLinked = await call('DELETE', '/api/consignment/items/' + overSend.data.id);
   assert(delLinked.status === 200, 'removing the consignment entry succeeds');
   const afterDelete = await call('GET', '/api/items/full');
@@ -104,8 +107,11 @@ async function main() {
 
   // A lead account can reach the rest of consignment (requireEventManage includes lead) but
   // not move real stock through it — requireManageItems (admin/manager only) gates sending,
-  // removing an item, and deleting a partner specifically, same stricter territory as the
-  // Items tab's own manual stock adjustments (:id/make, :id/sell).
+  // removing an item, and deleting a partner outright, same stricter territory as the Items
+  // tab's own manual stock adjustments (:id/make, :id/sell). :id/adjust is more nuanced: lead
+  // can freely adjust Sold (never touches real stock) but is refused the moment a call would
+  // also reduce Sent (restores real stock), checked inline per-request rather than by role
+  // middleware since the same route serves both cases.
   const adminCookie = cookie;
   const leadSetup = await call('POST', '/api/auth/users', { name: 'Lead Hand', username: 'lead1', password: 'password123', role: 'lead' });
   assert(leadSetup.status === 200, 'lead account created');
@@ -114,8 +120,10 @@ async function main() {
   assert(leadLogin.status === 200, 'lead logged in');
   const leadReadPartners = await call('GET', '/api/consignment/partners');
   assert(leadReadPartners.status === 200, 'lead can still view consignment partners/inventory');
-  const leadSold = await call('POST', `/api/consignment/items/${linkedSend.data.id}/sold`, { qty: 1, salePrice: 25 });
-  assert(leadSold.status === 200, 'lead can still log a reported sale (doesn\'t touch real stock)');
+  const leadAdjustSold = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySold: 1 });
+  assert(leadAdjustSold.status === 200, 'lead can adjust Sold directly (doesn\'t touch real stock)');
+  const leadAdjustSent = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 1 });
+  assert(leadAdjustSent.status === 403, 'lead is refused the moment the same route is asked to reduce Sent (would restore real stock)');
   const leadSend = await call('POST', '/api/consignment/items', { partnerId: partner.data.id, itemId: earringsItem.data.id, name: 'Hoop Earrings', qtySent: 1 });
   assert(leadSend.status === 403, 'lead cannot send inventory to consignment (requireManageItems)');
   const leadDeleteItem = await call('DELETE', '/api/consignment/items/' + linkedSend.data.id);
@@ -135,10 +143,20 @@ async function main() {
   assert(legacyRow.hasPricing === false && legacyRow.costOnShelf === 0 && legacyRow.retailOnShelf === 0, 'the legacy free-text item (no itemId, no price) contributes 0 to shelf totals rather than NaN');
   const t = finalPartnerItems.data.totals;
   assert(t.costOnShelf === 24 && t.retailOnShelf === 75 && Math.abs(t.estProfit - 28.5) < 0.01, `partner-level shelf totals sum correctly across every item (got ${JSON.stringify(t)})`);
-  // totals.owed: citem's 3 sold @ $20 (30% commission) = 42, plus linkedSend's 1 sold @ $25
-  // (leadSold above) = 17.5 -> 59.5 total, the rolling "owed" tally public/app.js sums across
-  // every partner.
-  assert(Math.abs(t.owed - 59.5) < 0.01, `totals.owed sums every item's owed amount for this partner (got ${t.owed})`);
+  // totals.owed: citem has no stored price so contributes 0 regardless of its qty_sold, plus
+  // linkedSend's 1 sold @ its stored $25 (30% commission) = 17.5 -> 17.5 total, the rolling
+  // "owed" tally public/app.js sums across every partner.
+  assert(Math.abs(t.owed - 17.5) < 0.01, `totals.owed sums every item's owed amount for this partner (got ${t.owed})`);
+
+  // --- "Items are rotated" / a recount — Sent can be corrected downward directly, restoring
+  // the difference to real stock; it floors at qtySold (can't un-send what's already marked
+  // sold) and never increases even if asked to (that's what "+ Send inventory" is for) ---
+  const rotateDown = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 0 });
+  assert(rotateDown.status === 200 && rotateDown.data.qtySent === 1 && rotateDown.data.restored === 3, `reducing Sent floors at qtySold (1) rather than 0, restoring the 3-unit difference (got ${JSON.stringify(rotateDown.data)})`);
+  const afterRotate = await call('GET', '/api/items/full');
+  assert(afterRotate.data.find((x) => x.id === earringsItem.data.id).stock === 7, `the 3 restored units actually landed back in real stock (got ${afterRotate.data.find((x) => x.id === earringsItem.data.id).stock})`);
+  const tryIncreaseSent = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 99 });
+  assert(tryIncreaseSent.status === 200 && tryIncreaseSent.data.qtySent === 1, `:id/adjust never increases Sent even if asked to (got ${JSON.stringify(tryIncreaseSent.data)})`);
 
   // --- Public item lookup (QR/barcode price-tag scan target, server/routes/items.js's GET
   // /lookup/:itemNo) — no auth at all, so check it with a bare fetch, no session cookie ---

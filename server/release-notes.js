@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.7.0',
+    date: '2026-11-21',
+    notes: [
+      'Consignment: "Sent" and "Sold" are now directly editable right in each partner\'s table — for a rotation (the shop hands back unsold stock) or reporting a batch of sales, update the numbers in place instead of opening a separate screen or logging each sale one at a time. "Owed" is now based on the item\'s own listing price (sold × price, after commission) rather than a per-sale log.',
+    ],
+  },
+  {
     version: '2.6.0',
     date: '2026-11-21',
     notes: [

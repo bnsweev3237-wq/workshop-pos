@@ -2499,31 +2499,43 @@ function buildPartnerCard(p) {
   };
   return card;
 }
+// One screen per consignment shop, not one per item: Sent and Sold are directly editable right
+// in the table (no per-item modal to open) — for a rotation (the partner hands back unsold
+// stock) or reporting a batch of sales at once, without logging each sale as its own
+// transaction. Edits are optimistic: on save, this row's own derived cells (On shelf, Owed) and
+// the partner/grand-total summaries are recomputed from the authoritative numbers the server
+// just returned, in place — no full table re-fetch/rebuild, so tabbing through several rows in
+// a row (literally — bulk-updating many items at once) doesn't lose focus or flicker.
 async function refreshPartnerItems(p, card) {
   const tbody = card.querySelector('.cn-items');
   const { items: rows, totals } = await api('GET', `/api/consignment/partners/${p.id}/items`);
   tbody.innerHTML = '';
   card.querySelector('.cnItemsEmpty').hidden = rows.length > 0;
-  card.querySelector('.cnShelfSummary').textContent = rows.length
-    ? `Owed to you so far: ${money(totals.owed)} · On the shelf: ${money(totals.costOnShelf)} cost · ${money(totals.retailOnShelf)} retail · est. ${money(totals.estProfit)} profit after commission`
-    : '';
-  // Feeds the "across all partners" rolling tally above — see consignPartnerTotals/
-  // renderConsignGrandTotals(). A partner with no inventory sent yet still gets an entry
-  // (all zeros) so it isn't missing from the sum once it does.
-  consignPartnerTotals.set(p.id, totals);
-  renderConsignGrandTotals();
+  const pct = p.commissionPct || 0;
+  const renderSummary = (t) => {
+    card.querySelector('.cnShelfSummary').textContent = rows.length
+      ? `Owed to you so far: ${money(t.owed)} · On the shelf: ${money(t.costOnShelf)} cost · ${money(t.retailOnShelf)} retail · est. ${money(t.estProfit)} profit after commission`
+      : '';
+    consignPartnerTotals.set(p.id, t);
+    renderConsignGrandTotals();
+  };
+  renderSummary(totals);
   for (const it of rows) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td></td>
-      <td class="num" data-l="Sent">${it.qtySent}</td>
-      <td class="num" data-l="Sold">${it.qtySold}</td>
-      <td class="num" data-l="On shelf">${it.qtyOut}</td>
+      <td class="num" data-l="Sent"><input type="number" class="in-tiny cnSentIn" min="0" step="1"${canManageItems ? '' : ' disabled'}></td>
+      <td class="num" data-l="Sold"><input type="number" class="in-tiny cnSoldIn" min="0" step="1"${canManageItems ? '' : ' disabled'}></td>
+      <td class="num" data-l="On shelf"><span class="cnQtyOut"></span></td>
       <td class="num" data-l="Price">${it.price != null ? money(it.price) : '—'}</td>
-      <td class="num" data-l="Owed">${money(it.owed)}</td>
-      <td class="acts"><button class="btn sm cnSoldBtn">Log a sale</button> <button class="icon-btn del" title="Remove">×</button></td>
+      <td class="num" data-l="Owed"><span class="cnOwed"></span></td>
+      <td class="acts"><button class="icon-btn del" title="Remove">×</button></td>
     `;
     tr.querySelector('td').textContent = it.name;
+    const sentIn = tr.querySelector('.cnSentIn'), soldIn = tr.querySelector('.cnSoldIn');
+    const qtyOutEl = tr.querySelector('.cnQtyOut'), owedEl = tr.querySelector('.cnOwed');
+    const paint = () => { qtyOutEl.textContent = it.qtyOut; owedEl.textContent = money(it.owed); };
+    sentIn.value = it.qtySent; soldIn.value = it.qtySold; paint();
     const delBtn = tr.querySelector('.del');
     delBtn.hidden = !canManageItems;
     delBtn.onclick = async () => {
@@ -2533,26 +2545,35 @@ async function refreshPartnerItems(p, card) {
       refreshPartnerItems(p, card);
       if (it.qtyOut > 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
     };
-    const formRow = document.createElement('tr'); formRow.className = 'cn-sold-row'; formRow.hidden = true;
-    formRow.innerHTML = '<td colspan="7"><div class="cn-sold-form"></div></td>';
-    const form = formRow.querySelector('.cn-sold-form');
-    tr.querySelector('.cnSoldBtn').onclick = () => {
-      formRow.hidden = !formRow.hidden;
-      if (!formRow.hidden && !form.childElementCount) {
-        form.innerHTML = `<div class="row r3"><div><label>Qty sold</label><input class="cnSoldQty" type="number" min="1" step="1" value="1"></div><div><label>Sale price each ($)</label><input class="cnSoldPrice" type="number" min="0" step="0.01"></div><div style="display:flex;align-items:flex-end"><button class="btn sm primary cnSoldSave" style="width:100%">Save</button></div></div>`;
-        // Prefilled from the price imported/set when this inventory was sent — usually right,
-        // just a convenience, never re-saved unless the "Save" button below is actually clicked.
-        if (it.price != null) form.querySelector('.cnSoldPrice').value = it.price;
-        form.querySelector('.cnSoldSave').onclick = async () => {
-          const qty = Math.max(1, Math.round(num(form.querySelector('.cnSoldQty').value)) || 1);
-          const salePrice = num(form.querySelector('.cnSoldPrice').value);
-          await api('POST', `/api/consignment/items/${it.id}/sold`, { qty, salePrice });
-          toast('Sale logged'); refreshPartnerItems(p, card);
-        };
-      }
+    let adjustTimer;
+    const scheduleAdjust = () => {
+      clearTimeout(adjustTimer);
+      adjustTimer = setTimeout(async () => {
+        const qtySent = Math.max(0, Math.round(num(sentIn.value)) || 0);
+        const qtySold = Math.max(0, Math.round(num(soldIn.value)) || 0);
+        let r;
+        try { r = await api('POST', `/api/consignment/items/${it.id}/adjust`, { qtySent, qtySold }); }
+        catch (e) { toast(e.message || 'Could not update that entry'); sentIn.value = it.qtySent; soldIn.value = it.qtySold; return; }
+        it.qtySent = r.qtySent; it.qtySold = r.qtySold; it.qtyOut = Math.max(0, r.qtySent - r.qtySold);
+        it.owed = it.hasPricing ? Number(it.price) * r.qtySold * (1 - pct / 100) : 0;
+        it.costOnShelf = it.hasPricing ? Number(it.cost) * it.qtyOut : 0;
+        it.retailOnShelf = it.hasPricing ? Number(it.price) * it.qtyOut : 0;
+        it.estProfit = it.hasPricing ? it.retailOnShelf * (1 - pct / 100) - it.costOnShelf : 0;
+        sentIn.value = it.qtySent; soldIn.value = it.qtySold; paint();
+        totals.owed = rows.reduce((s, x) => s + x.owed, 0);
+        totals.costOnShelf = rows.reduce((s, x) => s + x.costOnShelf, 0);
+        totals.retailOnShelf = rows.reduce((s, x) => s + x.retailOnShelf, 0);
+        totals.estProfit = rows.reduce((s, x) => s + x.estProfit, 0);
+        renderSummary(totals);
+        if (r.restored > 0) {
+          toast(`${r.restored} added back to stock`);
+          if (it.itemId) await Promise.all([loadItems(), loadPosItems()]);
+        }
+      }, 600);
     };
+    sentIn.addEventListener('input', scheduleAdjust);
+    soldIn.addEventListener('input', scheduleAdjust);
     tbody.appendChild(tr);
-    tbody.appendChild(formRow);
   }
 }
 $('cnPartnerAdd').onclick = async () => {
@@ -3855,7 +3876,7 @@ const HELP_SECTIONS = [
   { title: 'Materials', body: 'Your material library — enter a price once and every item using it recalculates when the price changes. Keep stock here up to date for low-stock warnings.' },
   { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event. Price tags (an item\'s "Labels" button, or printed in bulk from the Sell/Events pages) can include a barcode, or a QR code a customer can scan with their phone to see the name and price — pick which from the tag-printing options, or print with neither.' },
   { title: 'Custom Orders', body: 'Made-to-order or custom pieces tracked from request to pickup (or shipment), separate from the regular catalog and event inventory. Its "Check out this order" button loads the order onto the Sell page ticket to ring up the actual sale.' },
-  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Its price is imported from the item automatically but can be changed per send. Each partner, and a running total across all of them at the top of the tab, shows how much you’re owed so far and the cost/retail value of what’s still on their shelf. Log a sale whenever the shop reports one back — that’s what the "owed" figure is actually based on. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
+  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Its price is imported from the item automatically but can be changed per send. "Sent" and "Sold" are editable right in each partner’s table — update them directly for a rotation or a batch of sales, no per-item screen needed. Each partner, and a running total across all of them at the top of the tab, shows how much you’re owed so far (sold × price, after commission) and the cost/retail value of what’s still on their shelf. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
   { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
   { title: 'Events', body: 'Set up an event (space cost, dates, tax rates, item scope, a price adjustment) to track break-even live. Add expenses beyond the space cost, and charity-giving rules, from the event’s own edit panel. Draft events can be cloned for a recurring market.' },
   { title: 'Reports', body: 'Revenue, profit, and tax over a date range; cost/profit by item and by salesperson; every event’s "true profit" and a trend of it over time; inventory value; voids and returns; and your mailing-list signups, exportable as a CSV.' },
