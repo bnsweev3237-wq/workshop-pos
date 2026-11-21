@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.7.3',
+    date: '2026-11-21',
+    notes: [
+      'Consignment: fixed Sent not sticking when there was nothing left in stock to send more of — the field now correctly snaps back to show what\'s actually recorded, with a clear message, instead of silently showing a number that was never actually saved.',
+    ],
+  },
+  {
     version: '2.7.2',
     date: '2026-11-21',
     notes: [

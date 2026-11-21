@@ -162,6 +162,16 @@ async function main() {
   const afterIncrease = await call('GET', '/api/items/full');
   assert(afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock === 0, `the 7 taken for that increase actually left real stock (got ${afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock})`);
 
+  // --- The real-world bug report this guards against: with real stock now at 0, trying to
+  // increase Sent further is fully rejected, returning the SAME qtySent it already had (8) and
+  // delta 0 — not an error, just a no-op. (The actual bug was client-side: public/app.js only
+  // corrected the Sent input's displayed value when the server's answer *differed* from before,
+  // so a fully-rejected increase like this one left the input showing whatever was optimistically
+  // typed — e.g. "5" — while "On shelf" correctly stayed at the old, unchanged value. Fixed by
+  // always writing the just-committed field's own input back, whether or not it changed.) ---
+  const increaseWithNoStock = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 50 });
+  assert(increaseWithNoStock.status === 200 && increaseWithNoStock.data.qtySent === 8 && increaseWithNoStock.data.delta === 0, `with 0 in stock, an increase is fully rejected back to the unchanged qtySent (8), not an error (got ${JSON.stringify(increaseWithNoStock.data)})`);
+
   // --- The bug this whole section guards against: adjusting ONE field must never read or
   // clobber the OTHER field's current value — editing Sold alone must leave Sent exactly where
   // it was, and vice versa ---

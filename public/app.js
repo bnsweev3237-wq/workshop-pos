@@ -2567,8 +2567,16 @@ async function refreshPartnerItems(p, card) {
       it.costOnShelf = it.hasPricing ? Number(it.cost) * it.qtyOut : 0;
       it.retailOnShelf = it.hasPricing ? Number(it.price) * it.qtyOut : 0;
       it.estProfit = it.hasPricing ? it.retailOnShelf * (1 - pct / 100) - it.costOnShelf : 0;
-      if (r.qtySent !== prevSent) sentIn.value = r.qtySent;
-      if (r.qtySold !== prevSold) soldIn.value = r.qtySold;
+      // The field just committed is always corrected to the server's answer, whether or not it
+      // actually changed — otherwise a request that got fully rejected back to its starting
+      // value (e.g. trying to increase Sent with nothing left in stock) leaves the input still
+      // showing whatever was optimistically typed, even though nothing was actually saved. The
+      // *other* field is only touched if it genuinely changed (the sold-can't-exceed-sent
+      // invariant) — never just to "re-sync" it, so an unrelated in-progress edit there survives.
+      if (field === 'qtySent') sentIn.value = r.qtySent;
+      else if (r.qtySent !== prevSent) sentIn.value = r.qtySent;
+      if (field === 'qtySold') soldIn.value = r.qtySold;
+      else if (r.qtySold !== prevSold) soldIn.value = r.qtySold;
       paint();
       totals.owed = rows.reduce((s, x) => s + x.owed, 0);
       totals.costOnShelf = rows.reduce((s, x) => s + x.costOnShelf, 0);
@@ -2578,6 +2586,7 @@ async function refreshPartnerItems(p, card) {
       if (field === 'qtySent') {
         if (r.delta > 0) toast(r.qtySent < requested ? `Only ${r.delta} left in stock — sent ${r.delta} more instead of what was typed` : `${r.delta} more taken from stock`);
         else if (r.delta < 0) toast(`${-r.delta} added back to stock`);
+        else if (requested > prevSent) toast(`Nothing left in stock to send — Sent stays at ${r.qtySent}`);
         if (r.delta !== 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
       }
     };
