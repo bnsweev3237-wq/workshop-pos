@@ -12,10 +12,15 @@
 <link rel="stylesheet" href="/styles.css">
 <style>
   body { background: var(--bg); }
-  .admin-wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 60px; }
-  .admin-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-  .admin-header h1 { font-size: 22px; font-family: var(--font-display); margin: 0; }
-  .admin-header .head-side { display: flex; align-items: center; gap: 12px; }
+  /* Tenants table: a plan <select> otherwise inherits styles.css's global `select { width:
+     100% }`, which — with nothing else constraining the column — the table's auto-layout
+     shrinks it down to near-nothing, clipping "basic" to "bas" and wrapping the "Set" button
+     onto its own line underneath. Same fix as .user-acts select elsewhere, plus a flex row so
+     the two sit side by side at a fixed width regardless of the column's auto-sized width. */
+  .plan-cell { display: flex; gap: 6px; align-items: center; }
+  .plan-select { width: auto; min-width: 92px; }
+  .disk-usage .total { font-weight: 500; }
+  .disk-usage .hint { margin-top: 2px; }
 </style>
 </head>
 <body>
@@ -34,19 +39,25 @@
   </div>
 </div>
 
-<div class="admin-wrap" id="adminApp" hidden>
-  <div class="admin-header">
-    <h1>Craftium — Admin console</h1>
+<div class="wrap" id="adminApp" hidden>
+  <header>
+    <div>
+      <div class="brand-row">
+        <img class="brand-logo" src="/img/craftium-logo.png" alt="Craftium">
+        <h1>Admin console</h1>
+      </div>
+      <p>Platform operations — tenants, staff accounts, email settings, and updates.</p>
+    </div>
     <div class="head-side">
-      <span class="hint" id="meLine"></span>
+      <span class="status" id="meLine"></span>
       <button class="btn sm" id="logoutBtn">Sign out</button>
     </div>
-  </div>
+  </header>
 
   <div class="card">
     <h2>Tenants</h2>
     <table class="items-table">
-      <thead><tr><th>Slug</th><th>Business</th><th>Status</th><th>Plan</th><th>Created</th><th class="r">Disk usage</th><th></th></tr></thead>
+      <thead><tr><th>Slug</th><th>Business</th><th>Status</th><th>Plan</th><th>Created</th><th>Disk usage</th><th></th></tr></thead>
       <tbody id="tenantRows"></tbody>
     </table>
     <div class="empty" id="tenantsEmpty" hidden>No tenants yet.</div>

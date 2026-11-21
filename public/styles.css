@@ -217,6 +217,7 @@ tr.lib-detail td { padding: 0 0 14px; border-bottom: 1px solid var(--line); }
 @media (max-width: 600px) { .head-side { align-items: flex-start; } }
 .status { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); font-weight: 500; }
 .status::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.status.danger::before { background: var(--danger); }
 .modal { position: fixed; inset: 0; background: var(--overlay); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .modal-card { background: var(--card); color: var(--ink); border-radius: 14px; padding: 22px; max-width: 420px; width: 100%; box-shadow: var(--shadow); }
 .modal-card p { margin: 0; line-height: 1.5; }

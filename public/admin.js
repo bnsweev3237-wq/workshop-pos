@@ -54,7 +54,7 @@
   function afterLogin() {
     $('adminLoginScreen').hidden = true;
     $('adminApp').hidden = false;
-    $('meLine').textContent = `${me.username} (${me.role})`;
+    $('meLine').textContent = `Signed in as ${me.username} (${me.role})`;
     const isAdmin = me.role === 'admin';
     $('updateCard').hidden = !isAdmin;
     $('staffCard').hidden = !isAdmin;
@@ -74,8 +74,7 @@
     for (const t of tenants) {
       const tr = document.createElement('tr');
       const planCell = (me.role === 'admin' && availablePlans.length)
-        ? `<select class="plan-select">${availablePlans.map((p) => `<option value="${esc(p)}" ${p === t.plan ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select>
-           <button class="btn sm plan-apply" style="margin-left:6px">Set</button>`
+        ? `<div class="plan-cell"><select class="plan-select">${availablePlans.map((p) => `<option value="${esc(p)}" ${p === t.plan ? 'selected' : ''}>${esc(p)}</option>`).join('')}</select><button class="btn sm plan-apply">Set</button></div>`
         : esc(t.plan);
       const isSuspended = t.status === 'suspended';
       const statusBtn = me.role === 'admin'
@@ -84,10 +83,10 @@
       tr.innerHTML = `
         <td>${esc(t.slug)}</td>
         <td>${esc(t.businessName)}</td>
-        <td>${esc(t.status)}</td>
+        <td><span class="status${isSuspended ? ' danger' : ''}">${esc(t.status)}</span></td>
         <td>${planCell}</td>
         <td>${new Date(t.createdAt).toLocaleDateString()}</td>
-        <td class="r">${formatBytes(t.dbBytes)} db, ${formatBytes(t.backupBytes)} backups <span class="hint">(${formatBytes(t.photoBytes)} photos, included in db)</span></td>
+        <td class="disk-usage"><div class="total">${formatBytes(t.dbBytes)} db, ${formatBytes(t.backupBytes)} backups</div><div class="hint">${formatBytes(t.photoBytes)} photos, included in db</div></td>
         <td class="acts"><button class="btn sm open-tenant">Open</button> <button class="btn sm reset-password">Reset password</button> ${statusBtn}</td>
       `;
       tr.querySelector('.open-tenant').onclick = () => openTenant(t.id, t.slug);
