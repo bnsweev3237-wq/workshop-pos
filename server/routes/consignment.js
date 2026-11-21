@@ -149,36 +149,49 @@ router.delete('/items/:id', requireManageItems, (req, res) => {
 });
 
 // Direct, in-place correction of Sent and/or Sold — for a rotation (the partner hands back
-// unsold stock, or does a recount) or reporting sales in bulk, without logging each sale as its
-// own transaction. No blanket requireManageItems here: adjusting Sold alone never touches real
-// stock, so it's lead-accessible like the old per-sale logging was. Only a request that actually
-// reduces Sent (see below) — which restores real stock — requires admin/manager, checked inline
-// once we know whether this particular call does that.
+// unsold stock, or a recount finds a different number out there) or reporting sales in bulk,
+// without logging each sale as its own transaction. The request body carries only the one
+// field actually being edited (see public/app.js — Sent and Sold each have their own debounce
+// timer and only ever send their own value); the other defaults to its current stored value
+// rather than whatever the *other* input element currently shows, so editing one field can
+// never read, let alone clobber, the other's in-flight edit.
 //
 // Sold can move either direction freely (0..qtySent) — owed is computed live from qty_sold *
-// price above, so there's no separate sales ledger to keep in sync. Sent can only decrease here
-// (floored at the current qtySold — can't un-send what's already marked sold): increasing it is
-// what the "+ Send inventory" form above is for, since that's the path that already knows how
-// to clamp against real stock on hand. A decrease restores the difference to real stock.
+// price above, so there's no separate sales ledger to keep in sync. Sent can move either
+// direction too: an increase is clamped to available real stock exactly like "+ Send inventory"
+// above (and decrements it the same way); a decrease restores the difference. Either way it's
+// floored at qtySold — can't un-send what's already marked sold. No blanket requireManageItems:
+// adjusting Sold alone never touches real stock, so it's lead-accessible like the old per-sale
+// logging was; only a request that actually changes Sent (either direction) requires
+// admin/manager, checked inline once we know whether this particular call does that.
 router.post('/items/:id/adjust', (req, res) => {
   const it = db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(req.params.id);
   if (!it) return res.status(404).json({ error: 'not_found' });
   const b = req.body || {};
   let qtySold = b.qtySold !== undefined ? Math.max(0, Math.round(Number(b.qtySold)) || 0) : it.qty_sold;
-  let qtySent = b.qtySent !== undefined ? Math.round(Number(b.qtySent)) || 0 : it.qty_sent;
-  qtySent = Math.min(qtySent, it.qty_sent); // this route never sends more — see comment above
+  const requestedSent = b.qtySent !== undefined ? Math.max(0, Math.round(Number(b.qtySent)) || 0) : it.qty_sent;
+  let qtySent = requestedSent;
+  let item = null;
+  if (qtySent > it.qty_sent && it.item_id) {
+    item = db.prepare('SELECT * FROM items WHERE id = ?').get(it.item_id);
+    const had = item ? Math.max(0, item.stock) : 0;
+    qtySent = it.qty_sent + Math.min(qtySent - it.qty_sent, had); // never claim more than's actually on the shelf
+  }
   qtySent = Math.max(qtySent, qtySold); // can't un-send below what's marked sold
   qtySold = Math.min(qtySold, qtySent); // nor mark more sold than was ever sent
   if (qtySent !== it.qty_sent && !['admin', 'manager'].includes(req.user.role)) {
     return res.status(403).json({ error: 'forbidden' });
   }
-  const restored = Math.max(0, it.qty_sent - qtySent);
+  const delta = qtySent - it.qty_sent; // positive: more sent, taken from real stock; negative: restored to it
   const tx = db.transaction(() => {
-    if (restored > 0 && it.item_id) db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(restored, it.item_id);
+    if (delta !== 0 && it.item_id) {
+      if (delta > 0) db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(delta, it.item_id);
+      else db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(-delta, it.item_id);
+    }
     db.prepare('UPDATE consignment_items SET qty_sent = ?, qty_sold = ? WHERE id = ?').run(qtySent, qtySold, it.id);
   });
   tx();
-  res.json({ ok: true, qtySent, qtySold, restored });
+  res.json({ ok: true, qtySent, qtySold, delta });
 });
 
 module.exports = router;

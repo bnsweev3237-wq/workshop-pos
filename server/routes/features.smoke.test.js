@@ -148,15 +148,27 @@ async function main() {
   // "owed" tally public/app.js sums across every partner.
   assert(Math.abs(t.owed - 17.5) < 0.01, `totals.owed sums every item's owed amount for this partner (got ${t.owed})`);
 
-  // --- "Items are rotated" / a recount — Sent can be corrected downward directly, restoring
-  // the difference to real stock; it floors at qtySold (can't un-send what's already marked
-  // sold) and never increases even if asked to (that's what "+ Send inventory" is for) ---
+  // --- "Items are rotated" / a recount — Sent can be corrected in either direction directly.
+  // A decrease restores the difference to real stock and floors at qtySold (can't un-send
+  // what's already marked sold); an increase is clamped to whatever's actually on the shelf,
+  // exactly like "+ Send inventory" above, and decrements it the same way. ---
   const rotateDown = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 0 });
-  assert(rotateDown.status === 200 && rotateDown.data.qtySent === 1 && rotateDown.data.restored === 3, `reducing Sent floors at qtySold (1) rather than 0, restoring the 3-unit difference (got ${JSON.stringify(rotateDown.data)})`);
+  assert(rotateDown.status === 200 && rotateDown.data.qtySent === 1 && rotateDown.data.delta === -3, `reducing Sent floors at qtySold (1) rather than 0, restoring the 3-unit difference (got ${JSON.stringify(rotateDown.data)})`);
   const afterRotate = await call('GET', '/api/items/full');
   assert(afterRotate.data.find((x) => x.id === earringsItem.data.id).stock === 7, `the 3 restored units actually landed back in real stock (got ${afterRotate.data.find((x) => x.id === earringsItem.data.id).stock})`);
-  const tryIncreaseSent = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 99 });
-  assert(tryIncreaseSent.status === 200 && tryIncreaseSent.data.qtySent === 1, `:id/adjust never increases Sent even if asked to (got ${JSON.stringify(tryIncreaseSent.data)})`);
+
+  const increaseSent = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 99 });
+  assert(increaseSent.status === 200 && increaseSent.data.qtySent === 8 && increaseSent.data.delta === 7, `asking to increase Sent to 99 with only 7 in stock clamps it to the 7 actually available (1 + 7 = 8) (got ${JSON.stringify(increaseSent.data)})`);
+  const afterIncrease = await call('GET', '/api/items/full');
+  assert(afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock === 0, `the 7 taken for that increase actually left real stock (got ${afterIncrease.data.find((x) => x.id === earringsItem.data.id).stock})`);
+
+  // --- The bug this whole section guards against: adjusting ONE field must never read or
+  // clobber the OTHER field's current value — editing Sold alone must leave Sent exactly where
+  // it was, and vice versa ---
+  const soldOnly = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySold: 2 });
+  assert(soldOnly.status === 200 && soldOnly.data.qtySent === 8 && soldOnly.data.qtySold === 2 && soldOnly.data.delta === 0, `adjusting only qtySold leaves qtySent completely untouched (got ${JSON.stringify(soldOnly.data)})`);
+  const sentOnly = await call('POST', `/api/consignment/items/${linkedSend.data.id}/adjust`, { qtySent: 0 });
+  assert(sentOnly.status === 200 && sentOnly.data.qtySent === 2 && sentOnly.data.qtySold === 2, `adjusting only qtySent leaves qtySold untouched — floors Sent at the existing Sold (2), not at 0 (got ${JSON.stringify(sentOnly.data)})`);
 
   // --- Public item lookup (QR/barcode price-tag scan target, server/routes/items.js's GET
   // /lookup/:itemNo) — no auth at all, so check it with a bare fetch, no session cookie ---
