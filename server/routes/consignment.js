@@ -14,7 +14,10 @@ const router = express.Router();
 router.use(requireEventManage, requireFeature('consignment'));
 
 const toPartner = (r) => ({ id: r.id, name: r.name, contact: r.contact, commissionPct: r.commission_pct, createdAt: r.created_at });
-const toItem = (r) => ({ id: r.id, partnerId: r.partner_id, itemId: r.item_id, name: r.name, qtySent: r.qty_sent, qtySold: r.qty_sold, dateSent: r.date_sent, notes: r.notes });
+const toItem = (r) => ({
+  id: r.id, partnerId: r.partner_id, itemId: r.item_id, name: r.name, qtySent: r.qty_sent, qtySold: r.qty_sold,
+  dateSent: r.date_sent, notes: r.notes, price: r.price, cost: r.cost,
+});
 
 router.get('/partners', (req, res) => {
   const rows = db.prepare('SELECT * FROM consignment_partners ORDER BY name').all();
@@ -55,23 +58,36 @@ router.delete('/partners/:id', requireManageItems, (req, res) => {
   res.json({ ok: true });
 });
 
-// Items + their sold log for one partner, with the running balance computed here rather
-// than trusted from the client: out = sent - sold, owed = sum(sale_price * qty) * (1 - commission%).
+// Items + their sold log for one partner, with the running balance computed here rather than
+// trusted from the client: out = sent - sold, owed = sum(sale_price * qty) * (1 - commission%)
+// (what's ACTUALLY been reported sold so far — real money). costOnShelf/retailOnShelf/
+// estProfit are a projection for what's still unsold (qtyOut) if it eventually sells at its
+// listed price: retail * (1 - commission%) - cost. Both price and cost are null for the legacy
+// free-text path (no item_id) or any row predating those columns, so their on-shelf figures
+// are 0 rather than NaN — shown as "—" by the client rather than a misleading $0.
 router.get('/partners/:id/items', (req, res) => {
   const items = db.prepare('SELECT * FROM consignment_items WHERE partner_id = ? ORDER BY date_sent DESC').all(req.params.id);
   const partner = db.prepare('SELECT * FROM consignment_partners WHERE id = ?').get(req.params.id);
   const pct = partner ? Number(partner.commission_pct) || 0 : 0;
+  const totals = { costOnShelf: 0, retailOnShelf: 0, estProfit: 0 };
   const out = items.map((it) => {
     const sales = db.prepare('SELECT * FROM consignment_sales WHERE consignment_item_id = ? ORDER BY date_reported DESC').all(it.id);
     const owed = sales.reduce((sum, s) => sum + Number(s.sale_price) * Number(s.qty) * (1 - pct / 100), 0);
+    const qtyOut = Math.max(0, it.qty_sent - it.qty_sold);
+    const hasPricing = it.price != null && it.cost != null;
+    const costOnShelf = hasPricing ? Number(it.cost) * qtyOut : 0;
+    const retailOnShelf = hasPricing ? Number(it.price) * qtyOut : 0;
+    const estProfit = hasPricing ? retailOnShelf * (1 - pct / 100) - costOnShelf : 0;
+    totals.costOnShelf += costOnShelf;
+    totals.retailOnShelf += retailOnShelf;
+    totals.estProfit += estProfit;
     return {
       ...toItem(it),
-      qtyOut: Math.max(0, it.qty_sent - it.qty_sold),
-      owed,
+      qtyOut, owed, hasPricing, costOnShelf, retailOnShelf, estProfit,
       sales: sales.map((s) => ({ id: s.id, qty: s.qty, salePrice: s.sale_price, dateReported: s.date_reported, notes: s.notes })),
     };
   });
-  res.json(out);
+  res.json({ items: out, totals });
 });
 
 // Sending inventory to a partner is picked from the real catalog (itemId required — the UI
@@ -94,13 +110,21 @@ router.post('/items', requireManageItems, (req, res) => {
     // was typed in.
     qtySent = Math.min(requestedQty, had);
   }
+  // Price defaults to the linked item's own current price — imported automatically, but the
+  // sender can override it (a consignment listing price doesn't have to match the shop's own
+  // retail price). Cost is never client-supplied at all: always a snapshot of the linked item's
+  // cost at this exact moment, the internal accounting figure the "estimated profit" totals
+  // above are built from.
   const row = {
     id: existing ? existing.id : uid(), partner_id: b.partnerId, item_id: b.itemId || null, name: b.name || '',
     qty_sent: qtySent, date_sent: b.dateSent || Date.now(), notes: b.notes || null,
+    price: b.price !== undefined && b.price !== '' ? Math.max(0, Number(b.price)) || 0 : (item ? item.price : null),
+    cost: item ? item.cost : null,
   };
   const tx = db.transaction(() => {
     db.prepare(`
-      INSERT INTO consignment_items (id, partner_id, item_id, name, qty_sent, date_sent, notes) VALUES (@id, @partner_id, @item_id, @name, @qty_sent, @date_sent, @notes)
+      INSERT INTO consignment_items (id, partner_id, item_id, name, qty_sent, date_sent, notes, price, cost)
+      VALUES (@id, @partner_id, @item_id, @name, @qty_sent, @date_sent, @notes, @price, @cost)
       ON CONFLICT(id) DO UPDATE SET item_id=@item_id, name=@name, qty_sent=@qty_sent, date_sent=@date_sent, notes=@notes
     `).run(row);
     if (item) db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(qtySent, item.id);

@@ -95,6 +95,8 @@ function migrate(db) {
   ensureColumn('items', 'photo', 'TEXT');
   ensureColumn('materials', 'photo', 'TEXT');
   ensureColumn('sales', 'customer_email', 'TEXT');
+  ensureColumn('consignment_items', 'price', 'REAL');
+  ensureColumn('consignment_items', 'cost', 'REAL');
 
   // CREATE TABLE IF NOT EXISTS never adds an index to an existing table, so this needs its own
   // unconditional (idempotent) statement to reach installs that already had a sales table before

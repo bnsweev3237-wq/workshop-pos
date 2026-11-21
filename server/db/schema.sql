@@ -356,7 +356,15 @@ CREATE TABLE IF NOT EXISTS consignment_items (
   qty_sent INTEGER NOT NULL DEFAULT 0,
   qty_sold INTEGER NOT NULL DEFAULT 0,
   date_sent INTEGER NOT NULL,
-  notes TEXT
+  notes TEXT,
+  -- price: the listing/retail price this inventory is expected to sell for — defaults from the
+  -- linked item's current price at send time but can be overridden (a consignment price doesn't
+  -- have to match the shop's own retail price). cost: a snapshot of the linked item's cost at
+  -- the same moment, never user-editable — together they're what "on the shelf" cost/retail
+  -- value and estimated profit (server/routes/consignment.js) are computed from. Both null for
+  -- the legacy free-text path (no item_id) or any row predating this column.
+  price REAL,
+  cost REAL
 );
 CREATE TABLE IF NOT EXISTS consignment_sales (
   id TEXT PRIMARY KEY,
