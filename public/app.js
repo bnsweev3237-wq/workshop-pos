@@ -109,6 +109,7 @@ let forceChangePassword = false;
 let pendingTab = null;
 let currentTab = 'pos';
 let hasConsignment = true; // overwritten by refreshAuthStatus; defaults open so a slow/offline load never looks broken
+let canManageItems = false; // overwritten by updateAuthUI() — admin/manager only, gates the same stock-mutating actions server-side (requireManageItems) requires
 
 function onUnauthorized() {
   me = null;
@@ -143,7 +144,7 @@ $('endSupportSessionBtn').onclick = async () => {
 
 function updateAuthUI() {
   const isAdmin = !!me && me.role === 'admin';
-  const canManageItems = !!me && (me.role === 'admin' || me.role === 'manager');
+  canManageItems = !!me && (me.role === 'admin' || me.role === 'manager');
   const myTabs = me ? ROLE_TABS[me.role] || ['pos'] : [];
   $('authStatus').textContent = me ? `Signed in as ${me.name}${me.role !== 'admin' ? ' · ' + ROLE_LABEL[me.role] : ''}` : '';
   $('exportBtn').hidden = !canManageItems;
@@ -938,12 +939,18 @@ function orderItemsSummary(o) {
   if (o.items && o.items.length) return o.items.map((li) => `${li.itemName}${li.qty > 1 ? ` ×${li.qty}` : ''}`).join(', ');
   return o.itemName || '(no items yet)';
 }
+// Shared by Custom Orders' and Consignment's item pickers — both constrain a typed name to a
+// real catalog match via this one datalist (see public/index.html#itemNameList) rather than
+// keeping two copies in sync.
+function refreshItemNameList() {
+  $('itemNameList').innerHTML = [...new Set(items.map(it => it.name).filter(Boolean))].map(n => `<option value="${esc(n)}">`).join('');
+}
 async function loadCustomOrders() {
   // Needed for the item-add picker below — loaded here too, not just on Items tab visits,
   // since a lead account can reach Custom Orders but never the Items tab at all.
   await loadItems().catch(() => {});
   customOrders = await api('GET', `/api/custom-orders?test=${testMode ? 1 : 0}`);
-  $('itemNameList').innerHTML = [...new Set(items.map(it => it.name).filter(Boolean))].map(n => `<option value="${esc(n)}">`).join('');
+  refreshItemNameList();
   renderCustomOrders();
 }
 function renderCustomOrders() {
@@ -2366,6 +2373,11 @@ async function loadConsignment() {
   }
   $('consignmentUpgradePanel').hidden = true;
   $('consignmentContent').hidden = false;
+  // Needed for the item-send picker below — loaded here too, not just on Items tab visits,
+  // since a lead account can reach Consignment but never the Items tab at all (same reasoning
+  // as loadCustomOrders()).
+  await loadItems().catch(() => {});
+  refreshItemNameList();
   try {
     consignPartners = await api('GET', '/api/consignment/partners');
   } catch (e) {
@@ -2396,26 +2408,42 @@ function buildPartnerCard(p) {
     </div>
     <div class="hint" style="margin-top:-4px"></div>
     <div class="cn-items" style="margin-top:10px"></div>
-    <div class="row r3" style="margin-top:10px">
-      <div><label>Item name</label><input class="cnItemName" placeholder="e.g. Earrings"></div>
+    <div class="row r3 cnSendRow" style="margin-top:10px">
+      <div><label>Item</label><input class="cnItemName" list="itemNameList" placeholder="Start typing an item name…"></div>
       <div><label>Qty sent</label><input class="cnItemQty" type="number" min="1" step="1" value="1"></div>
       <div style="display:flex;align-items:flex-end"><button class="btn sm cnItemAdd" style="width:100%">+ Send inventory</button></div>
-    </div>`;
+    </div>
+    <div class="hint cnItemStockHint" style="margin-top:4px"></div>`;
   card.querySelector('h2').textContent = p.name || 'Unnamed partner';
   card.querySelector('.hint').textContent = `${p.commissionPct}% commission to them${p.contact ? ' · ' + p.contact : ''}`;
+  // Sending/removing inventory moves real stock with no sale record — same admin/manager-only
+  // territory as the Items tab's own stock adjustments (requireManageItems, server-side too).
+  card.querySelector('.del').hidden = !canManageItems;
+  card.querySelector('.cnSendRow').hidden = !canManageItems;
   card.querySelector('.del').onclick = async () => {
-    if (!await askConfirm(`Delete “${p.name || 'this partner'}” and its whole inventory/sales history?`, 'Delete partner')) return;
-    await api('DELETE', '/api/consignment/partners/' + p.id); toast('Partner deleted'); await loadConsignment();
+    if (!await askConfirm(`Delete “${p.name || 'this partner'}” and its whole inventory/sales history? Any unsold inventory still out with them will be added back to your stock.`, 'Delete partner')) return;
+    await api('DELETE', '/api/consignment/partners/' + p.id); toast('Partner deleted'); await Promise.all([loadConsignment(), loadPosItems()]);
   };
   const itemsBox = card.querySelector('.cn-items');
   refreshPartnerItems(p, itemsBox);
+  const nameIn = card.querySelector('.cnItemName'), stockHint = card.querySelector('.cnItemStockHint');
+  nameIn.addEventListener('input', () => {
+    const match = items.find((it) => it.name === nameIn.value.trim());
+    stockHint.textContent = match ? `${num(match.stock)} in stock` : '';
+  });
   card.querySelector('.cnItemAdd').onclick = async () => {
     const name = card.querySelector('.cnItemName').value.trim();
+    const match = items.find((it) => it.name === name);
+    if (!match) { card.querySelector('.cnItemName').focus(); toast('Pick an item from the list first'); return; }
     const qty = Math.max(1, Math.round(num(card.querySelector('.cnItemQty').value)) || 1);
-    if (!name) { toast('Give the item a name'); return; }
-    await api('POST', '/api/consignment/items', { partnerId: p.id, name, qtySent: qty });
-    card.querySelector('.cnItemName').value = ''; card.querySelector('.cnItemQty').value = '1';
-    toast('Inventory sent'); refreshPartnerItems(p, itemsBox);
+    let r;
+    try { r = await api('POST', '/api/consignment/items', { partnerId: p.id, itemId: match.id, name: match.name, qtySent: qty }); }
+    catch (e) { toast(e.message || 'Could not send that inventory'); return; }
+    card.querySelector('.cnItemName').value = ''; card.querySelector('.cnItemQty').value = '1'; stockHint.textContent = '';
+    toast(r.qtySent < qty ? `Only had ${r.had} “${match.name}” in stock — sent ${r.qtySent}` : `Sent ${r.qtySent} “${match.name}”`);
+    refreshPartnerItems(p, itemsBox);
+    await Promise.all([loadItems(), loadPosItems()]);
+    refreshItemNameList();
   };
   return card;
 }
@@ -2428,7 +2456,14 @@ async function refreshPartnerItems(p, box) {
     row.innerHTML = `<span class="ev-charity-name"></span><span class="ev-charity-pct"></span><button class="btn sm cnSoldBtn">Log a sale</button><button class="icon-btn del" title="Remove">×</button><div class="cn-sold-form" hidden style="flex-basis:100%;margin-top:8px"></div>`;
     row.querySelector('.ev-charity-name').textContent = `${it.name} — ${it.qtyOut} out of ${it.qtySent}`;
     row.querySelector('.ev-charity-pct').textContent = `${money(it.owed)} owed`;
-    row.querySelector('.del').onclick = async () => { await api('DELETE', '/api/consignment/items/' + it.id); refreshPartnerItems(p, box); };
+    row.querySelector('.del').hidden = !canManageItems;
+    row.querySelector('.del').onclick = async () => {
+      const msg = it.qtyOut > 0 ? `Remove this entry? The ${it.qtyOut} still out, unsold, will be added back to your stock.` : 'Remove this entry?';
+      if (!await askConfirm(msg, 'Remove')) return;
+      await api('DELETE', '/api/consignment/items/' + it.id);
+      refreshPartnerItems(p, box);
+      if (it.qtyOut > 0 && it.itemId) await Promise.all([loadItems(), loadPosItems()]);
+    };
     const form = row.querySelector('.cn-sold-form');
     row.querySelector('.cnSoldBtn').onclick = () => {
       form.hidden = !form.hidden;
@@ -3745,7 +3780,7 @@ const HELP_SECTIONS = [
   { title: 'Materials', body: 'Your material library — enter a price once and every item using it recalculates when the price changes. Keep stock here up to date for low-stock warnings.' },
   { title: 'Items', body: 'Every saved item, its current cost/price, and stock. Tag items with categories for charity rules and event item-scoping, and mark one "not for shows" to keep it off the Sell page at any event.' },
   { title: 'Custom Orders', body: 'Made-to-order or custom pieces tracked from request to pickup (or shipment), separate from the regular catalog and event inventory. Its "Check out this order" button loads the order onto the Sell page ticket to ring up the actual sale.' },
-  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, separate from the regular catalog. Send inventory to a partner, then log a sale whenever they report one back — it tracks what’s still out and what’s owed to you after their commission. May not be included on every plan.' },
+  { title: 'Consignment', body: 'Inventory placed with a shop or gallery, picked from your regular item catalog — sending it to a partner comes out of that item’s stock right away, same as a sale (admin/manager only). Log a sale whenever the shop reports one back — it tracks what’s still out and what’s owed to you after their commission. Removing an entry adds whatever’s still unsold back to your stock. May not be included on every plan.' },
   { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
   { title: 'Events', body: 'Set up an event (space cost, dates, tax rates, item scope, a price adjustment) to track break-even live. Add expenses beyond the space cost, and charity-giving rules, from the event’s own edit panel. Draft events can be cloned for a recurring market.' },
   { title: 'Reports', body: 'Revenue, profit, and tax over a date range; cost/profit by item and by salesperson; every event’s "true profit" and a trend of it over time; inventory value; voids and returns; and your mailing-list signups, exportable as a CSV.' },

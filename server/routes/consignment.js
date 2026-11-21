@@ -1,13 +1,16 @@
 const express = require('express');
 const db = require('../db');
 const { uid } = require('../lib/ids');
-const { requireEventManage } = require('../middleware/auth');
+const { requireEventManage, requireManageItems } = require('../middleware/auth');
 const { requireFeature } = require('../lib/license');
 
 const router = express.Router();
-// Same roles as custom orders/event management, plus the 'consignment' feature flag — see
-// server/lib/license.js. Default-allowed today (no tier restricts it yet), same as every
-// other feature flag before any tier exists to turn one off.
+// Same roles as custom orders/event management (including lead), plus the 'consignment'
+// feature flag — see server/lib/license.js. Default-allowed today (no tier restricts it yet),
+// same as every other feature flag before any tier exists to turn one off. The three routes
+// below that actually move real catalog stock (sending/removing inventory) additionally
+// require requireManageItems — a silent stock adjustment with no sale record is the same
+// stricter, admin/manager-only territory as server/routes/items.js's :id/make and :id/sell.
 router.use(requireEventManage, requireFeature('consignment'));
 
 const toPartner = (r) => ({ id: r.id, name: r.name, contact: r.contact, commissionPct: r.commission_pct, createdAt: r.created_at });
@@ -33,10 +36,18 @@ router.post('/partners', (req, res) => {
   res.json(toPartner(db.prepare('SELECT * FROM consignment_partners WHERE id = ?').get(row.id)));
 });
 
-router.delete('/partners/:id', (req, res) => {
+// Stock-affecting (restoring whatever's still out, unsold, back to the catalog item it came
+// from) — same stricter, admin/manager-only gate as the manual stock adjustments in
+// server/routes/items.js (:id/make, :id/sell), not the lead-inclusive requireEventManage the
+// rest of this router uses for partner/sale bookkeeping that never touches real stock.
+router.delete('/partners/:id', requireManageItems, (req, res) => {
   const tx = db.transaction(() => {
-    const itemIds = db.prepare('SELECT id FROM consignment_items WHERE partner_id = ?').all(req.params.id).map((r) => r.id);
-    for (const itemId of itemIds) db.prepare('DELETE FROM consignment_sales WHERE consignment_item_id = ?').run(itemId);
+    const items = db.prepare('SELECT * FROM consignment_items WHERE partner_id = ?').all(req.params.id);
+    for (const it of items) {
+      const qtyOut = Math.max(0, it.qty_sent - it.qty_sold);
+      if (it.item_id && qtyOut > 0) db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qtyOut, it.item_id);
+      db.prepare('DELETE FROM consignment_sales WHERE consignment_item_id = ?').run(it.id);
+    }
     db.prepare('DELETE FROM consignment_items WHERE partner_id = ?').run(req.params.id);
     db.prepare('DELETE FROM consignment_partners WHERE id = ?').run(req.params.id);
   });
@@ -63,22 +74,48 @@ router.get('/partners/:id/items', (req, res) => {
   res.json(out);
 });
 
-router.post('/items', (req, res) => {
+// Sending inventory to a partner is picked from the real catalog (itemId required — the UI
+// only offers a match from the item list, same convention as custom orders' item picker) and
+// comes out of that item's own stock immediately, same as a sale would: it's physically off
+// the shelf. A plain rename/edit of an existing row (id supplied, item unchanged) skips the
+// stock change — only a genuinely new row decrements, so this can't be replayed to re-deduct.
+router.post('/items', requireManageItems, (req, res) => {
   const b = req.body || {};
+  const existing = b.id ? db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(b.id) : null;
+  if (!b.partnerId) return res.status(400).json({ error: 'missing_partner' });
+  const requestedQty = Math.max(0, Math.round(Number(b.qtySent)) || 0);
+  let item = null, had = null, qtySent = requestedQty;
+  if (!existing && b.itemId) {
+    item = db.prepare('SELECT * FROM items WHERE id = ?').get(b.itemId);
+    if (!item) return res.status(400).json({ error: 'unknown_item', message: 'Pick an item from the catalog list.' });
+    had = Math.max(0, item.stock);
+    // Never let the ledger record sending more than was actually on the shelf — the recorded
+    // qty_sent is what the UI/reports treat as truly out with the partner, not just whatever
+    // was typed in.
+    qtySent = Math.min(requestedQty, had);
+  }
   const row = {
-    id: b.id || uid(), partner_id: b.partnerId, item_id: b.itemId || null, name: b.name || '',
-    qty_sent: Math.max(0, Math.round(Number(b.qtySent)) || 0), date_sent: b.dateSent || Date.now(), notes: b.notes || null,
+    id: existing ? existing.id : uid(), partner_id: b.partnerId, item_id: b.itemId || null, name: b.name || '',
+    qty_sent: qtySent, date_sent: b.dateSent || Date.now(), notes: b.notes || null,
   };
-  if (!row.partner_id) return res.status(400).json({ error: 'missing_partner' });
-  db.prepare(`
-    INSERT INTO consignment_items (id, partner_id, item_id, name, qty_sent, date_sent, notes) VALUES (@id, @partner_id, @item_id, @name, @qty_sent, @date_sent, @notes)
-    ON CONFLICT(id) DO UPDATE SET item_id=@item_id, name=@name, qty_sent=@qty_sent, date_sent=@date_sent, notes=@notes
-  `).run(row);
-  res.json(toItem(db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(row.id)));
+  const tx = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO consignment_items (id, partner_id, item_id, name, qty_sent, date_sent, notes) VALUES (@id, @partner_id, @item_id, @name, @qty_sent, @date_sent, @notes)
+      ON CONFLICT(id) DO UPDATE SET item_id=@item_id, name=@name, qty_sent=@qty_sent, date_sent=@date_sent, notes=@notes
+    `).run(row);
+    if (item) db.prepare('UPDATE items SET stock = MAX(0, stock - ?) WHERE id = ?').run(qtySent, item.id);
+  });
+  tx();
+  res.json({ ...toItem(db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(row.id)), had });
 });
 
-router.delete('/items/:id', (req, res) => {
+router.delete('/items/:id', requireManageItems, (req, res) => {
   const tx = db.transaction(() => {
+    const it = db.prepare('SELECT * FROM consignment_items WHERE id = ?').get(req.params.id);
+    if (it) {
+      const qtyOut = Math.max(0, it.qty_sent - it.qty_sold);
+      if (it.item_id && qtyOut > 0) db.prepare('UPDATE items SET stock = stock + ? WHERE id = ?').run(qtyOut, it.item_id);
+    }
     db.prepare('DELETE FROM consignment_sales WHERE consignment_item_id = ?').run(req.params.id);
     db.prepare('DELETE FROM consignment_items WHERE id = ?').run(req.params.id);
   });
