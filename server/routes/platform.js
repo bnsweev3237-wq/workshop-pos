@@ -7,6 +7,7 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { provisionTenant, ProvisionError, assertSlugAvailable } = require('../tenancy/provision');
 const { baseDomain } = require('../tenancy/resolveTenant');
+const billing = require('../lib/billing');
 
 const router = express.Router();
 
@@ -53,6 +54,29 @@ router.post('/signup', signupLimiter, async (req, res) => {
     }
     console.error('Signup failed:', err);
     res.status(502).json({ error: 'signup_failed', message: 'Something went wrong setting up your account. Try again.' });
+  }
+});
+
+// Stripe webhook receiver — the one fixed, platform-wide URL a Stripe account is configured to
+// post subscription events to (never a tenant subdomain; there's one Stripe account for the
+// whole platform, not one per tenant). No session or login here — the signature itself is the
+// authentication, verified against the raw request body (see server/index.js, which special-
+// cases this exact path to skip the global JSON body-parser so that raw body survives).
+router.post('/stripe-webhook', async (req, res) => {
+  if (!billing.isBillingConfigured()) return res.status(503).json({ error: 'not_configured' });
+  let event;
+  try {
+    event = billing.constructWebhookEvent(req.body, req.headers['stripe-signature']);
+  } catch (err) {
+    console.error('Stripe webhook signature verification failed:', err.message);
+    return res.status(400).json({ error: 'bad_signature' });
+  }
+  try {
+    await billing.applyWebhookEvent(event);
+    res.json({ received: true });
+  } catch (err) {
+    console.error('Stripe webhook handling failed:', err);
+    res.status(500).json({ error: 'webhook_failed' });
   }
 });
 

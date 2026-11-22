@@ -52,6 +52,16 @@ function createApp() {
     // harmless belt-and-suspenders — browsers ignore it entirely over a plain-HTTP connection,
     // so it doesn't affect a LAN-only, no-TLS install.
   }));
+  // Stripe's webhook signature (server/lib/billing.js#constructWebhookEvent) covers the exact
+  // raw bytes of the request body — the parsed object express.json() below would otherwise
+  // produce isn't enough, the signature check needs the untouched buffer. Mounted narrowly, on
+  // the exact webhook path, before the global JSON parser below so it sees the body first;
+  // body-parser (which both this and express.json() are built on) skips re-parsing a request
+  // whose body a previous middleware already consumed, so the global parser downstream is a
+  // harmless no-op for this one path and unaffected everywhere else. Present (and harmless —
+  // nothing mounts at this path) in single-tenant mode too, so this one ordering decision never
+  // has to be duplicated per mode.
+  app.use('/api/platform/stripe-webhook', express.raw({ type: 'application/json' }));
   // Raised from Express's 100kb default so a branding logo upload (a data URL, capped at ~2MB
   // in server/routes/branding.js) fits in the request body.
   app.use(express.json({ limit: '3mb' }));
@@ -209,6 +219,7 @@ function mountTenantScopedRoutes(app) {
   app.use('/api/test-data', require('./routes/testData'));
   app.use('/api/email-settings', require('./routes/email'));
   app.use('/api/license', require('./routes/license'));
+  app.use('/api/billing', require('./routes/billing'));
 }
 
 // Resolves once the server is actually listening, with the real port — callers (the CLI

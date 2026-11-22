@@ -27,6 +27,16 @@ CREATE TABLE IF NOT EXISTS tenants (
   email_verified_at INTEGER,
   email_verify_token TEXT,
   email_verify_expires_at INTEGER,
+  -- Stripe billing (server/lib/billing.js) — groundwork, inert with no CRAFTIUM_STRIPE_SECRET_KEY
+  -- set. stripe_customer_id is minted on this tenant's first checkout attempt (never earlier —
+  -- most tenants, on the trial plan, never need one) and is also how an incoming webhook event
+  -- is matched back to a tenant. stripe_subscription_status mirrors Stripe's own subscription
+  -- status string (active/trialing/past_due/canceled/...) for display; plan itself is still the
+  -- one column every feature-gate call site reads, kept in sync by the webhook handler rather
+  -- than read live from Stripe on every request.
+  stripe_customer_id TEXT,
+  stripe_subscription_id TEXT,
+  stripe_subscription_status TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );

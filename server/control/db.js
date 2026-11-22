@@ -36,6 +36,9 @@ function migrate(cdb) {
   ensureColumn('tenants', 'email_verified_at', 'INTEGER');
   ensureColumn('tenants', 'email_verify_token', 'TEXT');
   ensureColumn('tenants', 'email_verify_expires_at', 'INTEGER');
+  ensureColumn('tenants', 'stripe_customer_id', 'TEXT');
+  ensureColumn('tenants', 'stripe_subscription_id', 'TEXT');
+  ensureColumn('tenants', 'stripe_subscription_status', 'TEXT');
 }
 
 function newTenantId() {
@@ -91,6 +94,21 @@ function setTenantEmailVerification(id, token, expiresAt) {
 function markTenantEmailVerified(id) {
   getControlDb().prepare('UPDATE tenants SET email_verified_at = ?, email_verify_token = NULL, email_verify_expires_at = NULL, updated_at = ? WHERE id = ?')
     .run(Date.now(), Date.now(), id);
+}
+// ---- Stripe billing (server/lib/billing.js) ----
+function getTenantByStripeCustomerId(customerId) {
+  return getControlDb().prepare('SELECT * FROM tenants WHERE stripe_customer_id = ?').get(customerId);
+}
+function setTenantStripeCustomer(id, customerId) {
+  getControlDb().prepare('UPDATE tenants SET stripe_customer_id = ?, updated_at = ? WHERE id = ?').run(customerId, Date.now(), id);
+}
+// Called from the webhook handler once a subscription's status/price is known — plan is
+// whatever billing.js resolved the current price to (falling back to the tenant's existing
+// plan when the subscription doesn't map to a known one, e.g. mid-downgrade-grace), status is
+// Stripe's own subscription status string, stored as-is for display.
+function updateTenantSubscription(id, { subscriptionId, status, plan }) {
+  getControlDb().prepare('UPDATE tenants SET stripe_subscription_id = ?, stripe_subscription_status = ?, plan = ?, updated_at = ? WHERE id = ?')
+    .run(subscriptionId, status, plan, Date.now(), id);
 }
 function addAuditLog(tenantId, actor, action, detail) {
   getControlDb().prepare('INSERT INTO audit_log (id, tenant_id, actor, action, detail_json, at) VALUES (?, ?, ?, ?, ?, ?)')
@@ -153,6 +171,7 @@ module.exports = {
   getControlDb, CONTROL_DB_PATH, newTenantId, getTenantBySlug, getTenantById, listTenants,
   insertTenant, updateTenantStatus, updateTenantPlan, deleteTenantRow, addAuditLog,
   setTenantEmailVerification, markTenantEmailVerified,
+  getTenantByStripeCustomerId, setTenantStripeCustomer, updateTenantSubscription,
   getPlatformSetting, setPlatformSetting,
   getPlatformUserByUsername, listPlatformUsers, deletePlatformUserRow,
   insertSupportSession, getSupportSession, markSupportSessionConsumed,

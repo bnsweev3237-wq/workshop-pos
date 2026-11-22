@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.9.0',
+    date: '2026-11-22',
+    notes: [
+      'Hosted platform: groundwork for self-serve subscription billing via Stripe — completely inert until a Stripe account is actually connected (set CRAFTIUM_STRIPE_SECRET_KEY and friends). Once it is, a tenant\'s admin can subscribe to a paid plan or manage an existing one (update a card, switch plans, cancel) straight from Settings, and a tenant\'s plan stays in sync with its subscription automatically.',
+    ],
+  },
+  {
     version: '2.8.0',
     date: '2026-11-21',
     notes: [

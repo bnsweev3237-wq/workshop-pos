@@ -921,6 +921,16 @@
       <div class="btn-row" style="margin-top:12px"><button class="btn sm" id="backupNowBtn">Back up now</button></div>
     </div>
 
+    <div class="card" id="billingCard" hidden>
+      <h2>Billing</h2>
+      <div class="hint" id="billingStatusLine">Loading…</div>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn primary sm" id="billingUpgradeBasicBtn" hidden>Upgrade to Basic</button>
+        <button class="btn primary sm" id="billingUpgradeProBtn" hidden>Upgrade to Pro</button>
+        <button class="btn sm" id="billingManageBtn" hidden>Manage billing</button>
+      </div>
+    </div>
+
     <div class="card" id="licenseCard">
       <h2>License</h2>
       <div class="help">Groundwork for a future licensing system — nothing in the app is gated by this today. Entering a key here lets this install check in with a license server you control; leave it blank and everything runs exactly as it always has.</div>

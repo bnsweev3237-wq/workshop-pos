@@ -63,6 +63,9 @@ async function main() {
   const licenseGet = await call('GET', '/api/license');
   assert(licenseGet.status === 200 && 'key' in licenseGet.data, 'GET /api/license still returns the self-hosted masked-key shape, unchanged');
 
+  const billingGet = await call('GET', '/api/billing/status');
+  assert(billingGet.status === 404, '/api/billing is mounted (same mount points in both modes) but 404s itself in single-tenant mode — no platform subscription to pay for here');
+
   const diskRes = await call('GET', '/api/maintenance/disk');
   assert(diskRes.status === 200 && 'total' in diskRes.data, 'disk usage in single-tenant mode still reports host-wide total/free, unchanged');
 

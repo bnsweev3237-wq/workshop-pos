@@ -235,6 +235,19 @@ async function main() {
   assert(licenseDelete.status === 403, 'DELETE /api/license refused in multi-tenant mode');
   TESTED_PREFIXES.add('/api/license');
 
+  // Billing — the isolation concern here is that one tenant's plan/subscription status is
+  // never visible through another tenant's own status call. CRAFTIUM_STRIPE_* isn't set in
+  // this test run (that's server/routes/billing.test.js's job); configured:false either way,
+  // but the plan/subscriptionStatus fields still come straight from each request's own
+  // req.tenant, so this is a real cross-tenant check, not a no-op against a stub.
+  controlDb.updateTenantPlan(controlDb.getTenantBySlug('alpha').id, 'basic');
+  const alphaBilling = await alpha.get('/api/billing/status');
+  assert(alphaBilling.status === 200 && alphaBilling.data.plan === 'basic', 'alpha’s own billing status reflects alpha’s own plan');
+  const betaBilling = await beta.get('/api/billing/status');
+  assert(betaBilling.status === 200 && betaBilling.data.plan === 'pro', 'beta’s billing status is completely unaffected by alpha’s plan change — no cross-tenant leakage');
+  controlDb.updateTenantPlan(controlDb.getTenantBySlug('alpha').id, 'pro'); // restore for the rest of this file
+  TESTED_PREFIXES.add('/api/billing');
+
   const updateRoute = await alpha.get('/api/update/check');
   assert(updateRoute.status === 404, '/api/update is not mounted at all in multi-tenant mode');
 

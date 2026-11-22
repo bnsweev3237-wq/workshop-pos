@@ -292,7 +292,7 @@ function showTab(t) {
   if (t === 'orders') loadCustomOrders();
   if (t === 'consignment') loadConsignment();
   if (t === 'reports') renderReports();
-  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); loadMailSettings(); loadLicenseStatus(); fillBrandingForm(); }
+  if (t === 'settings') { loadUsers(); loadSettings(); loadSources(); loadTaxPresets(); loadCardProcessors(); loadServerBackups(); loadUpdateStatus(); loadDiskUsage(); loadDuplicates(); loadMailSettings(); loadLicenseStatus(); loadBillingStatus(); fillBrandingForm(); }
 }
 document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => showTab(b.dataset.tab));
 
@@ -3822,6 +3822,35 @@ $('licenseClearBtn').onclick = async () => {
   catch (e) { toast(e.message || 'Could not remove license'); }
 };
 
+// ---------- Billing (groundwork — see server/lib/billing.js) ----------
+// Hidden entirely unless both multi-tenant mode and Stripe are actually configured — see
+// loadVersionInfo() above for appMode. Nothing here runs at all on a single-tenant install.
+const STATUS_LABELS = { active: 'Active', trialing: 'Trialing', past_due: 'Payment past due', canceled: 'Canceled', unpaid: 'Unpaid', incomplete: 'Incomplete', incomplete_expired: 'Expired' };
+const PLAN_LABELS = { trial: 'Trial', basic: 'Basic', pro: 'Pro' };
+async function loadBillingStatus() {
+  if (appMode !== 'multi-tenant') return;
+  let s;
+  try { s = await api('GET', '/api/billing/status'); } catch { $('billingCard').hidden = true; return; }
+  $('billingCard').hidden = !s.configured;
+  if (!s.configured) return;
+  const planLabel = PLAN_LABELS[s.plan] || s.plan;
+  const statusLabel = s.subscriptionStatus ? STATUS_LABELS[s.subscriptionStatus] || s.subscriptionStatus : null;
+  $('billingStatusLine').textContent = `Current plan: ${planLabel}${statusLabel ? ` · ${statusLabel}` : ''}`;
+  const upgradeable = new Set(s.purchasablePlans.filter((p) => p !== s.plan));
+  $('billingUpgradeBasicBtn').hidden = !upgradeable.has('basic');
+  $('billingUpgradeProBtn').hidden = !upgradeable.has('pro');
+  $('billingManageBtn').hidden = !s.hasStripeCustomer;
+}
+async function goToBillingUrl(path, plan) {
+  try {
+    const { url } = await api('POST', path, plan ? { plan } : {});
+    location.href = url;
+  } catch (e) { toast(e.message || 'Could not open billing'); }
+}
+$('billingUpgradeBasicBtn').onclick = () => goToBillingUrl('/api/billing/checkout', 'basic');
+$('billingUpgradeProBtn').onclick = () => goToBillingUrl('/api/billing/checkout', 'pro');
+$('billingManageBtn').onclick = () => goToBillingUrl('/api/billing/portal');
+
 // ---------- Backup ----------
 $('exportBtn').onclick = async () => {
   const [allItems, allMats, allSales, allEvents, allSources] = await Promise.all([api('GET', '/api/items/full'), api('GET', '/api/materials'), api('GET', '/api/sales/full'), api('GET', '/api/events'), api('GET', '/api/sources')]);
@@ -3902,7 +3931,7 @@ const HELP_SECTIONS = [
   { title: 'Sell', body: 'Ring up sales, tag them to an open event, and optionally email a receipt — add a customer’s email at checkout and they’ll also get a one-click link to opt into hearing about future fairs, added to your mailing list. Works offline too: a sale made with no connection queues up and syncs once you’re back online.' },
   { title: 'Events', body: 'Set up an event (space cost, dates, tax rates, item scope, a price adjustment) to track break-even live. Add expenses beyond the space cost, and charity-giving rules, from the event’s own edit panel. Draft events can be cloned for a recurring market.' },
   { title: 'Reports', body: 'Revenue, profit, and tax over a date range; cost/profit by item and by salesperson; every event’s "true profit" and a trend of it over time; inventory value; voids and returns; and your mailing-list signups, exportable as a CSV.' },
-  { title: 'Settings', body: 'Admin-only: accounts and roles, branding, email alerts (used for receipt emails and the low-stock digest), card processors, tax presets, backups, and license status.' },
+  { title: 'Settings', body: 'Admin-only: accounts and roles, branding, email alerts (used for receipt emails and the low-stock digest), card processors, tax presets, backups, and license status. On the hosted platform, a "Billing" card also appears here once subscription payment is set up, for managing your own plan.' },
 ];
 function renderHelp() {
   $('helpList').innerHTML = HELP_SECTIONS.map(s => `<div class="rn-entry"><div class="rn-head"><b>${esc(s.title)}</b></div><p style="margin:4px 0 0">${esc(s.body)}</p></div>`).join('');

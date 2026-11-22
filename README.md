@@ -617,6 +617,12 @@ exactly as everything above describes, completely unaffected by any of this.
   settings" card with no redeploy or restart, which is the easier way to change providers later.
   Nothing here is required to boot; with none of it set, the server starts normally and logs a
   warning that account verification emails won't send until it's configured one way or the other.
+- `CRAFTIUM_STRIPE_SECRET_KEY` / `CRAFTIUM_STRIPE_WEBHOOK_SECRET` and `CRAFTIUM_STRIPE_PRICE_BASIC`
+  / `CRAFTIUM_STRIPE_PRICE_PRO` — self-serve subscription billing (upgrading/managing a plan from
+  a tenant's own Settings tab, via Stripe Checkout and the Stripe customer portal — see "Billing"
+  below). All optional and unrelated to boot either way: with none of it set, the server starts
+  normally and the Billing card simply doesn't appear in Settings — nothing in the app is gated
+  by this, same "groundwork, inert until configured" convention as License above.
 
 **Isolation** — one SQLite file per tenant, not shared tables with a `tenant_id` column. A
 tenant is resolved from the subdomain in the request's `Host` header before anything else runs
@@ -629,9 +635,26 @@ process in single-tenant mode) are platform-operator actions only here, never a 
 
 **Plans** — `trial`, `basic`, and `pro` (defined in `server/lib/plans.js`) gate both features
 (e.g. consignment tracking) and usage caps (staff accounts, catalog size) — a tenant over a cap
-gets a clear "upgrade to add more" message, never a silent failure. An operator assigns a
-tenant's plan manually (the CLI below, or the admin console's per-tenant plan dropdown); there's
-no payment integration yet, so nothing is automatically suspended for non-payment.
+gets a clear "upgrade to add more" message, never a silent failure. An operator can always
+assign a tenant's plan manually (the CLI below, or the admin console's per-tenant plan
+dropdown); once billing (below) is configured and a tenant has a real subscription, Stripe
+webhooks keep this same column in sync automatically — a manual override still works but can be
+overwritten by the next subscription event.
+
+**Billing** — self-serve subscription payment via Stripe (`server/lib/billing.js`), groundwork
+that's completely inert with no `CRAFTIUM_STRIPE_SECRET_KEY` set: nothing in the app changes,
+and the "Billing" card simply doesn't appear in a tenant's Settings tab. Once configured
+(the four `CRAFTIUM_STRIPE_*` env vars above — a secret key, a webhook signing secret, and a
+Stripe Price id for each of the `basic`/`pro` plans), a tenant's own admin can start a
+subscription (Stripe Checkout — this server never sees card details) or manage an existing one
+(cancel, update a card, switch plans — the Stripe customer billing portal) straight from
+Settings. `POST /api/platform/stripe-webhook` is the one fixed, platform-wide endpoint a Stripe
+account is configured to send subscription events to; it verifies Stripe's signature on the
+request before touching anything, and keeps a tenant's `plan` column in sync automatically:
+active/trialing adopts whichever plan the subscribed price maps to, and canceled/unpaid falls
+back to the free `trial` plan (data and the account itself are untouched — this is not the same
+as suspension). A past-due payment just updates the status shown in Settings while Stripe's own
+retry schedule runs; nothing is cut off mid-grace-period.
 
 **Signup and email verification** — signup collects an owner email address and sends a
 clickable verification link to it (same platform mail config as above); login is blocked with a
@@ -677,14 +700,16 @@ node scripts/tenant-admin.js list-staff
 node scripts/tenant-admin.js remove-staff <username>
 ```
 
-**Verification** — three standalone adversarial test scripts cover this mode specifically:
+**Verification** — standalone adversarial test scripts cover this mode specifically:
 `server/routes/multitenant.isolation.test.js` (tenant data isolation under adversarial
 conditions — spoofed headers, cross-tenant cookie replay, a hand-tampered session row, 400
 concurrent requests with the connection pool forced to evict constantly), `server/routes/
 platformAdmin.test.js` (the admin console and impersonation mechanism specifically, including
-that a token minted for one tenant is rejected outright on another tenant's host), and
-`server/routes/singleTenant.regression.test.js` (proves none of this changed single-tenant
-behavior).
+that a token minted for one tenant is rejected outright on another tenant's host),
+`server/routes/billing.test.js` (billing's "inert with no key configured" behavior, the webhook
+route's real HMAC signature verification against its raw request body, and the plan-sync policy
+for every subscription status), and `server/routes/singleTenant.regression.test.js` (proves
+none of this changed single-tenant behavior).
 
 ## Sell page on a phone
 
