@@ -75,6 +75,12 @@ function createApp() {
 // ---------- Single-tenant mode: desktop Electron app, or a self-hosted VPS install ----------
 // Exactly as this file has always behaved — nothing in multi-tenant mode changes this path.
 function createSingleTenantApp(app) {
+  // Unauthenticated on purpose (see server/routes/meta.js) — the version number and changelog
+  // aren't sensitive, and the login screen itself wants them before any session exists. Multi-
+  // tenant mode mounts this same router too (see createMultiTenantApp below); this one's its
+  // own line rather than a shared helper because it has to run before this branch's session
+  // middleware, same as login itself does.
+  app.use('/api/meta', require('./routes/meta'));
   app.use(session({
     store: new SqliteStore({ client: db, expired: { clear: true, intervalMs: 15 * 60 * 1000 } }),
     secret: getSessionSecret(),

@@ -15,6 +15,13 @@
 //     it out first; routine feature work never reaches for this on its own.
 module.exports = [
   {
+    version: '2.9.1',
+    date: '2026-11-22',
+    notes: [
+      'Fixed the version number in the footer and the "What\'s new" release notes never loading on the desktop app / self-hosted install — the endpoint they came from was only ever mounted in hosted multi-tenant mode.',
+    ],
+  },
+  {
     version: '2.9.0',
     date: '2026-11-22',
     notes: [

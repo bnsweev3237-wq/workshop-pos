@@ -63,6 +63,9 @@ async function main() {
   const licenseGet = await call('GET', '/api/license');
   assert(licenseGet.status === 200 && 'key' in licenseGet.data, 'GET /api/license still returns the self-hosted masked-key shape, unchanged');
 
+  const metaGet = await call('GET', '/api/meta/version');
+  assert(metaGet.status === 200 && metaGet.data.mode === 'single-tenant' && Array.isArray(metaGet.data.releaseNotes), 'GET /api/meta/version (the app footer\'s version number and "What\'s new" release notes) is mounted and working in single-tenant mode, not just multi-tenant');
+
   const billingGet = await call('GET', '/api/billing/status');
   assert(billingGet.status === 404, '/api/billing is mounted (same mount points in both modes) but 404s itself in single-tenant mode — no platform subscription to pay for here');
 
